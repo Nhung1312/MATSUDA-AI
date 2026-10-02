@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+  
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* KaTeX Mathematics Styling & Color Inheritance */
+.katex {
+  font-size: 1.08em;
+  text-rendering: auto;
+  color: inherit !important;
+}
+
+.katex .katex-html {
+  color: inherit !important;
+}
+
+.katex * {
+  color: inherit;
+}
+
+/* Ensure fractions, square root bars, and accents use the text's currentColor */
+.katex .frac-line,
+.katex .overline .overline-line,
+.katex .underline .underline-line {
+  border-bottom-color: currentColor !important;
+  border-top-color: currentColor !important;
+}
+
+.katex .sqrt > .sqrt-line {
+  border-top-color: currentColor !important;
+}
+
+.katex svg {
+  fill: currentColor !important;
+  stroke: currentColor !important;
+}
+
+/* KaTeX responsive scrolling on mobile */
+.katex-display {
+  color: inherit !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25rem 0;
+  max-width: 100%;
+}
+
+.katex-block-wrapper {
+  color: inherit !important;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.math-display-container,
+.inline-math-container {
+  color: inherit;
+}
+
+/* Print specific styles to always print in crisp black and white paper format */
+@media print {
+  body, html {
+    background: transparent !important;
+    color: #000000 !important;
+  }
+  .dark {
+    background: transparent !important;
+    color: #000000 !important;
+  }
+  .katex, .dark .katex {
+    color: #000000 !important;
+  }
+  /* Đảm bảo nét kẻ phân số, dấu căn bậc hai và vạch kẻ trên KaTeX luôn in rõ nét không bị mất nét */
+  .katex .frac-line {
+    border-bottom: 1.2px solid #000000 !important;
+  }
+  .katex .overline .overline-line {
+    border-top: 1.2px solid #000000 !important;
+  }
+  .katex .sqrt > .sqrt-line {
+    border-top: 1.2px solid #000000 !important;
+  }
+  .katex svg {
+    fill: #000000 !important;
+    stroke: #000000 !important;
+  }
+  /* Suppress hidden MathML text to prevent duplicate printed characters */
+  .katex-mathml {
+    display: none !important;
+  }
+}
+

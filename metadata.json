@@ -1,0 +1,7 @@
+{
+  "name": "TOÁN THCS – Giao bài & Luyện tập",
+  "description": "Nền tảng giao bài tập, thi trực tuyến và luyện tập Toán THCS với hệ thống tự chấm trắc nghiệm, tự luận và bảng vàng xếp hạng.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

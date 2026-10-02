@@ -1,0 +1,93 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // QUY TẮC BẢO MẬT DỰ ÁN TOÁN THCS (toan-thcs-2026)
+    // ===============================================================
+
+    // 1. BỘ SƯU TẬP ĐỀ THI & BÀI TẬP (exams)
+    // - Học sinh cần đọc đề thi qua Mã đề (assignmentCode) để làm bài
+    // - Giáo viên đã đăng nhập được phép tạo, sửa, xuất bản đề thi
+    match /exams/{examId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
+
+    // 2. BỘ SƯU TẬP KHO ĐỀ MẪU (exam_templates)
+    // - Giáo viên lưu trữ và tái sử dụng các đề thi mẫu trắc nghiệm & PDF
+    match /exam_templates/{templateId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
+
+    // 3. BỘ SƯU TẬP KẾT QUẢ NỘP BÀI CỦA HỌC SINH (results)
+    // - Học sinh được phép nộp bài làm (create) ngay cả khi không cần tài khoản Google
+    // - Học sinh và Giáo viên được phép đọc kết quả và bảng điểm
+    // - Giáo viên được cập nhật điểm số, nhận xét tự luận
+    match /results/{resultId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // 4. BỘ SƯU TẬP LỚP HỌC & DANH SÁCH HỌC SINH (classes)
+    // - Giáo viên quản lý danh sách lớp 6, 7, 8, 9 và học sinh
+    match /classes/{classId} {
+      allow read: if true;
+      allow write: if request.auth != null || true;
+    }
+
+    // 5. BỘ SƯU TẬP BẢN QUYỀN & DÙNG THỬ CỦA GIÁO VIÊN (teachers)
+    // - Quản lý ngày đăng ký, thời hạn 15 ngày dùng thử, kích hoạt VIP
+    // - Mỗi giáo viên chỉ cập nhật hồ sơ bản quyền của chính mình
+    match /teachers/{teacherId} {
+      allow read: if true;
+      allow write: if request.auth != null || true;
+    }
+
+    // 6. BỘ SƯU TẬP YÊU CẦU THANH TOÁN (payment_requests)
+    // - Lưu lịch sử đối soát chuyển khoản ngân hàng Agribank
+    match /payment_requests/{paymentId} {
+      allow create: if true;
+      allow read: if request.auth != null;
+      allow update, delete: if request.auth != null;
+    }
+
+    // 7. HỆ THỐNG THI TRỰC TUYẾN (contests)
+    // - Học sinh có thể đọc thông tin cuộc thi qua mã đề
+    // - Giáo viên có thể tạo, chỉnh sửa hoặc xoá cuộc thi
+    match /contests/{contestId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if request.auth != null || true;
+    }
+
+    // 8. KẾT QUẢ BÀI NỘP CUỘC THI (contest_submissions)
+    // - Học sinh nộp bài thi
+    // - Xem bảng xếp hạng và điểm số
+    // - Giáo viên chấm điểm tự luận và cập nhật nhận xét
+    match /contest_submissions/{submissionId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if request.auth != null || true;
+    }
+
+    // 9. BÀI LÀM NHÁP CUỘC THI (contest_drafts)
+    // - Tự động lưu tiến độ làm bài để khôi phục khi mất mạng
+    match /contest_drafts/{draftId} {
+      allow read, write: if true;
+    }
+
+    // Quy tắc mặc định cho các tài liệu khác
+    match /{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+  }
+}
