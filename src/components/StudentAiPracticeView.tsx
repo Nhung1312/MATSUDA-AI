@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Assignment, ClassRoom, GradeLevel } from '../types';
+import { Assignment, ClassRoom, GradeLevel, SocraticContext } from '../types';
 import { CURRICULUM_MATH_TOPICS, MathTopic } from '../data/mathTopics';
+import { SocraticTutorModal } from './SocraticTutorModal';
 import { aiService } from '../services/aiService';
 import { StorageService } from '../services/storageService';
 import { FirestoreService } from '../services/firestoreService';
@@ -98,13 +99,14 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [generationStep, setGenerationStep] = useState<string>('');
   const [availableBankExamCount, setAvailableBankExamCount] = useState<number>(0);
+  const [socraticPracticeContext, setSocraticPracticeContext] = useState<SocraticContext | null>(null);
 
   const hasApiKey = aiService.hasApiKey();
 
   // Load count of teacher exams available in storage
   useEffect(() => {
     const checkBank = () => {
-      const exams = StorageService.getAssignments() || [];
+      const exams = (StorageService.getAssignments() || []).filter(e => e.verificationStatus !== 'unverified');
       const gradeExams = exams.filter(e => String(e.grade) === String(selectedGrade));
       setAvailableBankExamCount(gradeExams.length);
     };
@@ -624,6 +626,27 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
                 {topicMode === 'preset' ? 'Chủ đề SGK' : 'Chủ đề yêu cầu'}
               </span>
             </div>
+
+            {/* Quick Socratic Hint for this practice topic */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-indigo-50/80 dark:bg-indigo-950/40 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 text-xs">
+              <span className="text-indigo-950 dark:text-indigo-200 font-medium">
+                💡 Muốn xem trước phương pháp và công thức cốt lõi của dạng toán này?
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSocraticPracticeContext({
+                    questionText: `Chuyên đề: ${activeTopicName}. Hãy nhắc lại các định nghĩa, công thức cốt lõi và các lỗi sai thường gặp khi giải dạng toán này.`,
+                    grade: String(selectedGrade),
+                    topic: activeTopicName,
+                  });
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-xs"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                <span>Gia sư AI gợi mở</span>
+              </button>
+            </div>
           </div>
         ) : (
           /* Midterm / Final Exam Scope Summary Banner */
@@ -818,6 +841,15 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
           ✓ Tích hợp Kho đề Thầy/Cô • ✓ Đổi số ngẫu nhiên chống chép bài • ✓ AI chấm điểm tức thì kèm lời giải chi tiết
         </p>
       </div>
+
+      {/* Socratic Tutor Modal for Practice */}
+      {socraticPracticeContext && (
+        <SocraticTutorModal
+          isOpen={Boolean(socraticPracticeContext)}
+          onClose={() => setSocraticPracticeContext(null)}
+          context={socraticPracticeContext}
+        />
+      )}
     </div>
   );
 };

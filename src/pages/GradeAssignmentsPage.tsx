@@ -53,9 +53,9 @@ export const GradeAssignmentsPage: React.FC<GradeAssignmentsPageProps> = ({
   const [printingAssignment, setPrintingAssignment] = useState<Assignment | null>(null);
   const [sharingAssignment, setSharingAssignment] = useState<Assignment | null>(null);
 
-  // Filter assignments for this specific grade
+  // Filter assignments for this specific grade (chỉ hiển thị đề đã thẩm định hoặc chuẩn)
   const gradeAssignments = useMemo(() => {
-    return assignments.filter(a => a.grade === validGrade);
+    return assignments.filter(a => a.grade === validGrade && a.verificationStatus !== 'unverified');
   }, [assignments, validGrade]);
 
   // Topic classification helper

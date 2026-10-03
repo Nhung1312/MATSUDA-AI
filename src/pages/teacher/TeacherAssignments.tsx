@@ -632,6 +632,14 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
                         {isGeometry ? '📐 Hình học' : isStatistics ? '📊 Thống kê' : '🔢 Đại số'}
                       </span>
 
+                      {/* Huy hiệu nếu đề nhập từ kho cũ chưa thẩm định */}
+                      {asg.verificationStatus === 'unverified' && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 flex items-center gap-1 shadow-2xs" title="Đề nhập từ kho cũ, chưa thẩm định. Chưa đưa vào luyện tập học sinh">
+                          <AlertTriangle className="w-3 h-3 text-amber-600" />
+                          <span>Chưa thẩm định</span>
+                        </span>
+                      )}
+
                       {/* MỚI: Huy hiệu nếu đề chưa có bảng đáp án chuẩn */}
                       {isUnsolved && (
                         <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-800 flex items-center gap-1 shadow-2xs">

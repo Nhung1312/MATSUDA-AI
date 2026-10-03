@@ -85,13 +85,13 @@ export class PracticeEngineService {
       console.warn('[PracticeEngine] Dùng kho đề Local (Cloud offline):', err);
     }
 
-    // Gộp và loại trừ trùng lặp
+    // Gộp và loại trừ trùng lặp (chỉ lấy đề đã xác minh chuẩn, loại trừ đề unverified)
     const map = new Map<string, Assignment>();
     local.forEach(a => {
-      if (a && a.id) map.set(a.id, a);
+      if (a && a.id && a.verificationStatus !== 'unverified') map.set(a.id, a);
     });
     cloud.forEach(a => {
-      if (a && a.id && !map.has(a.id)) map.set(a.id, a);
+      if (a && a.id && a.verificationStatus !== 'unverified' && !map.has(a.id)) map.set(a.id, a);
     });
 
     return Array.from(map.values());

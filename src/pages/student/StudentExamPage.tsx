@@ -56,6 +56,9 @@ import { ScientificCalculatorModal } from '../../components/ScientificCalculator
 import { DigitalScratchpadModal } from '../../components/DigitalScratchpadModal';
 import { useMistakeVaultStore } from '../../store/useMistakeVaultStore';
 import { ExamReviewSheetModal } from '../../components/ExamReviewSheetModal';
+import { SocraticTutorModal } from '../../components/SocraticTutorModal';
+import { SocraticHintLevel, SocraticMessage, SocraticContext } from '../../types';
+import { useLearningProgressStore } from '../../store/useLearningProgressStore';
 
 interface StudentExamPageProps {
   assignment: Assignment;
@@ -63,6 +66,14 @@ interface StudentExamPageProps {
   classId: string;
   className: string;
   onFinishExam: (submission: Submission) => void;
+}
+
+export interface QuestionSocraticState {
+  messages: SocraticMessage[];
+  activeHintLevel: SocraticHintLevel | null;
+  scratchpadText: string;
+  hasUsedHint: boolean;
+  initialAnswerWhenHintRequested?: string;
 }
 
 interface ExamDraft {
@@ -78,6 +89,7 @@ interface ExamDraft {
   shuffledAssignment?: Assignment;
   tabSwitchCount?: number;
   violationEvents?: ViolationEvent[];
+  socraticStateByQuestion?: Record<string, QuestionSocraticState>;
 }
 
 /**
@@ -202,6 +214,12 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
   const [antiCheatToast, setAntiCheatToast] = useState<{ message: string; id: number } | null>(null);
   const [showAntiCheatPolicyModal, setShowAntiCheatPolicyModal] = useState<boolean>(false);
 
+  // Trạng thái Gia sư Socratic AI theo từng câu hỏi độc lập (Đợt 3)
+  const [socraticStateByQuestion, setSocraticStateByQuestion] = useState<Record<string, QuestionSocraticState>>(() => {
+    return initialLoadedDraft?.socraticStateByQuestion ?? {};
+  });
+  const [socraticModalQuestion, setSocraticModalQuestion] = useState<Question | null>(null);
+
   // MỚI: Trạng thái Máy tính khoa học mini & Bảng nháp trực tiếp
   const [showCalculator, setShowCalculator] = useState<boolean>(false);
   const [showScratchpad, setShowScratchpad] = useState<boolean>(false);
@@ -241,6 +259,61 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
 
   const questions = currentAssignment.questions;
   const currentQ: Question | undefined = questions[currentIndex];
+
+  // Xây dựng ngữ cảnh Socratic đầy đủ cho từng câu hỏi (Đợt 3)
+  const getSocraticContextForQuestion = useCallback((q: Question): SocraticContext => {
+    const qState = socraticStateByQuestion[q.id];
+    const prevHints = qState?.messages
+      ? qState.messages
+          .filter(m => m.role === 'model' && m.level && m.level !== 'chat')
+          .map(m => `[${m.level}]: ${m.text}`)
+      : [];
+
+    return {
+      questionId: q.id,
+      questionText: q.question,
+      questionType: q.type,
+      grade: String(currentAssignment.grade),
+      topic: currentAssignment.topic,
+      answerOptions: q.options ? q.options.map(o => ({ id: o.id, text: o.text })) : undefined,
+      studentCurrentAnswer: answers[q.id] || studentSolutions[q.id] || '',
+      studentWork: studentSolutions[q.id] || (qState?.scratchpadText || ''),
+      previousHints: prevHints.length > 0 ? prevHints : undefined,
+      currentHintLevel: qState?.activeHintLevel || undefined,
+    };
+  }, [currentAssignment.grade, currentAssignment.topic, answers, studentSolutions, socraticStateByQuestion]);
+
+  // Mở Gia sư Socratic cho một câu hỏi cụ thể
+  const handleOpenSocratic = useCallback((q: Question) => {
+    soundEffects.playClick();
+    const currentAns = answers[q.id] || studentSolutions[q.id] || '';
+    setSocraticStateByQuestion((prev) => {
+      const existing = prev[q.id];
+      if (!existing) {
+        return {
+          ...prev,
+          [q.id]: {
+            messages: [],
+            activeHintLevel: null,
+            scratchpadText: studentSolutions[q.id] || '',
+            hasUsedHint: false,
+            initialAnswerWhenHintRequested: currentAns
+          }
+        };
+      }
+      if (!existing.initialAnswerWhenHintRequested) {
+        return {
+          ...prev,
+          [q.id]: {
+            ...existing,
+            initialAnswerWhenHintRequested: currentAns
+          }
+        };
+      }
+      return prev;
+    });
+    setSocraticModalQuestion(q);
+  }, [answers, studentSolutions]);
 
   // Helper show anti-cheat toast
   const triggerAntiCheatToast = useCallback((msg: string) => {
@@ -399,7 +472,8 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
         lastSavedAt: new Date().toISOString(),
         shuffledAssignment: currentAssignment,
         tabSwitchCount,
-        violationEvents
+        violationEvents,
+        socraticStateByQuestion
       };
       try {
         localStorage.setItem(draftStorageKey, JSON.stringify(draft));
@@ -409,7 +483,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [answers, studentSolutions, essayImagesByQuestion, generalPdfImages, flaggedQuestions, timeLeft, currentIndex, startedAt, currentAssignment, tabSwitchCount, violationEvents, draftStorageKey]);
+  }, [answers, studentSolutions, essayImagesByQuestion, generalPdfImages, flaggedQuestions, timeLeft, currentIndex, startedAt, currentAssignment, tabSwitchCount, violationEvents, socraticStateByQuestion, draftStorageKey]);
 
   // Timer countdown with audio alerts
   useEffect(() => {
@@ -445,6 +519,22 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
       }
       return { ...prev, [questionId]: optionId };
     });
+
+    // Ghi nhận nếu học sinh điều chỉnh đáp án sau khi đã nhận gợi ý Socratic (Đợt 3)
+    const qSoc = socraticStateByQuestion[questionId];
+    if (qSoc && qSoc.hasUsedHint) {
+      const prevAns = qSoc.initialAnswerWhenHintRequested || '';
+      if (prevAns !== optionId) {
+        useLearningProgressStore.getState().recordAnswerRevisedAfterHint(questionId, prevAns, optionId);
+        setSocraticStateByQuestion((prev) => ({
+          ...prev,
+          [questionId]: {
+            ...qSoc,
+            initialAnswerWhenHintRequested: optionId
+          }
+        }));
+      }
+    }
   };
 
   // Text solution input handler
@@ -456,6 +546,22 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
     // Đánh dấu câu đã có lời giải
     if (text.trim() && !answers[questionId]) {
       setAnswers((prev) => ({ ...prev, [questionId]: 'TỰ_LUẬN' }));
+    }
+
+    // Ghi nhận nếu học sinh hoàn thiện/sửa bài sau khi nhận gợi ý Socratic
+    const qSoc = socraticStateByQuestion[questionId];
+    if (qSoc && qSoc.hasUsedHint && text.trim().length > 5) {
+      const prevAns = qSoc.initialAnswerWhenHintRequested || '';
+      if (prevAns !== text.trim()) {
+        useLearningProgressStore.getState().recordAnswerRevisedAfterHint(questionId, prevAns, 'Lời giải tự luận mới');
+        setSocraticStateByQuestion((prev) => ({
+          ...prev,
+          [questionId]: {
+            ...qSoc,
+            initialAnswerWhenHintRequested: text.trim()
+          }
+        }));
+      }
     }
   };
 
@@ -1059,9 +1165,22 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                     Chọn phương án tương ứng với từng câu trong đề PDF
                   </p>
                 </div>
-                <div className="flex items-center gap-1.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 px-3 py-1 rounded-full text-xs font-bold border border-emerald-200 dark:border-emerald-800">
-                  <CheckCircle className="w-3.5 h-3.5" />
-                  <span>{answeredCount}/{questions.length}</span>
+                <div className="flex items-center gap-2">
+                  {currentQ && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenSocratic(currentQ)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-full text-xs font-bold shadow-xs hover:shadow-md cursor-pointer transition-all active:scale-95"
+                      title="Mở Gia sư Socratic AI nhận gợi mở tư duy"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                      <span>Gia sư AI (Câu {currentIndex + 1})</span>
+                    </button>
+                  )}
+                  <div className="flex items-center gap-1.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 px-3 py-1 rounded-full text-xs font-bold border border-emerald-200 dark:border-emerald-800">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    <span>{answeredCount}/{questions.length}</span>
+                  </div>
                 </div>
               </div>
               
@@ -1089,6 +1208,17 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                           <span className="font-black text-slate-600 dark:text-slate-300">
                             Câu {qNum} <span className="text-[10px] text-slate-400 font-semibold">• {isEssay ? 'Tự luận' : 'Trắc nghiệm'}</span>
                           </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenSocratic(q);
+                            }}
+                            className="p-1 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-950/70 rounded-md transition-colors"
+                            title={`Mở Gia sư Socratic AI gợi mở cho Câu ${qNum}`}
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                          </button>
                         </div>
 
                         {isEssay ? (
@@ -1254,21 +1384,39 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                       </div>
                     </div>
 
-                    {/* Flag / Bookmark button */}
-                    <button
-                      type="button"
-                      onClick={toggleFlagCurrentQuestion}
-                      className={`inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl font-bold text-xs border transition-all cursor-pointer ${
-                        isCurrentFlagged
-                          ? 'bg-amber-500 text-white border-amber-400 shadow-xs'
-                          : isFocusMode
-                          ? 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800'
-                          : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                      }`}
-                    >
-                      <Bookmark className={`w-3.5 h-3.5 ${isCurrentFlagged ? 'fill-white' : ''}`} />
-                      <span>{isCurrentFlagged ? 'Đã gắn cờ' : 'Gắn cờ câu này'}</span>
-                    </button>
+                    <div className="flex items-center space-x-2">
+                      {/* Nút Gia sư Socratic AI - Gợi mở 1-chạm (Đợt 3) */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSocratic(currentQ)}
+                        className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl font-extrabold text-xs bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white shadow-xs hover:shadow-md hover:brightness-105 active:scale-95 transition-all cursor-pointer"
+                        title="Nhận gợi ý tư duy theo từng nấc từ Gia sư Socratic AI"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                        <span>Gia sư AI</span>
+                        {socraticStateByQuestion[currentQ.id]?.activeHintLevel && (
+                          <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-white/20 font-black">
+                            {socraticStateByQuestion[currentQ.id].activeHintLevel === 'hint1' ? 'GỢI Ý 1' : socraticStateByQuestion[currentQ.id].activeHintLevel === 'hint2' ? 'GỢI Ý 2' : 'GỢI Ý 3'}
+                          </span>
+                        )}
+                      </button>
+
+                      {/* Flag / Bookmark button */}
+                      <button
+                        type="button"
+                        onClick={toggleFlagCurrentQuestion}
+                        className={`inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl font-bold text-xs border transition-all cursor-pointer ${
+                          isCurrentFlagged
+                            ? 'bg-amber-500 text-white border-amber-400 shadow-xs'
+                            : isFocusMode
+                            ? 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800'
+                            : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        <Bookmark className={`w-3.5 h-3.5 ${isCurrentFlagged ? 'fill-white' : ''}`} />
+                        <span>{isCurrentFlagged ? 'Đã gắn cờ' : 'Gắn cờ câu này'}</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Question Body Text */}
@@ -1532,6 +1680,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                         const isAns = !!answers[q.id] || !!studentSolutions[q.id] || (essayImagesByQuestion[q.id] && essayImagesByQuestion[q.id].length > 0);
                         const isFlag = flaggedQuestions.includes(q.id);
                         const isCur = idx === currentIndex;
+                        const hasUsedSocratic = Boolean(socraticStateByQuestion[q.id]?.hasUsedHint || socraticStateByQuestion[q.id]?.activeHintLevel);
 
                         let mClass = 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700';
                         if (isAns) mClass = 'bg-indigo-600 text-white font-black';
@@ -1545,9 +1694,12 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                               soundEffects.playNavigate();
                               setCurrentIndex(idx);
                             }}
-                            className={`min-w-8 h-8 rounded-lg text-xs font-bold shrink-0 flex items-center justify-center border transition-all cursor-pointer ${mClass}`}
+                            className={`min-w-8 h-8 rounded-lg text-xs font-bold shrink-0 flex items-center justify-center border transition-all cursor-pointer relative ${mClass}`}
                           >
-                            {idx + 1}
+                            <span>{idx + 1}</span>
+                            {hasUsedSocratic && (
+                              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-400 ring-1 ring-white" title="Đã dùng gợi ý AI" />
+                            )}
                           </button>
                         );
                       })}
@@ -1733,6 +1885,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                     }
 
                     const chosenOpt = answers[q.id];
+                    const hasUsedSocratic = Boolean(socraticStateByQuestion[q.id]?.hasUsedHint || socraticStateByQuestion[q.id]?.activeHintLevel);
 
                     return (
                       <button
@@ -1741,10 +1894,19 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                           soundEffects.playNavigate();
                           setCurrentIndex(idx);
                         }}
-                        title={`Câu ${idx + 1}: ${isAnswered ? 'Đã làm' : 'Chưa làm'}${isFlagged ? ' (Đã gắn cờ)' : ''}`}
+                        title={`Câu ${idx + 1}: ${isAnswered ? 'Đã làm' : 'Chưa làm'}${isFlagged ? ' (Đã gắn cờ)' : ''}${hasUsedSocratic ? ' • Đã dùng Gia sư AI' : ''}`}
                         className={`h-9 rounded-xl text-xs font-bold flex items-center justify-center transition-all cursor-pointer relative active:scale-95 ${btnClass}`}
                       >
                         <span>{idx + 1}</span>
+                        {/* Socratic hint used badge */}
+                        {hasUsedSocratic && (
+                          <span
+                            className="absolute -top-1 -left-1 w-3.5 h-3.5 rounded-full bg-amber-400 text-slate-900 flex items-center justify-center shadow-xs ring-1 ring-white dark:ring-slate-900"
+                            title="Đã nhận gợi ý từ Gia sư Socratic AI"
+                          >
+                            <Sparkles className="w-2 h-2 fill-current text-slate-950" />
+                          </span>
+                        )}
                         {/* Selected option badge */}
                         {isAnswered && chosenOpt && chosenOpt !== 'TỰ_LUẬN' && (
                           <span className="absolute -bottom-1 -right-1 text-[9px] font-mono px-1 py-0 bg-slate-900 text-white rounded-full font-black border border-white/40 leading-none">
@@ -1975,6 +2137,47 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
         onClose={() => setShowScratchpad(false)}
         title={`Bảng nháp • ${assignment.title}`}
       />
+
+      {/* GIA SƯ SOCRATIC AI MODAL - GỢI MỞ TƯ DUY 1-CHẠM (THEO TỪNG CÂU HỎI ĐỘC LẬP) */}
+      {socraticModalQuestion && (
+        <SocraticTutorModal
+          isOpen={Boolean(socraticModalQuestion)}
+          onClose={() => setSocraticModalQuestion(null)}
+          context={getSocraticContextForQuestion(socraticModalQuestion)}
+          savedMessages={socraticStateByQuestion[socraticModalQuestion.id]?.messages}
+          savedActiveHintLevel={socraticStateByQuestion[socraticModalQuestion.id]?.activeHintLevel}
+          savedScratchpadText={socraticStateByQuestion[socraticModalQuestion.id]?.scratchpadText}
+          onUpdateQuestionSocraticState={(update) => {
+            setSocraticStateByQuestion((prev) => ({
+              ...prev,
+              [socraticModalQuestion.id]: {
+                ...prev[socraticModalQuestion.id],
+                ...update,
+              }
+            }));
+          }}
+          onHintRequested={(level) => {
+            const qId = socraticModalQuestion.id;
+            setSocraticStateByQuestion((prev) => ({
+              ...prev,
+              [qId]: {
+                ...prev[qId],
+                hasUsedHint: true,
+                activeHintLevel: level,
+                initialAnswerWhenHintRequested: prev[qId]?.initialAnswerWhenHintRequested ?? (answers[qId] || studentSolutions[qId] || '')
+              }
+            }));
+            useLearningProgressStore.getState().recordSocraticHintUsed(qId, level);
+          }}
+          onChatUsed={() => {
+            const qId = socraticModalQuestion.id;
+            useLearningProgressStore.getState().recordSocraticChatUsed(qId);
+          }}
+          onApplyScratchpadToWork={(text) => {
+            handleSolutionTextChange(socraticModalQuestion.id, text);
+          }}
+        />
+      )}
 
       {/* THANH CÔNG CỤ NHANH GÓC MÀN HÌNH (FLOATING ACTION DOCK) */}
       <div className="fixed bottom-4 right-4 z-40 flex items-center space-x-2 select-none">

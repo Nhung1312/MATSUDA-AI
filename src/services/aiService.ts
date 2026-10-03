@@ -68,6 +68,27 @@ export interface MediaExtractResult {
   rawSummary?: string;
 }
 
+export interface TestConnectionResult {
+  success: boolean;
+  message: string;
+  modelUsed?: string;
+  errorType?: 'quota' | 'unsupported' | 'invalid_key' | 'general';
+}
+
+export interface QuestionVerificationResult {
+  questionId: string;
+  order: number;
+  currentAnswer: string;
+  proposedAnswer: string;
+  matchesCurrentAnswer: boolean;
+  confidence: 'high' | 'medium' | 'needs_review';
+  reason: string;
+  needsReview: boolean;
+  pass1Answer?: string;
+  pass2Answer?: string;
+  sanityCheckNote?: string;
+}
+
 export interface IAIService {
   getApiKey(): string | null;
   setApiKey(key: string): void;
@@ -75,7 +96,20 @@ export interface IAIService {
   hasApiKey(): boolean;
   getModel(): string;
   setModel(model: string): void;
-  testConnection(key?: string): Promise<{ success: boolean; message: string; modelUsed?: string }>;
+  testConnection(key?: string, specificModel?: string): Promise<TestConnectionResult>;
+
+  /**
+   * AI Thẩm định kho đề tiết kiệm quota bằng Gemini 3.8 Flash
+   * Lượt 1: Thẩm định 1 lần, nếu khớp & tin cậy cao => Pass (không gọi lượt 2)
+   * Lượt 2: Chỉ gọi độc lập khi có nghi ngờ
+   * Tuyệt đối không tự sửa correctAnswer gốc
+   */
+  verifyExamQuestions(params: {
+    questions: Question[];
+    grade?: string;
+    topic?: string;
+    onProgress?: (current: number, total: number) => void;
+  }): Promise<QuestionVerificationResult[]>;
 
   /**
    * Chấm bài tự luận (kết hợp nhận diện ảnh chụp chữ viết tay / hình vẽ + văn bản)
@@ -183,7 +217,7 @@ const STORAGE_KEYS = {
 };
 
 export class HybridAIService implements IAIService {
-  private defaultModel = 'gemini-3.1-flash-lite';
+  private defaultModel = 'gemini-3.8-flash';
 
   getApiKey(): string | null {
     try {
@@ -228,10 +262,10 @@ export class HybridAIService implements IAIService {
       const stored = localStorage.getItem(STORAGE_KEYS.GEMINI_MODEL);
       if (stored && stored.trim()) {
         const val = stored.trim();
-        // Tự động nâng cấp các model đã bị Google deprecated (2.5, 1.5, 2.0) lên gemini-3.1-flash-lite
+        // Tự động nâng cấp các model đã bị Google deprecated (2.5, 1.5, 2.0) lên gemini-3.8-flash
         if (val.includes('2.5') || val.includes('1.5') || val.includes('2.0') || val === 'gemini-pro') {
-          this.setModel('gemini-3.1-flash-lite');
-          return 'gemini-3.1-flash-lite';
+          this.setModel('gemini-3.8-flash');
+          return 'gemini-3.8-flash';
         }
         return val;
       }
@@ -330,42 +364,104 @@ export class HybridAIService implements IAIService {
   }
 
   /**
-   * Kiểm tra kết nối API Key với Gemini
+   * Kiểm tra kết nối API Key và Model cụ thể với Gemini API
+   * - Chỉ gửi một request cực ngắn (ping) để kiểm tra, không gửi bài toán
+   * - Tuyệt đối KHÔNG tự động chuyển sang Flash Lite khi model được chọn bị lỗi/hết quota
    */
-  async testConnection(key?: string): Promise<{ success: boolean; message: string; modelUsed?: string }> {
+  async testConnection(key?: string, specificModel?: string): Promise<TestConnectionResult> {
     const activeKey = key?.trim() || this.getApiKey();
     if (!activeKey) {
       return {
         success: false,
-        message: 'Chưa có Gemini API Key. Bạn có thể dán API Key vào ô bên dưới và lưu lại.'
+        message: 'Chưa có Gemini API Key. Bạn có thể dán API Key vào ô bên dưới và lưu lại.',
+        errorType: 'invalid_key'
       };
     }
 
-    const model = this.getModel();
+    const modelToTest = (specificModel?.trim() || this.getModel()).trim();
+
+    // Map tên hiển thị chuẩn
+    const MODEL_DISPLAY_NAMES: Record<string, string> = {
+      'gemini-3.8-flash': 'Gemini 3.8 Flash',
+      'gemini-3.1-pro-preview': 'Gemini 3.1 Pro',
+      'gemini-3.1-flash-lite': 'Gemini 3.1 Flash Lite',
+      'gemini-flash-latest': 'Gemini Flash Latest'
+    };
+    const displayName = MODEL_DISPLAY_NAMES[modelToTest] || modelToTest;
+
     try {
       const ai = new GoogleGenAI({ apiKey: activeKey });
-      const { response, modelUsed } = await this.generateWithFailover(
-        ai,
-        model,
-        [
-          {
-            text: 'Bạn là chuyên gia giáo dục Toán học Việt Nam. Hãy phản hồi ngắn gọn đúng một câu: "Kết nối Gemini API thành công! Sẵn sàng hỗ trợ giáo viên và học sinh Toán THCS."'
-          }
-        ]
-      );
+      // GỌI TRỰC TIẾP generateContent VỚI REQUEST CỰC NGẮN (ping), TUYỆT ĐỐI KHÔNG FAILOVER SANG MODEL KHÁC
+      await ai.models.generateContent({
+        model: modelToTest,
+        contents: [{ text: 'ping' }]
+      });
 
-      const responseText = response.text || '';
       return {
         success: true,
-        message: responseText.trim() || 'Kết nối Gemini API thành công!',
-        modelUsed: modelUsed
+        message: `✓ ${displayName} hoạt động`,
+        modelUsed: modelToTest
       };
     } catch (error: any) {
-      console.error('Gemini API Connection Test Error:', error);
-      const errMsg = error?.message || String(error);
+      console.warn(`[AI Connection Test] Lỗi kiểm tra model ${modelToTest}:`, error);
+      const status = error?.status || error?.code || 0;
+      const errStr = String(error?.message || error);
+
+      // 1. Quota / Rate limit (429, RESOURCE_EXHAUSTED)
+      const isQuota = status === 429 ||
+        errStr.includes('429') ||
+        errStr.includes('RESOURCE_EXHAUSTED') ||
+        errStr.includes('Quota exceeded') ||
+        errStr.includes('exceeded your current quota') ||
+        errStr.includes('limit: 0') ||
+        errStr.includes('rate limit');
+
+      if (isQuota) {
+        return {
+          success: false,
+          message: 'Model hiện đã vượt hạn mức API.',
+          modelUsed: modelToTest,
+          errorType: 'quota'
+        };
+      }
+
+      // 2. API Key không hợp lệ (400, API_KEY_INVALID)
+      const isKeyInvalid = (status === 400 && errStr.includes('API_KEY_INVALID')) ||
+        errStr.includes('API key not valid') ||
+        errStr.includes('API_KEY_INVALID');
+
+      if (isKeyInvalid) {
+        return {
+          success: false,
+          message: 'API Key không hợp lệ. Vui lòng kiểm tra lại mã khóa từ Google AI Studio.',
+          modelUsed: modelToTest,
+          errorType: 'invalid_key'
+        };
+      }
+
+      // 3. Model không được hỗ trợ bởi API key này (404, 403, NOT_FOUND, PERMISSION_DENIED)
+      const isUnsupported = status === 404 || status === 403 ||
+        errStr.includes('NOT_FOUND') ||
+        errStr.includes('not found') ||
+        errStr.includes('no longer available') ||
+        errStr.includes('PERMISSION_DENIED') ||
+        errStr.includes('is not supported');
+
+      if (isUnsupported) {
+        return {
+          success: false,
+          message: `Model "${displayName}" (${modelToTest}) không được hỗ trợ bởi API Key này hoặc không có quyền truy cập.`,
+          modelUsed: modelToTest,
+          errorType: 'unsupported'
+        };
+      }
+
+      // 4. Lỗi khác
       return {
         success: false,
-        message: `Lỗi kết nối Gemini: ${errMsg.includes('API key') ? 'API Key không hợp lệ hoặc đã hết hạn.' : errMsg}`
+        message: `Lỗi kiểm tra model ${displayName}: ${error?.message || errStr}`,
+        modelUsed: modelToTest,
+        errorType: 'general'
       };
     }
   }
@@ -1097,6 +1193,260 @@ Trả về JSON duy nhất:
       }
     }
     return 'A';
+  }
+
+  /**
+   * AI THẨM ĐỊNH KHO ĐỀ TIẾT KIỆM QUOTA BẰNG GEMINI 3.8 FLASH
+   * 
+   * Nguyên tắc:
+   * 1. Tuyệt đối KHÔNG tự ý sửa dữ liệu gốc (correctAnswer, question, options, explanation, LaTeX).
+   * 2. LƯỢT 1: Mỗi câu chỉ gọi Gemini 3.8 Flash MỘT LẦN với prompt ngắn gọn.
+   *    Nếu proposedAnswer khớp correctAnswer & confidence cao & không mâu thuẫn explanation
+   *    => PASS LƯỢT 1, KHÔNG GỌI LƯỢT 2! (Tiết kiệm >50% token & quota).
+   * 3. LƯỢT 2: Chỉ kích hoạt độc lập khi phát hiện nghi vấn:
+   *    - AI đề xuất đáp án khác correctAnswer
+   *    - confidence thấp hoặc needsReview = true
+   *    - explanation mâu thuẫn correctAnswer
+   *    - câu hỏi/đáp án có vấn đề
+   * 4. Lưu lại pass1Answer, pass2Answer, confidence, sanityCheckNote.
+   * 5. Gặp lỗi 429 (RESOURCE_EXHAUSTED / quota): DỪNG NGAY LẬP TỨC!
+   *    Tuyệt đối KHÔNG retry liên tục khi 429, KHÔNG fallback sang Flash Lite!
+   */
+  async verifyExamQuestions(params: {
+    questions: Question[];
+    grade?: string;
+    topic?: string;
+    onProgress?: (current: number, total: number) => void;
+  }): Promise<QuestionVerificationResult[]> {
+    const { questions, grade = '7', topic = 'Toán THCS', onProgress } = params;
+    if (!questions || questions.length === 0) return [];
+
+    const apiKey = this.getApiKey();
+    if (!apiKey) {
+      throw new Error('Chưa cấu hình Gemini API Key. Thầy/Cô vui lòng nhập API Key để kích hoạt Trợ lý AI Thẩm định đề.');
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+    // BẮT BUỘC DÙNG GEMINI 3.8 FLASH, TUYỆT ĐỐI KHÔNG FALLBACK SANG LITE
+    const model = 'gemini-3.8-flash';
+
+    const results: QuestionVerificationResult[] = [];
+    const BATCH_SIZE = 4;
+    let completedCount = 0;
+
+    for (let i = 0; i < questions.length; i += BATCH_SIZE) {
+      const batch = questions.slice(i, i + BATCH_SIZE);
+
+      // ==========================================
+      // LƯỢT 1: KIỂM TRA MỘT LẦN VỚI PROMPT GỌN
+      // ==========================================
+      const promptL1 = `
+Bạn là Chuyên gia Thẩm định Đề thi môn Toán THCS Việt Nam (Chương trình GDPT mới, SGK Kết nối tri thức).
+Nhiệm vụ: Thẩm định tính chính xác của đáp án hiện có cho từng câu hỏi sau đây.
+
+THÔNG TIN ĐỀ THI:
+- Khối lớp: Toán ${grade} | Chủ đề: ${topic}
+
+DANH SÁCH CÂU HỎI CẦN THẨM ĐỊNH TRONG ĐỢT NÀY:
+${batch.map((q, idx) => `
+[Mã: ${q.id}] (Câu ${q.order || i + idx + 1})
+Đề bài: ${q.question}
+${(q.options && q.options.length > 0) ? q.options.map(o => `${o.id}. ${o.text}`).join(' | ') : '(Tự luận)'}
+[Đáp án hiện tại]: ${q.correctAnswer || 'Chưa có'}
+${q.explanation ? `[Lời giải hiện tại]: ${q.explanation.substring(0, 300)}` : ''}
+`).join('\n')}
+
+QUY TẮC THẨM ĐỊNH LƯỢT 1 (TIẾT KIỆM TỐI ĐA TOKEN):
+1. Giải nhanh câu hỏi để tìm đáp án đúng (A, B, C, D hoặc kết quả số/biểu thức ngắn).
+2. So sánh với [Đáp án hiện tại] và [Lời giải hiện tại].
+3. Nếu đáp án bạn giải ra TRÙNG KHỚP với [Đáp án hiện tại], không có lỗi đề hay mâu thuẫn:
+   => proposedAnswer = đáp án đúng, matchesCurrentAnswer = true, confidence = "high", needsReview = false, reason = "Ngắn gọn 1 câu xác nhận".
+4. Nếu có BẤT KỲ nghi ngờ nào:
+   - Đáp án khác [Đáp án hiện tại],
+   - Đề sai, thiếu dữ kiện, nhiều đáp án đúng, hoặc không có đáp án đúng,
+   - Lời giải hiện tại mâu thuẫn với đáp án hiện tại,
+   - Hoặc kết quả chưa chắc chắn
+   => proposedAnswer = đáp án AI tìm ra, matchesCurrentAnswer = false, confidence = "needs_review", needsReview = true, reason = "Nêu rõ lý do nghi ngờ ngắn gọn".
+
+Trả về DUY NHẤT một JSON Array theo định dạng:
+[
+  {
+    "questionId": "Mã_câu_hỏi",
+    "proposedAnswer": "A",
+    "matchesCurrentAnswer": true,
+    "confidence": "high",
+    "reason": "Lý do ngắn gọn",
+    "needsReview": false
+  }
+]
+`;
+
+      let pass1List: any[] = [];
+      try {
+        const res = await ai.models.generateContent({
+          model,
+          contents: [{ text: promptL1 }],
+          config: { responseMimeType: 'application/json' }
+        });
+        const rawText = res.text || '';
+        const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          pass1List = JSON.parse(jsonMatch[0]);
+        }
+      } catch (err: any) {
+        const status = err?.status || err?.code || 0;
+        const errStr = String(err?.message || err);
+        // 429 Quota Exceeded -> Ném lỗi ngay để dừng batch, tuyệt đối không retry hay đổi model
+        if (status === 429 || errStr.includes('429') || errStr.includes('RESOURCE_EXHAUSTED') || errStr.includes('quota')) {
+          const quotaErr: any = new Error('Model hiện đã vượt hạn mức API (429 RESOURCE_EXHAUSTED).');
+          quotaErr.isQuota = true;
+          quotaErr.status = 429;
+          throw quotaErr;
+        }
+        // Thử lại 1 lần nếu 503 tạm thời
+        if (status === 503 || errStr.includes('503') || errStr.includes('UNAVAILABLE')) {
+          await new Promise(r => setTimeout(r, 2000));
+          const res = await ai.models.generateContent({
+            model,
+            contents: [{ text: promptL1 }],
+            config: { responseMimeType: 'application/json' }
+          });
+          const rawText = res.text || '';
+          const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+          if (jsonMatch) {
+            pass1List = JSON.parse(jsonMatch[0]);
+          }
+        } else {
+          throw err;
+        }
+      }
+
+      // Duyệt từng câu trong batch
+      for (let bIdx = 0; bIdx < batch.length; bIdx++) {
+        const q = batch[bIdx];
+        const p1Item = pass1List.find((item: any) => item.questionId === q.id)
+          || (pass1List[bIdx] && (pass1List[bIdx].questionId === q.id || !pass1List[bIdx].questionId) ? pass1List[bIdx] : undefined);
+
+        const currentNorm = String(q.correctAnswer || '').trim().toUpperCase();
+        const proposed1 = p1Item ? String(p1Item.proposedAnswer || '').trim().toUpperCase() : currentNorm;
+        
+        // Điều kiện PASS LƯỢT 1:
+        // Proposed khớp correctAnswer, confidence === 'high', needsReview === false, không mâu thuẫn
+        const isPass1 = p1Item &&
+          p1Item.matchesCurrentAnswer === true &&
+          p1Item.confidence === 'high' &&
+          p1Item.needsReview !== true &&
+          proposed1 === currentNorm;
+
+        if (isPass1) {
+          // PASS LƯỢT 1: TUYỆT ĐỐI KHÔNG GỌI LƯỢT 2 (Tiết kiệm quota)
+          results.push({
+            questionId: q.id,
+            order: q.order || i + bIdx + 1,
+            currentAnswer: q.correctAnswer,
+            proposedAnswer: proposed1,
+            matchesCurrentAnswer: true,
+            confidence: 'high',
+            reason: p1Item.reason || 'Trùng khớp đáp án hiện tại 100%.',
+            needsReview: false,
+            pass1Answer: proposed1,
+            pass2Answer: undefined,
+            sanityCheckNote: p1Item.reason || 'Khớp đáp án hiện tại 100%.'
+          });
+        } else {
+          // ==========================================
+          // CÂU NGHI NGỜ: KÍCH HOẠT LƯỢT 2 ĐỘC LẬP
+          // ==========================================
+          let p2Answer = '';
+          let p2Confidence: 'high' | 'medium' | 'needs_review' = 'needs_review';
+          let p2Reason = '';
+
+          try {
+            const promptL2 = `
+Bạn là Chuyên gia Độc lập Thẩm định Đề thi Toán THCS Việt Nam.
+Nhiệm vụ: Giải độc lập câu hỏi sau (tính toán từng bước hoặc thử ngược từng phương án vào đề bài) để xác định phương án đúng tuyệt đối ('A', 'B', 'C' hoặc 'D').
+
+Câu hỏi [Mã: ${q.id}]:
+Đề bài: ${q.question}
+${(q.options && q.options.length > 0) ? q.options.map(o => `${o.id}. ${o.text}`).join('\n') : '(Tự luận)'}
+
+LƯU Ý ĐẶC BIỆT:
+- Hãy giải độc lập hoàn toàn, tính toán cẩn thận.
+- Kiểm tra xem đề bài có sai sót, thiếu điều kiện, hoặc có nhiều đáp án đúng / không có đáp án đúng hay không.
+
+Trả về DUY NHẤT một JSON theo định dạng:
+{
+  "questionId": "${q.id}",
+  "pass2Answer": "A",
+  "confidence": "high",
+  "reason": "Giải thích ngắn gọn kết quả giải độc lập và thử ngược"
+}
+`;
+            const res2 = await ai.models.generateContent({
+              model,
+              contents: [{ text: promptL2 }],
+              config: { responseMimeType: 'application/json' }
+            });
+            const rawText2 = res2.text || '';
+            const match2 = rawText2.match(/\{[\s\S]*\}/);
+            if (match2) {
+              const parsed2 = JSON.parse(match2[0]);
+              p2Answer = String(parsed2.pass2Answer || '').trim().toUpperCase();
+              p2Confidence = parsed2.confidence === 'high' ? 'high' : 'needs_review';
+              p2Reason = parsed2.reason || '';
+            }
+          } catch (l2Err: any) {
+            const status = l2Err?.status || l2Err?.code || 0;
+            const errStr = String(l2Err?.message || l2Err);
+            if (status === 429 || errStr.includes('429') || errStr.includes('RESOURCE_EXHAUSTED') || errStr.includes('quota')) {
+              const quotaErr: any = new Error('Model hiện đã vượt hạn mức API (429 RESOURCE_EXHAUSTED).');
+              quotaErr.isQuota = true;
+              quotaErr.status = 429;
+              throw quotaErr;
+            }
+            p2Reason = 'Lượt 2 gặp sự cố kết nối';
+          }
+
+          // Tổng hợp kết quả Lượt 1 & Lượt 2
+          const p2Norm = p2Answer;
+          const isStillSuspicious = (proposed1 && proposed1 !== currentNorm) ||
+                                    (p2Norm && p2Norm !== currentNorm) ||
+                                    (p1Item?.needsReview === true) ||
+                                    (p1Item?.confidence === 'needs_review') ||
+                                    (p2Confidence === 'needs_review');
+
+          const finalConfidence = isStillSuspicious ? 'needs_review' : 'high';
+          const finalNote = [
+            p1Item?.reason ? `Lượt 1: ${p1Item.reason}` : '',
+            p2Reason ? `Lượt 2: ${p2Reason}` : ''
+          ].filter(Boolean).join(' | ');
+
+          results.push({
+            questionId: q.id,
+            order: q.order || i + bIdx + 1,
+            currentAnswer: q.correctAnswer,
+            proposedAnswer: proposed1 || p2Norm || currentNorm,
+            matchesCurrentAnswer: !isStillSuspicious,
+            confidence: finalConfidence,
+            reason: finalNote || 'Phát hiện nghi vấn giữa các lượt giải.',
+            needsReview: isStillSuspicious,
+            pass1Answer: proposed1 || undefined,
+            pass2Answer: p2Norm || undefined,
+            sanityCheckNote: finalNote
+          });
+        }
+
+        completedCount++;
+        if (onProgress) {
+          onProgress(completedCount, questions.length);
+        }
+      }
+
+      // Nghỉ nhẹ 1.5s giữa các batch nhỏ để giữ RPM ổn định
+      await new Promise(r => setTimeout(r, 1500));
+    }
+
+    return results;
   }
 
   /**

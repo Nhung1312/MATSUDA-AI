@@ -79,17 +79,21 @@ export const StudentJoinPage: React.FC<StudentJoinPageProps> = ({ initialCode = 
       setSelectedClassId('other');
     }
     
-    // Load both local and firestore assignments for catalog
-    const localAssignments = StorageService.getAssignments();
+    // Load both local and firestore assignments for catalog (chỉ lấy đề đã thẩm định hoặc chuẩn)
+    const localAssignments = StorageService.getAssignments().filter(a => a.verificationStatus !== 'unverified');
     setRecentAssignments(localAssignments);
 
     FirestoreService.getExams().then((cloudExams) => {
       if (cloudExams && cloudExams.length > 0) {
-        // Merge cloud exams with local exams without duplicates
+        // Merge cloud exams with local exams without duplicates (loại trừ unverified)
         setRecentAssignments((prev) => {
           const map = new Map<string, Assignment>();
-          prev.forEach(a => map.set(a.assignmentCode.toUpperCase(), a));
-          cloudExams.forEach(a => map.set(a.assignmentCode.toUpperCase(), a));
+          prev.forEach(a => {
+            if (a.verificationStatus !== 'unverified') map.set(a.assignmentCode.toUpperCase(), a);
+          });
+          cloudExams.forEach(a => {
+            if (a.verificationStatus !== 'unverified') map.set(a.assignmentCode.toUpperCase(), a);
+          });
           return Array.from(map.values());
         });
       }

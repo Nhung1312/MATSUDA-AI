@@ -35,6 +35,11 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import { ExamResultSheetView } from '../../components/ExamResultSheetView';
+import { SocraticTutorModal } from '../../components/SocraticTutorModal';
+import { StepGradingBreakdown } from '../../components/StepGradingBreakdown';
+import { stepGradingService } from '../../services/stepGradingService';
+import { SocraticContext, StudentAnswer, StepGradingResponse, StepErrorType } from '../../types';
+import { useLearningProgressStore } from '../../store/useLearningProgressStore';
 
 interface StudentResultPageProps {
   submission: Submission;
@@ -64,6 +69,85 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
   // MỚI: Trạng thái hiển thị Sổ tay câu sai (Mistake Vault)
   const [showMistakeVault, setShowMistakeVault] = useState<boolean>(false);
+
+  // MỚI: Trạng thái Gia sư Socratic AI trong trang kết quả (Đợt 3)
+  const [socraticResultContext, setSocraticResultContext] = useState<SocraticContext | null>(null);
+
+  // MỚI: Trạng thái Chấm & Phân tích từng bước (Đợt 4)
+  const [stepGradingResults, setStepGradingResults] = useState<Record<string, StepGradingResponse>>({});
+  const [loadingStepGrading, setLoadingStepGrading] = useState<Record<string, boolean>>({});
+
+  const handleAnalyzeStepByStep = async (question: Question, studentSolutionText?: string, images?: string[]) => {
+    setLoadingStepGrading(prev => ({ ...prev, [question.id]: true }));
+    try {
+      const res = await stepGradingService.analyzeStepByStep({
+        questionId: question.id,
+        questionText: question.question,
+        grade: String(assignment.grade),
+        topic: assignment.topic,
+        maxPoints: question.points,
+        correctAnswer: question.correctAnswer,
+        rubric: question.rubric,
+        studentSolutionText: studentSolutionText || '',
+        essayImages: images || []
+      });
+      setStepGradingResults(prev => ({ ...prev, [question.id]: res }));
+      useLearningProgressStore.getState().recordStepAnalysisCompleted(
+        question.id,
+        res.firstErrorStep,
+        res.firstErrorType || undefined
+      );
+    } catch (err) {
+      console.error(err);
+      alert('Không thể thực hiện phân tích từng bước lúc này. Vui lòng thử lại sau.');
+    } finally {
+      setLoadingStepGrading(prev => ({ ...prev, [question.id]: false }));
+    }
+  };
+
+  const handleOpenSocraticFromError = (errorCtx: {
+    questionId: string;
+    questionText: string;
+    firstErrorStep: number;
+    errorType: StepErrorType;
+    studentLatex: string;
+    referenceStepLatex?: string;
+    comment: string;
+    studentWork?: string;
+  }) => {
+    setSocraticResultContext({
+      questionId: errorCtx.questionId,
+      questionText: errorCtx.questionText,
+      questionType: 'essay',
+      grade: String(assignment.grade),
+      topic: assignment.topic,
+      studentCurrentAnswer: errorCtx.studentLatex,
+      studentWork: errorCtx.studentWork,
+      firstErrorStep: errorCtx.firstErrorStep,
+      firstErrorLatex: errorCtx.studentLatex,
+      errorType: errorCtx.errorType,
+      referenceStepLatex: errorCtx.referenceStepLatex,
+      detectedError: `Lỗi gốc tại Bước ${errorCtx.firstErrorStep}: ${errorCtx.comment}`,
+    });
+  };
+
+  const handleOpenSocraticForResultQuestion = (question: Question, ans: StudentAnswer) => {
+    const errorDesc = !ans.isCorrect
+      ? `Học sinh đã chọn/điền: "${ans.selectedAnswer || 'chưa làm'}", trong khi đáp án đúng là "${question.correctAnswer}".`
+      : undefined;
+
+    setSocraticResultContext({
+      questionId: question.id,
+      questionText: question.question,
+      questionType: question.type,
+      grade: String(assignment.grade),
+      topic: assignment.topic,
+      answerOptions: question.options ? question.options.map(o => ({ id: o.id, text: o.text })) : undefined,
+      studentCurrentAnswer: ans.selectedAnswer || '',
+      studentWork: ans.studentSolutionText || '',
+      detectedError: errorDesc,
+    });
+  };
 
   // Tự động đồng bộ câu sai vào Mistake Vault khi vào trang kết quả
   useEffect(() => {
@@ -689,7 +773,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                     )}
 
                     {/* 4. AI Essay Grading Feedback Card */}
-                    {currentAiGrading && (
+                    {currentAiGrading && !stepGradingResults[question.id] && (
                       <div className="mb-4 p-4 rounded-2xl bg-indigo-50 border border-indigo-200 text-xs text-indigo-950 space-y-2">
                         <div className="flex items-center justify-between font-extrabold text-indigo-900 border-b border-indigo-200/60 pb-2">
                           <span className="flex items-center gap-1.5">
@@ -706,17 +790,40 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                       </div>
                     )}
 
-                    {/* Button on-demand AI Grading if essay question has solution but not graded */}
-                    {question.type === 'essay' && !currentAiGrading && (
+                    {/* Step-by-Step AI Grading & Diagnosis (Đợt 4) */}
+                    {question.type === 'essay' && (ans.studentSolutionText || images.length > 0) && (
                       <div className="mb-4">
-                        <button
-                          onClick={() => handleGradeWithAI(question, ans.studentSolutionText, images)}
-                          disabled={isLoadingGrading}
-                          className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer disabled:opacity-50"
-                        >
-                          <Sparkles className={`w-3.5 h-3.5 ${isLoadingGrading ? 'animate-spin' : ''}`} />
-                          <span>{isLoadingGrading ? 'AI đang chấm bài...' : 'Nhờ AI chấm bài tự luận này'}</span>
-                        </button>
+                        {!stepGradingResults[question.id] ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleAnalyzeStepByStep(question, ans.studentSolutionText, images)}
+                              disabled={loadingStepGrading[question.id]}
+                              className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:to-indigo-800 text-white rounded-xl text-xs font-black shadow-md hover:shadow-lg cursor-pointer disabled:opacity-50 transition-all active:scale-95"
+                            >
+                              <Sparkles className={`w-4 h-4 text-amber-300 ${loadingStepGrading[question.id] ? 'animate-spin' : 'animate-pulse'}`} />
+                              <span>{loadingStepGrading[question.id] ? 'AI đang phân tích chi tiết từng dòng...' : '🔍 Chẩn đoán từng bước & Phát hiện lỗi gốc (AI)'}</span>
+                            </button>
+                            {!currentAiGrading && (
+                              <button
+                                onClick={() => handleGradeWithAI(question, ans.studentSolutionText, images)}
+                                disabled={isLoadingGrading}
+                                className="inline-flex items-center space-x-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold border border-slate-300 cursor-pointer disabled:opacity-50"
+                              >
+                                <span>{isLoadingGrading ? 'Đang chấm...' : 'Chấm điểm nhanh'}</span>
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <StepGradingBreakdown
+                            questionId={String(question.order)}
+                            questionText={question.question}
+                            grade={String(assignment.grade)}
+                            topic={assignment.topic}
+                            result={stepGradingResults[question.id]}
+                            onOpenSocraticFromError={handleOpenSocraticFromError}
+                          />
+                        )}
                       </div>
                     )}
 
@@ -737,7 +844,17 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
                         {/* AI Tutor Pedagogical Guidance */}
                         {!isCorrect && (
-                          <div className="pt-2">
+                          <div className="pt-2 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenSocraticForResultQuestion(question, ans)}
+                              className="inline-flex items-center space-x-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-700 hover:to-purple-700 text-white font-extrabold text-xs shadow-xs hover:shadow-md transition-all cursor-pointer active:scale-95"
+                              title="Mở Gia sư Socratic AI để hiểu sâu và tự khắc phục lỗi sai"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                              <span>🤖 Hiểu lỗi sai cùng Gia sư Socratic AI</span>
+                            </button>
+
                             {!hasAiExp ? (
                               <button
                                 onClick={() => handleRequestAiExplanation(question, ans.selectedAnswer)}
@@ -745,10 +862,10 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                                 className="inline-flex items-center space-x-2 px-4 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs transition-colors border border-purple-200 cursor-pointer disabled:opacity-50"
                               >
                                 <Sparkles className={`w-3.5 h-3.5 ${isLoadingAi ? 'animate-spin' : ''}`} />
-                                <span>{isLoadingAi ? 'AI đang phân tích bẫy sai...' : '✨ Hỏi Gia Sư AI: Tại sao em làm sai câu này?'}</span>
+                                <span>{isLoadingAi ? 'AI đang phân tích bẫy sai...' : '✨ Phân tích bẫy sai nhanh'}</span>
                               </button>
                             ) : (
-                              <div className="p-4 rounded-2xl bg-purple-50/90 border border-purple-200 text-xs sm:text-sm text-purple-950 space-y-2 animate-in fade-in">
+                              <div className="w-full mt-2 p-4 rounded-2xl bg-purple-50/90 border border-purple-200 text-xs sm:text-sm text-purple-950 space-y-2 animate-in fade-in">
                                 <div className="flex items-center space-x-2 text-purple-900 font-extrabold">
                                   <GraduationCap className="w-4 h-4 text-purple-600" />
                                   <span>Lời khuyên từ Trợ lý AI:</span>
@@ -789,6 +906,15 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         isOpen={showMistakeVault}
         onClose={() => setShowMistakeVault(false)}
       />
+
+      {/* GIA SƯ SOCRATIC AI - HIỂU LỖI SAI CÙNG AI */}
+      {socraticResultContext && (
+        <SocraticTutorModal
+          isOpen={Boolean(socraticResultContext)}
+          onClose={() => setSocraticResultContext(null)}
+          context={socraticResultContext}
+        />
+      )}
     </div>
   );
 };

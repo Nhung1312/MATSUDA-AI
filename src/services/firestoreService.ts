@@ -58,7 +58,8 @@ export function normalizeAssignmentDoc(data: any, id: string): Assignment {
     isPublished: safeData.isPublished !== false,
     type: safeData.type || (safeData.pdfUrl ? 'pdf' : 'text'),
     pdfUrl: safeData.pdfUrl || undefined,
-    templateId: safeData.templateId || undefined
+    templateId: safeData.templateId || undefined,
+    verificationStatus: safeData.verificationStatus || undefined
   };
 }
 
