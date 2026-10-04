@@ -40,6 +40,8 @@ import { StepGradingBreakdown } from '../../components/StepGradingBreakdown';
 import { stepGradingService } from '../../services/stepGradingService';
 import { SocraticContext, StudentAnswer, StepGradingResponse, StepErrorType } from '../../types';
 import { useLearningProgressStore } from '../../store/useLearningProgressStore';
+import { StorageService } from '../../services/storageService';
+import { FirestoreService } from '../../services/firestoreService';
 
 interface StudentResultPageProps {
   submission: Submission;
@@ -49,11 +51,12 @@ interface StudentResultPageProps {
 }
 
 export const StudentResultPage: React.FC<StudentResultPageProps> = ({
-  submission,
+  submission: initialSubmission,
   assignment,
   onRetake,
   onGoHome
 }) => {
+  const [submission, setSubmission] = useState<Submission>(initialSubmission);
   const [resultViewMode, setResultViewMode] = useState<'sheet' | 'detailed'>('sheet');
   const [filterType, setFilterType] = useState<'all' | 'wrong' | 'correct'>('all');
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
@@ -77,6 +80,38 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   const [stepGradingResults, setStepGradingResults] = useState<Record<string, StepGradingResponse>>({});
   const [loadingStepGrading, setLoadingStepGrading] = useState<Record<string, boolean>>({});
 
+  // Tự động tải StepAnalysis đã lưu từ trước trong bài nộp (không gọi lại Gemini nếu đã có)
+  useEffect(() => {
+    if (submission && Array.isArray(submission.answers)) {
+      const initialMap: Record<string, StepGradingResponse> = {};
+      submission.answers.forEach(ans => {
+        if (ans.stepGradingResponse) {
+          initialMap[ans.questionId] = ans.stepGradingResponse;
+        } else if (ans.stepAnalysis && ans.stepAnalysis.length > 0) {
+          const q = assignment?.questions.find(item => item.id === ans.questionId);
+          initialMap[ans.questionId] = {
+            success: true,
+            analysis: ans.stepAnalysis,
+            firstErrorStep: ans.firstErrorStep ?? null,
+            firstErrorType: (ans.firstErrorType as any) ?? null,
+            firstErrorExplanation: ans.firstErrorExplanation ?? null,
+            totalSteps: ans.stepAnalysis.length,
+            correctStepsCount: ans.stepAnalysis.filter(s => s.status === 'correct').length,
+            isAllCorrect: !ans.firstErrorStep && ans.stepAnalysis.every(s => s.status === 'correct'),
+            score: ans.pointsEarned,
+            maxScore: q?.points || ans.maxPoints || 10,
+            feedback: ans.aiFeedback || 'Đã hoàn tất phân tích chi tiết từng bước.',
+            analysisSource: 'ai',
+            needsTeacherReview: ans.needsTeacherReview
+          };
+        }
+      });
+      if (Object.keys(initialMap).length > 0) {
+        setStepGradingResults(prev => ({ ...initialMap, ...prev }));
+      }
+    }
+  }, [submission.id]);
+
   const handleAnalyzeStepByStep = async (question: Question, studentSolutionText?: string, images?: string[]) => {
     setLoadingStepGrading(prev => ({ ...prev, [question.id]: true }));
     try {
@@ -91,12 +126,67 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         studentSolutionText: studentSolutionText || '',
         essayImages: images || []
       });
+
+      // 1. Cập nhật state hiển thị UI
       setStepGradingResults(prev => ({ ...prev, [question.id]: res }));
       useLearningProgressStore.getState().recordStepAnalysisCompleted(
         question.id,
         res.firstErrorStep,
         res.firstErrorType || undefined
       );
+
+      // 2. LƯU BỀN VỮNG VÀO SUBMISSION (Tái sử dụng vĩnh viễn, không mất khi reload)
+      const updatedAnswers: StudentAnswer[] = submission.answers.map(a => {
+        if (a.questionId === question.id) {
+          const hasError = !!res.firstErrorStep || (res.analysis || []).some(s => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
+          const isCorrect = !hasError && (res.isAllCorrect === true || ((res.analysis || []).length > 0 && (res.analysis || []).every(s => s.status === 'correct') && res.score >= question.points));
+          return {
+            ...a,
+            stepAnalysis: res.analysis,
+            firstErrorStep: res.firstErrorStep,
+            firstErrorType: res.firstErrorType,
+            firstErrorExplanation: res.firstErrorExplanation,
+            needsTeacherReview: res.needsTeacherReview,
+            stepGradingResponse: res,
+            pointsEarned: a.teacherScore !== undefined ? a.teacherScore : res.score,
+            aiScore: res.score,
+            aiFeedback: res.feedback,
+            aiGraded: true,
+            isCorrect
+          };
+        }
+        return a;
+      });
+
+      // Tính toán lại tổng điểm bài làm nếu chưa có điểm chấm tay của giáo viên
+      let totalEarned = 0;
+      let totalMax = 0;
+      let correctCnt = 0;
+      let wrongCnt = 0;
+      updatedAnswers.forEach(a => {
+        const q = assignment.questions.find(item => item.id === a.questionId);
+        const max = q ? q.points : (a.maxPoints || 1);
+        totalMax += max;
+        totalEarned += (a.teacherScore !== undefined ? a.teacherScore : a.pointsEarned);
+        if (a.isCorrect) correctCnt++; else wrongCnt++;
+      });
+      const rawScore = totalMax > 0 ? (totalEarned / totalMax) * 10 : 0;
+      const totalScore = Math.round(rawScore * 10) / 10;
+
+      const updatedSub: Submission = {
+        ...submission,
+        answers: updatedAnswers,
+        totalScore,
+        correctCount: correctCnt,
+        wrongCount: wrongCnt
+      };
+
+      setSubmission(updatedSub);
+      StorageService.saveSubmission(updatedSub);
+      FirestoreService.saveResult(updatedSub).catch(() => {});
+      if (updatedSub.wrongCount > 0) {
+        useMistakeVaultStore.getState().addMistakesFromSubmission(updatedSub, assignment);
+      }
     } catch (err) {
       console.error(err);
       alert('Không thể thực hiện phân tích từng bước lúc này. Vui lòng thử lại sau.');
@@ -128,24 +218,46 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
       errorType: errorCtx.errorType,
       referenceStepLatex: errorCtx.referenceStepLatex,
       detectedError: `Lỗi gốc tại Bước ${errorCtx.firstErrorStep}: ${errorCtx.comment}`,
+      mistakeRecordId: `${assignment.id}_${errorCtx.questionId}`,
     });
   };
 
   const handleOpenSocraticForResultQuestion = (question: Question, ans: StudentAnswer) => {
-    const errorDesc = !ans.isCorrect
+    const stepRes = stepGradingResults[question.id];
+    const stepAnalysis = ans.stepAnalysis || stepRes?.analysis;
+    const firstErrorStep = ans.firstErrorStep !== undefined ? ans.firstErrorStep : stepRes?.firstErrorStep;
+    const firstErrorType = ans.firstErrorType || stepRes?.firstErrorType;
+    const firstErrorExplanation = ans.firstErrorExplanation || stepRes?.firstErrorExplanation;
+
+    const firstErrStepObj = stepAnalysis && firstErrorStep ? stepAnalysis.find(s => s.stepIndex === firstErrorStep) : null;
+    const firstErrorLatex = firstErrStepObj?.studentLatex;
+    const referenceStepLatex = firstErrStepObj?.referenceStepLatex;
+
+    let errorDesc = !ans.isCorrect
       ? `Học sinh đã chọn/điền: "${ans.selectedAnswer || 'chưa làm'}", trong khi đáp án đúng là "${question.correctAnswer}".`
       : undefined;
 
+    if (firstErrorStep) {
+      errorDesc = `Lỗi gốc tại Bước ${firstErrorStep}: ${firstErrorExplanation || firstErrStepObj?.comment || 'Cần kiểm tra lại phép biến đổi'}`;
+    }
+
     setSocraticResultContext({
       questionId: question.id,
+      mistakeRecordId: `${assignment.id}_${question.id}`,
       questionText: question.question,
       questionType: question.type,
       grade: String(assignment.grade),
       topic: assignment.topic,
       answerOptions: question.options ? question.options.map(o => ({ id: o.id, text: o.text })) : undefined,
       studentCurrentAnswer: ans.selectedAnswer || '',
-      studentWork: ans.studentSolutionText || '',
+      studentWork: ans.studentSolutionText || (stepAnalysis ? stepAnalysis.map(s => `Bước ${s.stepIndex}: ${s.studentLatex}`).join('\n') : ''),
       detectedError: errorDesc,
+      errorType: firstErrorType || undefined,
+      firstErrorStep: firstErrorStep || undefined,
+      firstErrorLatex,
+      referenceStepLatex,
+      stepAnalysis,
+      essayImages: ans.essayImages,
     });
   };
 
@@ -852,7 +964,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                               title="Mở Gia sư Socratic AI để hiểu sâu và tự khắc phục lỗi sai"
                             >
                               <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
-                              <span>🤖 Hiểu lỗi sai cùng Gia sư Socratic AI</span>
+                              <span>🤖 Gia sư AI – Sửa lỗi này</span>
                             </button>
 
                             {!hasAiExp ? (

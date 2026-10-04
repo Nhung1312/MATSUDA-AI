@@ -19,7 +19,7 @@ const HOST = '0.0.0.0';
 app.use(express.json({ limit: '50mb' }));
 
 // Health check endpoint
-app.get(['/api/health', '/health'], (_req: Request, res: Response) => {
+app.get(['/api/health', '/health', '/api/v1/health'], (_req: Request, res: Response) => {
   return res.status(200).json({
     status: 'ok',
     service: 'TOAN-THCS-BACKEND',
@@ -27,15 +27,24 @@ app.get(['/api/health', '/health'], (_req: Request, res: Response) => {
   });
 });
 
-// Mount Routes
-app.use('/api/tutor/socratic', socraticRouter);
-app.use('/api/grading', gradingRouter);
-app.use('/api/remedial', remedialRouter);
+// AI Studio preview iframe upload fallback handler
+app.all(['/_/upload*', '/upload*'], (_req: Request, res: Response) => {
+  return res.status(200).json({ success: true, message: 'Upload endpoint ready' });
+});
+
+// Mount Routes (Standard & v1 prefixes)
+app.use(['/api/tutor/socratic', '/api/v1/tutor/socratic'], socraticRouter);
+app.use(['/api/grading', '/api/v1/grading'], gradingRouter);
+app.use(['/api/remedial', '/api/v1/remedial'], remedialRouter);
 
 // Aliases tương thích tiện lợi với quy chuẩn Matsuda
-app.use('/api/tutor/verify-scratchpad', (req, res, next) => {
+app.use(['/api/tutor/verify-scratchpad', '/api/v1/tutor/verify-scratchpad'], (req, res, next) => {
   req.url = '/verify-correction';
   gradingRouter(req, res, next);
+});
+app.use(['/api/remedial/reroll', '/api/v1/remedial/reroll'], (req, res, next) => {
+  req.url = '/generate';
+  remedialRouter(req, res, next);
 });
 
 // Khởi chạy Vite middlewares trong môi trường Development, hoặc serve dist trong Production

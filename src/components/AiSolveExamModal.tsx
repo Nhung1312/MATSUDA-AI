@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Question, Assignment, ExamTemplate } from '../types';
-import { aiService } from '../services/aiService';
+import { Question } from '../types';
+import { aiService, QuestionVerificationResult } from '../services/aiService';
 import { MathDisplay } from './MathDisplay';
 import { isEssayQuestion } from '../utils/questionUtils';
 import { 
@@ -11,30 +11,14 @@ import {
   X, 
   Loader2, 
   Save, 
-  HelpCircle, 
   BookOpen, 
   ChevronDown, 
   ChevronUp, 
   Check, 
-  Copy, 
   ShieldCheck, 
-  RefreshCw, 
-  FileText, 
   RotateCcw, 
-  CheckCheck, 
-  Flag, 
   Key 
 } from 'lucide-react';
-
-export interface SolvedQuestionInfo {
-  correctAnswer: string;
-  explanation: string;
-  rubric?: string;
-  confidence?: 'high' | 'medium' | 'needs_review';
-  pass1Answer?: string;
-  pass2Answer?: string;
-  sanityCheckNote?: string;
-}
 
 interface AiSolveExamModalProps {
   isOpen: boolean;
@@ -58,8 +42,9 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
   const [isSolving, setIsSolving] = useState(false);
   const [reverifyingId, setReverifyingId] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
-  const [solvedMap, setSolvedMap] = useState<Record<string, SolvedQuestionInfo>>({});
+  const [verificationMap, setVerificationMap] = useState<Record<string, QuestionVerificationResult>>({});
   const [userSelectedMap, setUserSelectedMap] = useState<Record<string, string>>({});
+  const [manualDecisionMap, setManualDecisionMap] = useState<Record<string, 'keep' | 'accept_ai' | 'custom'>>({});
   const [expandedExplanations, setExpandedExplanations] = useState<Record<string, boolean>>({});
   const [showQuickPaste, setShowQuickPaste] = useState(false);
   const [quickPasteText, setQuickPasteText] = useState('');
@@ -67,46 +52,47 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
   const [filterMode, setFilterMode] = useState<'all' | 'verified' | 'needs_review' | 'changed'>('all');
   const [hasApiKey, setHasApiKey] = useState<boolean>(aiService.hasApiKey());
   const [tempApiKey, setTempApiKey] = useState<string>('');
-  const [manualSuspectMap, setManualSuspectMap] = useState<Record<string, boolean>>({});
 
-  // Initialize state when modal opens
+  // Khởi tạo state khi mở modal
   useEffect(() => {
     if (isOpen && questions.length > 0) {
       setHasApiKey(aiService.hasApiKey());
       const initialMap: Record<string, string> = {};
-      const initialSolvedMap: Record<string, SolvedQuestionInfo> = {};
-      const initialSuspectMap: Record<string, boolean> = {};
+      const initialVerificationMap: Record<string, QuestionVerificationResult> = {};
+      const initialDecisionMap: Record<string, 'keep' | 'accept_ai' | 'custom'> = {};
 
       questions.forEach((q) => {
         const isEssay = isEssayQuestion(q);
         initialMap[q.id] = isEssay ? (q.correctAnswer || '') : (q.correctAnswer || 'A').toUpperCase();
-        if (q.verificationStatus || q.sanityCheckNote || q.confidence || q.rubric) {
-          const isReview = q.confidence === 'needs_review' || q.verificationStatus === 'needs_review';
-          initialSolvedMap[q.id] = {
-            correctAnswer: q.correctAnswer || (isEssay ? '' : 'A'),
-            explanation: q.explanation || '',
-            rubric: q.rubric || '',
-            confidence: isReview ? 'needs_review' : 'high',
-            pass1Answer: q.pass1Answer || q.correctAnswer,
-            pass2Answer: q.pass2Answer || q.correctAnswer,
+
+        if (q.pass1Answer || q.sanityCheckNote || q.confidence || q.aiProposedAnswer || q.verificationStatus) {
+          const isSuspect = q.verificationStatus === 'needs_review' || q.needsReview === true || q.confidence === 'needs_review';
+          initialVerificationMap[q.id] = {
+            questionId: q.id,
+            order: q.order,
+            currentAnswer: q.correctAnswer || (isEssay ? '' : 'A'),
+            proposedAnswer: q.aiProposedAnswer || q.pass1Answer || q.correctAnswer || 'A',
+            matchesCurrentAnswer: !isSuspect,
+            confidence: (q.confidence as any) || (isSuspect ? 'needs_review' : 'high'),
+            reason: q.aiReason || q.sanityCheckNote || (isSuspect ? 'Phát hiện nghi vấn cần giáo viên xem lại' : 'Trùng khớp đáp án hiện tại'),
+            needsReview: isSuspect,
+            pass1Answer: q.pass1Answer,
+            pass2Answer: q.pass2Answer,
             sanityCheckNote: q.sanityCheckNote
           };
-          if (isReview) {
-            initialSuspectMap[q.id] = true;
-          }
         }
       });
 
       setUserSelectedMap(initialMap);
-      setSolvedMap(initialSolvedMap);
-      setManualSuspectMap(initialSuspectMap);
+      setVerificationMap(initialVerificationMap);
+      setManualDecisionMap(initialDecisionMap);
       setProgress({ current: 0, total: questions.length });
     }
   }, [isOpen, questions]);
 
   if (!isOpen) return null;
 
-  // Handle saving API key inline
+  // Lưu API Key trực tiếp nếu chưa có
   const handleSaveInlineApiKey = () => {
     if (!tempApiKey.trim()) {
       alert('Vui lòng dán mã Gemini API Key hợp lệ.');
@@ -115,11 +101,11 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
     aiService.setApiKey(tempApiKey.trim());
     setHasApiKey(true);
     setTempApiKey('');
-    alert('Đã lưu Gemini API Key thành công! Giờ Thầy/Cô có thể bấm "Bắt đầu AI Giải & Thẩm định kép".');
+    alert('Đã lưu Gemini API Key thành công! Giờ Thầy/Cô có thể bấm "Bắt đầu AI Thẩm định đề thi".');
   };
 
-  // Run AI solver with dual-pass verification
-  const handleStartSolving = async () => {
+  // Chạy AI Thẩm định kho đề (Dual-Pass 2 vòng, không tự sửa correctAnswer gốc)
+  const handleStartVerification = async () => {
     if (!aiService.hasApiKey()) {
       alert('Chưa có Gemini API Key. Thầy/Cô vui lòng nhập API Key ở thanh màu vàng bên trên hoặc trong mục Cài Đặt.');
       return;
@@ -129,7 +115,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
     setProgress({ current: 0, total: questions.length });
 
     try {
-      const results = await aiService.solveExamQuestions({
+      const results = await aiService.verifyExamQuestions({
         questions,
         grade,
         topic,
@@ -138,84 +124,77 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
         }
       });
 
-      const newSolvedMap: Record<string, SolvedQuestionInfo> = {};
-      const newUserMap = { ...userSelectedMap };
-      const newSuspectMap = { ...manualSuspectMap };
-
+      const newVerificationMap: Record<string, QuestionVerificationResult> = {};
       results.forEach((res) => {
-        const isDiscrepancy = res.confidence === 'needs_review' || (res.pass1Answer && res.pass2Answer && res.pass1Answer !== res.pass2Answer);
-        newSolvedMap[res.questionId] = {
-          correctAnswer: res.correctAnswer,
-          explanation: res.explanation,
-          rubric: res.rubric,
-          confidence: res.confidence || 'high',
-          pass1Answer: res.pass1Answer,
-          pass2Answer: res.pass2Answer,
-          sanityCheckNote: res.sanityCheckNote
-        };
-        // Auto select AI answer
-        newUserMap[res.questionId] = res.correctAnswer;
-        if (isDiscrepancy) {
-          newSuspectMap[res.questionId] = true;
-        }
+        newVerificationMap[res.questionId] = res;
       });
 
-      setSolvedMap(newSolvedMap);
-      setUserSelectedMap(newUserMap);
-      setManualSuspectMap(newSuspectMap);
+      setVerificationMap(newVerificationMap);
 
-      const reviewCount = results.filter(r => r.confidence === 'needs_review' || (r.pass1Answer && r.pass2Answer && r.pass1Answer !== r.pass2Answer)).length;
+      // AI TUYỆT ĐỐI KHÔNG TỰ SỬA userSelectedMap (Requirement D)
+      // userSelectedMap tiếp tục giữ nguyên đáp án hiện tại cho đến khi GV xác nhận.
+
+      const reviewCount = results.filter(r => r.needsReview || !r.matchesCurrentAnswer || r.confidence === 'needs_review').length;
       if (reviewCount > 0) {
         setFilterMode('needs_review');
       }
     } catch (err: any) {
-      console.error('Lỗi khi AI giải đề:', err);
-      alert(err?.message || 'Có lỗi xảy ra trong quá trình giải đề. Vui lòng kiểm tra lại kết nối mạng hoặc Gemini API Key.');
+      console.error('Lỗi khi AI thẩm định đề:', err);
+      alert(err?.message || 'Có lỗi xảy ra trong quá trình thẩm định. Vui lòng kiểm tra lại kết nối mạng hoặc Gemini API Key.');
     } finally {
       setIsSolving(false);
     }
   };
 
-  // Re-verify a single question
+  // Thẩm định lại 1 câu hỏi đơn lẻ
   const handleSolveSingle = async (q: Question) => {
     setReverifyingId(q.id);
     try {
-      const res = await aiService.solveSingleQuestion({
+      const res = await aiService.verifySingleQuestion({
         question: q,
         grade,
         topic
       });
-      setSolvedMap(prev => ({
+      setVerificationMap(prev => ({
         ...prev,
-        [q.id]: {
-          correctAnswer: res.correctAnswer,
-          explanation: res.explanation,
-          rubric: res.rubric || q.rubric,
-          confidence: res.confidence || 'high',
-          pass1Answer: res.pass1Answer,
-          pass2Answer: res.pass2Answer,
-          sanityCheckNote: res.sanityCheckNote
-        }
+        [q.id]: res
       }));
-      setUserSelectedMap(prev => ({
-        ...prev,
-        [q.id]: res.correctAnswer
-      }));
-    } catch (err) {
-      alert('Không thể giải câu này lúc này.');
+    } catch (err: any) {
+      alert(err?.message || 'Không thể đối soát lại câu này lúc này.');
     } finally {
       setReverifyingId(null);
     }
   };
 
-  // Quick paste parser (handles "1A 2B 3C" or "1:A, 2:B" or "ABCD...")
+  // 1. DUYỆT CÂU NGHI NGỜ: [Giữ đáp án hiện tại] (Requirement E)
+  const handleKeepCurrent = (q: Question) => {
+    const isEssay = isEssayQuestion(q);
+    const orig = q.correctAnswer || (isEssay ? '' : 'A');
+    setUserSelectedMap(prev => ({ ...prev, [q.id]: orig }));
+    setManualDecisionMap(prev => ({ ...prev, [q.id]: 'keep' }));
+  };
+
+  // 2. DUYỆT CÂU NGHI NGỜ: [Chấp nhận đáp án AI] (Requirement E)
+  const handleAcceptAi = (q: Question, aiAns: string) => {
+    if (!aiAns) return;
+    setUserSelectedMap(prev => ({ ...prev, [q.id]: aiAns }));
+    setManualDecisionMap(prev => ({ ...prev, [q.id]: 'accept_ai' }));
+  };
+
+  // 3. DUYỆT CÂU NGHI NGỜ: [Tự sửa] (Requirement E)
+  const handleCustomAnswer = (q: Question, customAns: string) => {
+    setUserSelectedMap(prev => ({ ...prev, [q.id]: customAns }));
+    setManualDecisionMap(prev => ({ ...prev, [q.id]: 'custom' }));
+  };
+
+  // Dán nhanh chuỗi đáp án (1A 2B 3C... hoặc ABCD...)
   const handleApplyQuickPaste = () => {
     if (!quickPasteText.trim()) return;
 
     const text = quickPasteText.trim();
     const newUserMap = { ...userSelectedMap };
+    const newDecisionMap = { ...manualDecisionMap };
 
-    // Format 1: "1A 2B 3C" or "1.A 2.B" or "Câu 1: A"
     const pairRegex = /(?:Câu\s*)?(\d+)[\s.:=_-]*([A-D])/gi;
     let match;
     let count = 0;
@@ -225,17 +204,18 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
       const targetQ = questions.find(q => q.order === qNum) || questions[qNum - 1];
       if (targetQ) {
         newUserMap[targetQ.id] = ansLetter;
+        newDecisionMap[targetQ.id] = 'custom';
         count++;
       }
     }
 
-    // Format 2: Continuous string like "ABCDABCD..." if no numbered pairs found
     if (count === 0) {
       const cleanLetters = text.replace(/[^A-Da-d]/g, '').toUpperCase();
       if (cleanLetters.length > 0) {
         questions.forEach((q, idx) => {
           if (idx < cleanLetters.length) {
             newUserMap[q.id] = cleanLetters[idx];
+            newDecisionMap[q.id] = 'custom';
             count++;
           }
         });
@@ -244,6 +224,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
 
     if (count > 0) {
       setUserSelectedMap(newUserMap);
+      setManualDecisionMap(newDecisionMap);
       setShowQuickPaste(false);
       setQuickPasteText('');
       alert(`Đã nhận diện và điền thành công đáp án cho ${count} câu hỏi!`);
@@ -252,18 +233,18 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
     }
   };
 
-  // Select all AI answers
-  const handleSelectAllAi = () => {
-    const newUserMap = { ...userSelectedMap };
-    Object.keys(solvedMap).forEach((qId) => {
-      if (solvedMap[qId]) {
-        newUserMap[qId] = solvedMap[qId].correctAnswer;
-      }
-    });
-    setUserSelectedMap(newUserMap);
+  // Kiểm tra câu hỏi có đang ở diện nghi ngờ cần xem lại
+  const isQuestionSuspect = (q: Question) => {
+    // Nếu giáo viên đã bấm chọn quyết định (Giữ hiện tại, chấp nhận AI, hoặc tự sửa) thì đã duyệt xong
+    if (manualDecisionMap[q.id]) return false;
+    const v = verificationMap[q.id];
+    if (v) {
+      return v.needsReview || !v.matchesCurrentAnswer || v.confidence === 'needs_review';
+    }
+    return q.verificationStatus === 'needs_review' || q.needsReview === true;
   };
 
-  // Save changes
+  // Xác nhận và lưu kết quả thẩm định (Requirement G)
   const handleConfirmApply = async () => {
     setIsSaving(true);
     try {
@@ -272,22 +253,43 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
         const chosenAnswer = isEssay
           ? (userSelectedMap[q.id] !== undefined ? userSelectedMap[q.id] : (q.correctAnswer || ''))
           : (userSelectedMap[q.id] || q.correctAnswer || 'A');
-        const aiInfo = solvedMap[q.id];
-        const isNeedReview = aiInfo 
-          ? (aiInfo.confidence === 'needs_review' || (aiInfo.pass1Answer && aiInfo.pass2Answer && aiInfo.pass1Answer !== aiInfo.pass2Answer))
-          : (q.verificationStatus === 'needs_review');
+        const vInfo = verificationMap[q.id];
+        const decision = manualDecisionMap[q.id];
+
+        let vStatus: 'verified' | 'needs_review';
+        let needsRev: boolean;
+
+        if (decision) {
+          // Giáo viên đã duyệt câu này (Giữ hiện tại, chấp nhận AI, hoặc tự sửa) => verified!
+          vStatus = 'verified';
+          needsRev = false;
+        } else if (vInfo) {
+          if (vInfo.needsReview || !vInfo.matchesCurrentAnswer || vInfo.confidence === 'needs_review') {
+            vStatus = 'needs_review';
+            needsRev = true;
+          } else {
+            vStatus = 'verified';
+            needsRev = false;
+          }
+        } else {
+          vStatus = (q.verificationStatus as any) || 'unverified';
+          needsRev = q.needsReview || false;
+        }
 
         return {
           ...q,
           type: isEssay ? 'essay' : (q.type || 'multiple_choice'),
           correctAnswer: chosenAnswer,
-          explanation: aiInfo?.explanation || q.explanation || '',
-          rubric: aiInfo?.rubric || q.rubric || '',
-          verificationStatus: isNeedReview ? 'needs_review' : (aiInfo ? 'verified' : q.verificationStatus),
-          sanityCheckNote: aiInfo?.sanityCheckNote || q.sanityCheckNote,
-          confidence: aiInfo?.confidence || q.confidence,
-          pass1Answer: isEssay ? undefined : (aiInfo?.pass1Answer || q.pass1Answer),
-          pass2Answer: isEssay ? undefined : (aiInfo?.pass2Answer || q.pass2Answer)
+          explanation: q.explanation || '',
+          rubric: q.rubric || '',
+          verificationStatus: vStatus,
+          needsReview: needsRev,
+          sanityCheckNote: vInfo?.sanityCheckNote || q.sanityCheckNote,
+          confidence: vInfo?.confidence || q.confidence,
+          pass1Answer: vInfo?.pass1Answer || q.pass1Answer,
+          pass2Answer: vInfo?.pass2Answer || q.pass2Answer,
+          aiProposedAnswer: vInfo?.proposedAnswer || q.aiProposedAnswer,
+          aiReason: vInfo?.reason || q.aiReason
         };
       });
 
@@ -301,27 +303,18 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
     }
   };
 
-  // Stats calculation
-  const solvedCount = Object.keys(solvedMap).length;
-  const changedCount = questions.filter(q => (userSelectedMap[q.id] || q.correctAnswer) !== q.correctAnswer).length;
-
-  const isQuestionSuspect = (q: Question) => {
-    if (manualSuspectMap[q.id]) return true;
-    const s = solvedMap[q.id];
-    if (s && (s.confidence === 'needs_review' || (s.pass1Answer && s.pass2Answer && s.pass1Answer !== s.pass2Answer))) return true;
-    if (q.verificationStatus === 'needs_review') return true;
-    return false;
-  };
-
+  // Thống kê số lượng
   const verifiedCount = questions.filter(q => {
-    const s = solvedMap[q.id];
-    return s && !isQuestionSuspect(q);
+    if (manualDecisionMap[q.id]) return true;
+    const v = verificationMap[q.id];
+    return v && !isQuestionSuspect(q);
   }).length;
 
   const needsReviewCount = questions.filter(isQuestionSuspect).length;
   const needsReviewQuestions = questions.filter(isQuestionSuspect);
+  const changedCount = questions.filter(q => (userSelectedMap[q.id] || q.correctAnswer) !== q.correctAnswer).length;
 
-  // Filter questions for review
+  // Lọc câu hỏi hiển thị
   const filteredQuestions = questions.filter((q) => {
     const currentVal = q.correctAnswer || 'A';
     const chosenVal = userSelectedMap[q.id] || currentVal;
@@ -330,8 +323,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
       return isQuestionSuspect(q);
     }
     if (filterMode === 'verified') {
-      const s = solvedMap[q.id];
-      return s && !isQuestionSuspect(q);
+      return !isQuestionSuspect(q) && (!!verificationMap[q.id] || !!manualDecisionMap[q.id]);
     }
     if (filterMode === 'changed') {
       return chosenVal !== currentVal;
@@ -349,13 +341,13 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
             <div>
               <div className="inline-flex items-center space-x-1.5 bg-white/20 px-2.5 py-0.5 rounded-full text-xs font-bold text-white mb-1.5">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
-                <span>AI Thẩm Định Kép & Thử Ngược (Dual-Pass Verification)</span>
+                <span>AI Thẩm Định Kho Đề (Gemini 3.8 Flash • Dual-Pass 2 Vòng)</span>
               </div>
               <h2 className="text-lg sm:text-xl font-black tracking-tight">
-                AI Tự Động Giải Đề & Đối Soát Độc Lập 2 Lần
+                AI Thẩm Định Đề Thi & Đối Soát Độc Lập
               </h2>
               <p className="text-xs text-indigo-100 mt-0.5">
-                Bài thi: <strong>{examTitle}</strong> • Khối {grade} • {questions.length} câu hỏi
+                Bài thi: <strong>{examTitle}</strong> • Khối {grade} • {questions.length} câu hỏi • Bảo toàn tuyệt đối đề gốc và đáp án
               </p>
             </div>
 
@@ -369,14 +361,14 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
           </div>
         </div>
 
-        {/* INLINE API KEY WARNING IF NOT CONFIGURED */}
+        {/* CẢNH BÁO NẾU CHƯA NHẬP API KEY */}
         {!hasApiKey && (
           <div className="px-4 sm:px-5 py-3 bg-amber-50 dark:bg-amber-950/70 border-b border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0 animate-in fade-in">
             <div className="flex items-center space-x-2">
               <Key className="w-4 h-4 text-amber-600 shrink-0" />
               <div>
                 <span className="font-bold">Chưa cấu hình Gemini API Key:</span>{' '}
-                <span>Vui lòng dán API Key để kích hoạt AI Giải đề & Thẩm định đối soát kép.</span>
+                <span>Vui lòng dán API Key để kích hoạt AI Thẩm định đối soát đề thi.</span>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -397,24 +389,24 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
           </div>
         )}
 
-        {/* DUAL-PASS AUDIT SUMMARY BANNER */}
-        {solvedCount > 0 && (
+        {/* TỔNG KẾT KẾT QUẢ THẨM ĐỊNH */}
+        {(Object.keys(verificationMap).length > 0 || Object.keys(manualDecisionMap).length > 0) && (
           <div className="px-4 sm:px-5 py-3 bg-gradient-to-r from-slate-50 via-indigo-50/40 to-violet-50/40 dark:from-slate-800/80 dark:to-slate-800/40 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shrink-0">
             <div className="flex items-center space-x-3">
               <div className="w-8 h-8 rounded-xl bg-violet-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                <CheckCheck className="w-5 h-5 text-emerald-300" />
+                <ShieldCheck className="w-5 h-5 text-emerald-300" />
               </div>
               <div>
                 <div className="font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                  <span>Kết quả Đối Soát Độc Lập 2 Vòng</span>
+                  <span>Kết quả Thẩm Định Đối Soát Đề</span>
                   <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold">
-                    Khớp {verifiedCount}/{solvedCount} câu
+                    Đạt {verifiedCount}/{questions.length} câu
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400">
                   {needsReviewCount > 0 
-                    ? `Phát hiện ${needsReviewCount} câu có độ chênh giữa Lượt 1 và Lượt 2, đề xuất Thầy/Cô kiểm tra nhanh.`
-                    : 'Tất cả câu hỏi đã được giải xuôi và thử ngược trùng khớp 100% không phát hiện mâu thuẫn.'}
+                    ? `Còn ${needsReviewCount} câu nghi vấn cần Thầy/Cô duyệt xác nhận bằng các nút thao tác.`
+                    : 'Tất cả câu hỏi đã được thẩm định đạt chuẩn 100% không phát hiện mâu thuẫn.'}
                 </div>
               </div>
             </div>
@@ -422,13 +414,13 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
             <div className="flex flex-wrap items-center gap-2 shrink-0">
               <div className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Trùng khớp: <strong>{verifiedCount}/{questions.length}</strong></span>
+                <span>Đã thẩm định: <strong>{verifiedCount}/{questions.length}</strong></span>
               </div>
 
               {needsReviewCount > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5">
-                  {needsReviewQuestions.map(q => {
-                    const s = solvedMap[q.id];
+                  {needsReviewQuestions.slice(0, 3).map(q => {
+                    const v = verificationMap[q.id];
                     return (
                       <button
                         key={q.id}
@@ -439,11 +431,11 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
                             if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                           }, 50);
                         }}
-                        className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black border border-amber-600 flex items-center gap-1.5 cursor-pointer transition-all shadow-md active:scale-95 animate-pulse"
-                        title="Bấm để xem ngay câu hỏi này"
+                        className="px-3 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold border border-rose-600 flex items-center gap-1.5 cursor-pointer transition-all shadow-md active:scale-95 animate-pulse"
+                        title="Bấm để xem câu hỏi nghi vấn này"
                       >
-                        <AlertTriangle className="w-4 h-4 text-white" />
-                        <span>Xem ngay Câu {q.order} {s?.pass1Answer && s?.pass2Answer ? `(Lượt 1: ${s?.pass1Answer} vs Lượt 2: ${s?.pass2Answer})` : ''}</span>
+                        <AlertTriangle className="w-3.5 h-3.5 text-white" />
+                        <span>Xem Câu {q.order} {v?.pass1Answer ? `(AI ra: ${v.pass1Answer})` : ''}</span>
                       </button>
                     );
                   })}
@@ -453,13 +445,13 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
           </div>
         )}
 
-        {/* TOOLBAR & CONTROLS */}
+        {/* THANH CÔNG CỤ ĐIỀU KHIỂN */}
         <div className="p-4 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={handleStartSolving}
+              onClick={handleStartVerification}
               disabled={isSolving}
-              className="px-4 py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+              className="px-4 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
             >
               {isSolving ? (
                 <>
@@ -469,19 +461,10 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
               ) : (
                 <>
                   <Sparkles className="w-4 h-4 text-amber-300" />
-                  <span>{solvedCount > 0 ? 'Thẩm định kép lại toàn bộ đề' : 'Bắt đầu AI Giải & Thẩm định kép'}</span>
+                  <span>{Object.keys(verificationMap).length > 0 ? 'Thẩm định đối soát lại toàn bộ đề' : 'Bắt đầu AI Thẩm định đề thi'}</span>
                 </>
               )}
             </button>
-
-            {solvedCount > 0 && (
-              <button
-                onClick={handleSelectAllAi}
-                className="px-3 py-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer shadow-2xs"
-              >
-                Chọn tất cả đáp án AI
-              </button>
-            )}
 
             <button
               onClick={() => setShowQuickPaste(!showQuickPaste)}
@@ -491,7 +474,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
             </button>
           </div>
 
-          {/* Filter Pills */}
+          {/* Bộ lọc tab câu hỏi */}
           <div className="flex flex-wrap items-center gap-1 bg-white dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
             <button
               onClick={() => setFilterMode('all')}
@@ -503,30 +486,28 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
             >
               Tất cả ({questions.length})
             </button>
-            {solvedCount > 0 && (
-              <button
-                onClick={() => setFilterMode('verified')}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                  filterMode === 'verified'
-                    ? 'bg-emerald-600 text-white'
-                    : 'text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50'
-                }`}
-              >
-                <ShieldCheck className="w-3 h-3" />
-                <span>Khớp 100% ({verifiedCount})</span>
-              </button>
-            )}
+            <button
+              onClick={() => setFilterMode('verified')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                filterMode === 'verified'
+                  ? 'bg-emerald-600 text-white'
+                  : 'text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50'
+              }`}
+            >
+              <ShieldCheck className="w-3 h-3" />
+              <span>Đạt chuẩn ({verifiedCount})</span>
+            </button>
             <button
               onClick={() => setFilterMode('needs_review')}
               className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
                 filterMode === 'needs_review'
-                  ? 'bg-amber-500 text-white shadow-xs'
+                  ? 'bg-rose-500 text-white shadow-xs'
                   : needsReviewCount > 0
-                  ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/80 dark:text-amber-200 hover:bg-amber-200'
+                  ? 'bg-rose-100 text-rose-900 dark:bg-rose-950/80 dark:text-rose-200 hover:bg-rose-200'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
-              <AlertTriangle className={`w-3 h-3 ${needsReviewCount > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-slate-400'}`} />
+              <AlertTriangle className={`w-3 h-3 ${needsReviewCount > 0 ? 'text-rose-600 dark:text-rose-300' : 'text-slate-400'}`} />
               <span>Nghi vấn ({needsReviewCount})</span>
             </button>
             <button
@@ -537,12 +518,12 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
-              Đã đổi ({changedCount})
+              Đã sửa ({changedCount})
             </button>
           </div>
         </div>
 
-        {/* QUICK PASTE PANEL */}
+        {/* BẢNG DÁN NHANH ĐÁP ÁN */}
         {showQuickPaste && (
           <div className="p-4 bg-indigo-50/70 dark:bg-indigo-950/40 border-b border-indigo-100 dark:border-indigo-900/60 animate-in slide-in-from-top-2">
             <label className="block text-xs font-bold text-indigo-900 dark:text-indigo-200 mb-1">
@@ -566,23 +547,23 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
           </div>
         )}
 
-        {/* ACTIVE FILTER NOTICE */}
+        {/* THÔNG BÁO KHI ĐANG LỌC CÂU NGHI VẤN */}
         {filterMode === 'needs_review' && (
-          <div className="mx-4 sm:mx-6 mt-3 p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-xs text-amber-900 dark:text-amber-200 flex flex-wrap items-center justify-between gap-2 shrink-0 animate-in fade-in">
+          <div className="mx-4 sm:mx-6 mt-3 p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-700 text-xs text-rose-900 dark:text-rose-200 flex flex-wrap items-center justify-between gap-2 shrink-0 animate-in fade-in">
             <div className="flex items-center gap-2 font-bold">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>Đang lọc: Hiển thị {filteredQuestions.length} câu hỏi có nghi vấn giữa 2 lượt giải độc lập.</span>
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>Đang lọc: Hiển thị {filteredQuestions.length} câu hỏi có nghi vấn cần xem lại. Thầy/Cô bấm các nút hành động bên dưới để xác nhận.</span>
             </div>
             <button
               onClick={() => setFilterMode('all')}
-              className="px-2.5 py-1 bg-white dark:bg-slate-800 text-amber-900 dark:text-amber-300 font-bold text-xs rounded-xl border border-amber-300 hover:bg-amber-100 cursor-pointer transition-colors shadow-2xs"
+              className="px-2.5 py-1 bg-white dark:bg-slate-800 text-rose-900 dark:text-rose-300 font-bold text-xs rounded-xl border border-rose-300 hover:bg-rose-100 cursor-pointer transition-colors shadow-2xs"
             >
               Hiện lại tất cả ({questions.length} câu)
             </button>
           </div>
         )}
 
-        {/* MAIN QUESTION LIST TABLE */}
+        {/* DANH SÁCH CÂU HỎI & BẢNG ĐỐI SOÁT */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
           {filteredQuestions.length === 0 ? (
             <div className="text-center py-12 px-4 bg-slate-50 dark:bg-slate-800/40 rounded-3xl border border-dashed border-slate-200 dark:border-slate-700">
@@ -591,14 +572,12 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
               </div>
               <h3 className="text-base sm:text-lg font-black text-slate-800 dark:text-white">
                 {filterMode === 'needs_review'
-                  ? 'Tuyệt vời! Không có câu hỏi nào có nghi vấn'
+                  ? 'Tuyệt vời! Không có câu hỏi nào nghi vấn'
                   : 'Không có câu hỏi nào trong danh mục này'}
               </h3>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto mt-1">
                 {filterMode === 'needs_review'
-                  ? (solvedCount > 0 
-                      ? 'Tất cả các câu hỏi đã thẩm định đều có kết quả Lượt 1 (tính xuôi) và Lượt 2 (thử ngược) trùng khớp 100%.'
-                      : 'Chưa có câu nào được thẩm định. Thầy/Cô hãy bấm "Bắt đầu AI Giải & Thẩm định kép" để quét toàn bộ đề.')
+                  ? 'Tất cả câu hỏi đã được đối soát trùng khớp 100% hoặc đã được Thầy/Cô duyệt xác nhận.'
                   : 'Hãy thử chọn tab khác để xem danh sách câu hỏi.'}
               </p>
               {filterMode === 'needs_review' && (
@@ -614,33 +593,30 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
             filteredQuestions.map((q) => {
               const isEssay = isEssayQuestion(q);
               const currentOriginal = q.correctAnswer || (isEssay ? '' : 'A');
-              const aiSol = solvedMap[q.id];
+              const vInfo = verificationMap[q.id];
               const selectedAnswer = userSelectedMap[q.id] !== undefined ? userSelectedMap[q.id] : currentOriginal;
-              const isAiProvided = !!aiSol;
               const isDiff = selectedAnswer !== currentOriginal && (!isEssay || selectedAnswer.trim() !== '');
               const isExpanded = expandedExplanations[q.id];
               const isReverifying = reverifyingId === q.id;
 
-              const isDiscrepancy = isQuestionSuspect(q);
-              const isVerifiedHigh = aiSol && !isDiscrepancy;
+              const isSuspect = isQuestionSuspect(q);
+              const isVerifiedHigh = !isSuspect && (!!vInfo || !!manualDecisionMap[q.id]);
 
               return (
                 <div
                   key={q.id}
                   id={`q_item_${q.id}`}
                   className={`p-4 rounded-2xl border transition-all ${
-                    isDiscrepancy
-                      ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800/80 shadow-xs'
+                    isSuspect
+                      ? 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-300 dark:border-rose-800/80 shadow-xs'
                       : isDiff
                       ? 'bg-indigo-50/40 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-800'
-                      : isEssay
-                      ? 'bg-purple-50/30 dark:bg-purple-950/10 border-purple-200/80 dark:border-purple-800/50'
                       : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700'
                   }`}
                 >
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                     
-                    {/* Left: Question text & Options & Verification notes */}
+                    {/* Phần bên trái: Đề bài, options & Hộp đối soát thẩm định */}
                     <div className="flex-1 space-y-2">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex flex-wrap items-center gap-2">
@@ -656,129 +632,145 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
                             </span>
                           )}
                         </div>
-
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setManualSuspectMap(prev => ({ ...prev, [q.id]: !prev[q.id] }))}
-                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer transition-colors flex items-center gap-1 border ${
-                              manualSuspectMap[q.id]
-                                ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
-                                : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                            }`}
-                            title={manualSuspectMap[q.id] ? 'Bỏ ghim câu nghi vấn' : 'Ghim câu này vào mục nghi vấn'}
-                          >
-                            <Flag className={`w-3 h-3 ${manualSuspectMap[q.id] ? 'fill-white text-white' : ''}`} />
-                            <span>{manualSuspectMap[q.id] ? 'Đang nghi vấn' : 'Ghim nghi vấn'}</span>
-                          </button>
-                        </div>
                       </div>
 
                       <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 leading-relaxed">
                         <MathDisplay math={q.question} />
                       </div>
 
-                      {/* DUAL-PASS VERIFICATION STATUS BADGE */}
-                      {isDiscrepancy && (
-                        <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700 text-xs text-amber-900 dark:text-amber-200 flex flex-col gap-1.5 animate-in fade-in">
+                      {/* HỘP HIỂN THỊ KẾT QUẢ THẨM ĐỊNH LƯỢT 1 & LƯỢT 2 + 3 NÚT DUYỆT (Requirement E) */}
+                      {vInfo && (
+                        <div className={`p-3 rounded-2xl border text-xs space-y-2.5 ${
+                          isSuspect
+                            ? 'bg-rose-50/80 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800'
+                            : 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800'
+                        }`}>
+                          {/* Trạng thái thẩm định */}
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="font-extrabold flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
-                              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                              {aiSol?.pass1Answer && aiSol?.pass2Answer && aiSol.pass1Answer !== aiSol.pass2Answer ? (
-                                <span>Phát hiện nghi vấn giữa 2 lượt giải: Lượt 1 ra <strong>{aiSol.pass1Answer}</strong>, Lượt 2 thử ngược ra <strong>{aiSol.pass2Answer}</strong></span>
+                            <div className="flex items-center space-x-2">
+                              {isSuspect ? (
+                                <div className="flex items-center space-x-1.5 text-rose-700 dark:text-rose-300 font-extrabold">
+                                  <AlertCircle className="w-4 h-4 text-rose-600 animate-pulse" />
+                                  <span>CÂU NGHI NGỜ CẦN XEM LẠI</span>
+                                </div>
                               ) : (
-                                <span>Câu hỏi được đánh dấu nghi vấn cần Thầy/Cô đối soát đáp án</span>
+                                <div className="flex items-center space-x-1.5 text-emerald-700 dark:text-emerald-300 font-extrabold">
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                  <span>ĐÃ THẨM ĐỊNH ĐẠT CHUẨN</span>
+                                </div>
                               )}
-                            </span>
-                            <div className="flex items-center gap-1">
-                              {aiSol?.pass1Answer && (
-                                <button
-                                  type="button"
-                                  onClick={() => setUserSelectedMap(prev => ({ ...prev, [q.id]: aiSol.pass1Answer! }))}
-                                  className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-colors ${
-                                    selectedAnswer === aiSol.pass1Answer
-                                      ? 'bg-amber-600 text-white'
-                                      : 'bg-amber-200/80 text-amber-900 hover:bg-amber-300'
-                                  }`}
-                                >
-                                  Chọn {aiSol.pass1Answer} (Lượt 1)
-                                </button>
-                              )}
-                              {aiSol?.pass2Answer && (
-                                <button
-                                  type="button"
-                                  onClick={() => setUserSelectedMap(prev => ({ ...prev, [q.id]: aiSol.pass2Answer! }))}
-                                  className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-colors ${
-                                    selectedAnswer === aiSol.pass2Answer
-                                      ? 'bg-amber-600 text-white'
-                                      : 'bg-amber-200/80 text-amber-900 hover:bg-amber-300'
-                                  }`}
-                                >
-                                  Chọn {aiSol.pass2Answer} (Lượt 2)
-                                </button>
-                              )}
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                vInfo.confidence === 'high' 
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200' 
+                                  : 'bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-200'
+                              }`}>
+                                Độ tin cậy: {vInfo.confidence === 'high' ? 'Cao' : 'Nghi ngờ'}
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleSolveSingle(q)}
+                              disabled={isReverifying}
+                              className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 border border-indigo-200 hover:bg-indigo-50 cursor-pointer flex items-center gap-1 shadow-2xs"
+                            >
+                              {isReverifying ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                              <span>Thẩm định lại câu này</span>
+                            </button>
+                          </div>
+
+                          {/* Chi tiết đáp án hiện tại, Lượt 1, Lượt 2 */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-slate-200/60 dark:border-slate-800/60 text-xs">
+                            <div className="p-2 rounded-xl bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
+                              <span className="text-[10px] text-slate-500 block uppercase font-bold">Đáp án hiện tại của đề</span>
+                              <span className="text-sm font-black text-slate-800 dark:text-slate-100">{q.correctAnswer || '(Chưa có)'}</span>
+                            </div>
+                            <div className="p-2 rounded-xl bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
+                              <span className="text-[10px] text-slate-500 block uppercase font-bold">AI Lượt 1 (Giải nhanh)</span>
+                              <span className="text-sm font-black text-indigo-700 dark:text-indigo-300">{vInfo.pass1Answer || vInfo.proposedAnswer || '(Chưa rõ)'}</span>
+                            </div>
+                            <div className="p-2 rounded-xl bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
+                              <span className="text-[10px] text-slate-500 block uppercase font-bold">AI Lượt 2 (Độc lập/Thử ngược)</span>
+                              <span className="text-sm font-black text-purple-700 dark:text-purple-300">
+                                {vInfo.pass2Answer ? vInfo.pass2Answer : '(Không gọi - Lượt 1 đã khớp)'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Lý do AI đưa ra */}
+                          {vInfo.reason && (
+                            <div className="text-[11px] text-slate-700 dark:text-slate-300 bg-white/60 dark:bg-slate-900/40 p-2 rounded-xl border border-slate-200/50 dark:border-slate-800/50">
+                              <strong>Căn cứ đối soát:</strong> {vInfo.reason}
+                            </div>
+                          )}
+
+                          {/* 3 NÚT DUYỆT CÂU NGHI NGỜ DÀNH CHO GIÁO VIÊN (Requirement E) */}
+                          <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {/* [Giữ đáp án hiện tại] */}
                               <button
                                 type="button"
-                                onClick={() => handleSolveSingle(q)}
-                                disabled={isReverifying}
-                                className="px-2.5 py-0.5 rounded text-[11px] font-bold bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 border border-indigo-200 hover:bg-indigo-50 cursor-pointer flex items-center gap-1"
+                                onClick={() => handleKeepCurrent(q)}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 border shadow-2xs ${
+                                  manualDecisionMap[q.id] === 'keep'
+                                    ? 'bg-slate-800 text-white border-slate-900 ring-2 ring-slate-400'
+                                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100'
+                                }`}
                               >
-                                {isReverifying ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
-                                <span>Giải lại câu này</span>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>[Giữ đáp án hiện tại: {q.correctAnswer || 'A'}]</span>
                               </button>
-                            </div>
-                          </div>
-                          {aiSol?.sanityCheckNote && (
-                            <div className="text-[11px] text-amber-800 dark:text-amber-300 italic">
-                              Chi tiết đối soát: {aiSol.sanityCheckNote}
-                            </div>
-                          )}
-                        </div>
-                      )}
 
-                      {isVerifiedHigh && (
-                        <div className="p-2 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 text-xs text-emerald-900 dark:text-emerald-200 flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 text-[11px]">
-                            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                            <span className="font-bold">Đã thẩm định:</span>
-                            <span className="text-emerald-700 dark:text-emerald-300 font-semibold">
-                              {isEssay
-                                ? 'Đã giải chi tiết & xây dựng Rubric chấm chuẩn'
-                                : `Trùng khớp 100% (Lượt 1: ${aiSol.pass1Answer || aiSol.correctAnswer} - Lượt 2: ${aiSol.pass2Answer || aiSol.correctAnswer})`}
-                            </span>
-                          </div>
-                          {aiSol.sanityCheckNote && (
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400 italic">
-                              {aiSol.sanityCheckNote}
+                              {/* [Chấp nhận đáp án AI] */}
+                              {vInfo.proposedAnswer && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAcceptAi(q, vInfo.proposedAnswer)}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 border shadow-2xs ${
+                                    manualDecisionMap[q.id] === 'accept_ai'
+                                      ? 'bg-violet-600 text-white border-violet-700 ring-2 ring-violet-400'
+                                      : 'bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 border-violet-300 dark:border-violet-700 hover:bg-violet-100'
+                                  }`}
+                                >
+                                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>[Chấp nhận đáp án AI: {vInfo.proposedAnswer}]</span>
+                                </button>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      )}
 
-                      {/* Rubric display for Essay Questions */}
-                      {isEssay && (aiSol?.rubric || q.rubric) && (
-                        <div className="p-2.5 rounded-xl bg-purple-50/70 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 text-xs">
-                          <div className="font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1.5 mb-1">
-                            <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                            <span>Hướng dẫn chấm & Thang điểm (Rubric):</span>
-                          </div>
-                          <div className="whitespace-pre-line text-purple-900 dark:text-purple-200 text-[11px] leading-relaxed font-sans bg-white/80 dark:bg-slate-900/60 p-2 rounded-lg border border-purple-100 dark:border-purple-900/40">
-                            {aiSol?.rubric || q.rubric}
+                            {/* Trạng thái xác nhận của GV */}
+                            {manualDecisionMap[q.id] && (
+                              <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Đã chọn: {selectedAnswer}</span>
+                              </span>
+                            )}
                           </div>
                         </div>
                       )}
 
-                      {/* Options preview (Chỉ hiển thị cho câu trắc nghiệm) */}
+                      {/* Thông báo nếu câu đã đạt chuẩn từ trước */}
+                      {!vInfo && isVerifiedHigh && (
+                        <div className="p-2 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 text-xs text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                          <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span className="font-bold">Đã thẩm định:</span>
+                          <span className="text-emerald-700 dark:text-emerald-300 font-semibold">
+                            {q.sanityCheckNote || 'Câu hỏi đã được xác minh đạt chuẩn 100%.'}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Options preview cho trắc nghiệm */}
                       {!isEssay && q.options && q.options.length > 0 && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
                           {q.options.map((opt) => {
                             const isChosen = selectedAnswer === opt.id;
-                            const isAiChoice = aiSol?.correctAnswer === opt.id;
+                            const isAiChoice = vInfo?.proposedAnswer === opt.id;
 
                             return (
                               <div
                                 key={opt.id}
-                                onClick={() => setUserSelectedMap(prev => ({ ...prev, [q.id]: opt.id }))}
+                                onClick={() => handleCustomAnswer(q, opt.id)}
                                 className={`p-2 rounded-xl text-xs flex items-center gap-2 cursor-pointer transition-all border ${
                                   isChosen
                                     ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-bold'
@@ -799,7 +791,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
                                   <span className={`text-[9px] px-1.5 py-0.5 rounded font-black shrink-0 ${
                                     isChosen ? 'bg-amber-300 text-slate-900' : 'bg-violet-100 text-violet-700'
                                   }`}>
-                                    AI chọn
+                                    AI đề xuất
                                   </span>
                                 )}
                               </div>
@@ -809,7 +801,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
                       )}
                     </div>
 
-                    {/* Right: Answer Selector & AI status */}
+                    {/* Phần bên phải: Bảng chọn đáp án [Tự sửa] & Thao tác */}
                     <div className="sm:w-60 shrink-0 bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-2">
                       {isEssay ? (
                         <div className="space-y-1.5">
@@ -824,33 +816,31 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
                           <input
                             type="text"
                             value={selectedAnswer}
-                            onChange={(e) => setUserSelectedMap(prev => ({ ...prev, [q.id]: e.target.value }))}
+                            onChange={(e) => handleCustomAnswer(q, e.target.value)}
                             placeholder="VD: x = 2; y = 5..."
                             className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-purple-300 dark:border-purple-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium"
                           />
-                          {aiSol?.correctAnswer && aiSol.correctAnswer !== selectedAnswer && (
-                            <button
-                              type="button"
-                              onClick={() => setUserSelectedMap(prev => ({ ...prev, [q.id]: aiSol.correctAnswer }))}
-                              className="text-[10px] text-purple-700 dark:text-purple-300 hover:underline flex items-center gap-1 cursor-pointer font-semibold text-left"
-                            >
-                              <span>Dùng đáp số AI: <strong className="text-purple-900 dark:text-purple-100">{aiSol.correctAnswer}</strong></span>
-                            </button>
-                          )}
                         </div>
                       ) : (
                         <div>
-                          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                            Đáp án áp dụng:
-                          </span>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] uppercase font-bold text-slate-400">
+                              [Tự sửa đáp án]:
+                            </span>
+                            {selectedAnswer && (
+                              <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">
+                                Đang chọn: {selectedAnswer}
+                              </span>
+                            )}
+                          </div>
                           
-                          {/* A B C D Radio selector buttons */}
+                          {/* Các nút bấm chọn phương án A B C D */}
                           <div className="grid grid-cols-4 gap-1">
                             {['A', 'B', 'C', 'D'].map((letter) => (
                               <button
                                 key={letter}
                                 type="button"
-                                onClick={() => setUserSelectedMap(prev => ({ ...prev, [q.id]: letter }))}
+                                onClick={() => handleCustomAnswer(q, letter)}
                                 className={`py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
                                   selectedAnswer === letter
                                     ? 'bg-indigo-600 text-white shadow-xs scale-105'
@@ -864,34 +854,11 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
                         </div>
                       )}
 
-                      {/* Re-verify Single Question Button */}
-                      <button
-                        onClick={() => handleSolveSingle(q)}
-                        disabled={isReverifying}
-                        className="w-full py-1.5 px-2 bg-violet-50 dark:bg-violet-950/60 hover:bg-violet-100 text-violet-700 dark:text-violet-300 text-[11px] font-bold rounded-lg border border-violet-200 dark:border-violet-800 transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                      >
-                        {isReverifying ? (
-                          <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-600" />
-                            <span>Đang giải...</span>
-                          </>
-                        ) : (
-                          <>
-                            <RefreshCw className="w-3 h-3 text-violet-600" />
-                            <span>
-                              {isEssay
-                                ? (isAiProvided ? 'AI giải & lập lại biểu điểm' : 'AI giải & lập biểu điểm')
-                                : (isAiProvided ? 'Thẩm định lại câu này' : 'AI giải & đối soát câu này')}
-                            </span>
-                          </>
-                        )}
-                      </button>
-
-                      {/* Toggle Explanation button */}
-                      {(aiSol?.explanation || q.explanation) && (
+                      {/* Xem lời giải chi tiết */}
+                      {q.explanation && (
                         <button
                           onClick={() => setExpandedExplanations(prev => ({ ...prev, [q.id]: !prev[q.id] }))}
-                          className="w-full text-center text-[10px] text-slate-500 hover:text-indigo-600 flex items-center justify-center gap-0.5 font-semibold cursor-pointer"
+                          className="w-full text-center text-[10px] text-slate-500 hover:text-indigo-600 flex items-center justify-center gap-0.5 font-semibold cursor-pointer pt-1"
                         >
                           <span>{isExpanded ? 'Thu gọn lời giải' : 'Xem lời giải chi tiết'}</span>
                           {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
@@ -900,15 +867,15 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Collapsible Explanation Box */}
-                  {isExpanded && (aiSol?.explanation || q.explanation) && (
+                  {/* Lời giải chi tiết collapsible */}
+                  {isExpanded && q.explanation && (
                     <div className="mt-3 p-3 bg-violet-50/70 dark:bg-violet-950/40 rounded-xl border border-violet-200 dark:border-violet-900 text-xs text-slate-700 dark:text-slate-300 space-y-1 animate-in fade-in">
                       <div className="flex items-center space-x-1 font-bold text-violet-900 dark:text-violet-300">
                         <BookOpen className="w-3.5 h-3.5" />
-                        <span>Lời giải chi tiết chuẩn mực sư phạm:</span>
+                        <span>Lời giải hiện tại của đề:</span>
                       </div>
                       <div className="leading-relaxed">
-                        <MathDisplay math={aiSol?.explanation || q.explanation || ''} />
+                        <MathDisplay math={q.explanation} />
                       </div>
                     </div>
                   )}
@@ -921,7 +888,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
         {/* FOOTER ACTIONS */}
         <div className="p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
           <div className="text-xs text-slate-500">
-            Đã chọn đáp án cho <strong>{Object.keys(userSelectedMap).length}</strong>/{questions.length} câu • {changedCount > 0 ? `Đã thay đổi ${changedCount} đáp án` : 'Chưa có thay đổi'}
+            Đã duyệt/khớp <strong>{verifiedCount}</strong>/{questions.length} câu • {changedCount > 0 ? `Đã thay đổi ${changedCount} đáp án` : 'Chưa có thay đổi'}
           </div>
 
           <div className="flex items-center space-x-2 w-full sm:w-auto">
@@ -946,7 +913,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
               ) : (
                 <>
                   <Save className="w-4 h-4" />
-                  <span>Xác nhận & Cập nhật đáp án chuẩn</span>
+                  <span>Xác nhận & Cập nhật kết quả thẩm định</span>
                 </>
               )}
             </button>

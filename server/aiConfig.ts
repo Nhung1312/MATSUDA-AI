@@ -12,12 +12,12 @@ import { GoogleGenAI } from '@google/genai';
 
 export const AI_CONFIG = {
   // Thứ tự ưu tiên mô hình AI (Failover sequence)
+  // Ưu tiên gemini-3.8-flash cho môn Toán THCS, tránh sử dụng Flash Lite để chấm toán
   models: [
-    'gemini-3.1-flash-lite',
-    'gemini-flash-latest',
-    'gemini-3.8-flash'
+    'gemini-3.8-flash',
+    'gemini-flash-latest'
   ],
-  defaultModel: 'gemini-3.1-flash-lite',
+  defaultModel: 'gemini-3.8-flash',
   temperature: {
     socraticHint: 0.3,
     socraticChat: 0.35,

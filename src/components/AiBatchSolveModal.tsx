@@ -28,12 +28,12 @@ import {
 export interface ExamBatchItem {
   assignment: Assignment;
   totalQuestions: number;
-  solvedCount: number;
+  solvedCount?: number;
+  verifiedCount?: number;
+  needsReviewCount?: number;
   status: 'pending' | 'solving' | 'completed' | 'error';
   errorMsg?: string;
   completedAt?: string;
-  verifiedCount?: number;
-  needsReviewCount?: number;
 }
 
 interface AiBatchSolveModalProps {
@@ -65,11 +65,11 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
     if (isOpen && selectedAssignments.length > 0) {
       const initialItems: ExamBatchItem[] = selectedAssignments.map(asg => {
         const questions = asg.questions || [];
-        const mcqs = questions.filter(q => q.type === 'multiple_choice' || (q.options && q.options.length >= 2));
         return {
           assignment: asg,
-          totalQuestions: mcqs.length,
-          solvedCount: 0,
+          totalQuestions: questions.length,
+          verifiedCount: questions.filter(q => q.verificationStatus === 'verified' && !q.needsReview).length,
+          needsReviewCount: questions.filter(q => q.verificationStatus === 'needs_review' || q.needsReview).length,
           status: 'pending'
         };
       });
@@ -91,7 +91,7 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
   const errorCount = items.filter(i => i.status === 'error').length;
   const overallPercent = totalExams > 0 ? Math.round((completedCount / totalExams) * 100) : 0;
 
-  // Run the batch solving loop
+  // Run the batch verification loop
   const handleStartBatch = async () => {
     if (isRunningRef.current) return;
     setIsRunning(true);
@@ -125,12 +125,29 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
       const asg = item.assignment;
       const questions = asg.questions || [];
 
-      try {
-        setCurrentQuestionProgress({ current: 0, total: item.totalQuestions });
+      // Không chạy lại câu đã xác minh từ trước (Requirement F)
+      const questionsToVerify = questions.filter(q => q.verificationStatus !== 'verified' || q.needsReview === true);
 
-        // Call AI to solve this assignment's questions
-        const solvedResults = await aiService.solveExamQuestions({
-          questions,
+      // Nếu tất cả các câu đã được thẩm định đạt chuẩn từ trước
+      if (questionsToVerify.length === 0 && questions.length > 0) {
+        localItems[i] = {
+          ...localItems[i],
+          status: 'completed',
+          verifiedCount: questions.length,
+          needsReviewCount: 0,
+          completedAt: new Date().toLocaleTimeString('vi-VN')
+        };
+        setItems([...localItems]);
+        continue;
+      }
+
+      try {
+        setCurrentQuestionProgress({ current: 0, total: questionsToVerify.length });
+
+        // Gọi AI Thẩm định đối soát (Gemini 3.8 Flash, Dual-Pass 2 vòng)
+        // Tuyệt đối không fallback sang Lite, gặp 429 dừng ngay
+        const verifiedResults = await aiService.verifyExamQuestions({
+          questions: questionsToVerify,
           grade: asg.grade,
           topic: asg.topic,
           onProgress: (cur, tot) => {
@@ -138,43 +155,57 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
           }
         });
 
-        // Merge solved answers into question list
-        let verifiedCount = 0;
-        let needsReviewCount = 0;
+        // Hợp nhất kết quả thẩm định:
+        // TUYỆT ĐỐI KHÔNG TỰ Ý SỬA correctAnswer, question, options, explanation (Requirement D)
+        let vCount = 0;
+        let nrCount = 0;
 
         const updatedQuestions: Question[] = questions.map((q) => {
-          const found = solvedResults.find(r => r.questionId === q.id);
-          const isEssay = isEssayQuestion(q);
+          const found = verifiedResults.find(r => r.questionId === q.id);
           if (found) {
-            const isNeedReview = found.confidence === 'needs_review' || (found.pass1Answer && found.pass2Answer && found.pass1Answer !== found.pass2Answer);
+            const isNeedReview = found.needsReview || found.confidence === 'needs_review' || !found.matchesCurrentAnswer;
             if (isNeedReview) {
-              needsReviewCount++;
+              nrCount++;
             } else {
-              verifiedCount++;
+              vCount++;
             }
 
             return {
               ...q,
-              type: isEssay ? 'essay' : (q.type || 'multiple_choice'),
-              correctAnswer: found.correctAnswer,
-              explanation: found.explanation || q.explanation,
-              rubric: found.rubric || q.rubric || '',
               verificationStatus: isNeedReview ? 'needs_review' : 'verified',
-              sanityCheckNote: found.sanityCheckNote,
+              needsReview: isNeedReview,
               confidence: found.confidence,
-              pass1Answer: isEssay ? undefined : (found.pass1Answer || q.pass1Answer),
-              pass2Answer: isEssay ? undefined : (found.pass2Answer || q.pass2Answer)
+              pass1Answer: found.pass1Answer,
+              pass2Answer: found.pass2Answer,
+              sanityCheckNote: found.sanityCheckNote,
+              aiProposedAnswer: found.proposedAnswer,
+              aiReason: found.reason
             };
+          }
+
+          // Đối với các câu đã xác minh trước đó
+          if (q.verificationStatus === 'verified' && !q.needsReview) {
+            vCount++;
+          } else if (q.verificationStatus === 'needs_review' || q.needsReview) {
+            nrCount++;
           }
           return q;
         });
 
+        // Kết quả thẩm định đề (Requirement G):
+        // Nếu tất cả câu đạt => verified, eligibleForSampleBank = true
+        // Nếu còn câu nghi ngờ => needs_review, eligibleForSampleBank = false
+        const allVerified = updatedQuestions.length > 0 && updatedQuestions.every(q => q.verificationStatus === 'verified' && !q.needsReview);
+        const hasSuspicious = updatedQuestions.some(q => q.verificationStatus === 'needs_review' || q.needsReview === true);
+
         const updatedAssignment: Assignment = {
           ...asg,
-          questions: updatedQuestions
+          questions: updatedQuestions,
+          verificationStatus: allVerified ? 'verified' : (hasSuspicious ? 'needs_review' : 'unverified'),
+          eligibleForSampleBank: allVerified ? true : false
         };
 
-        // Save to StorageService and FirestoreService immediately
+        // Lưu kết quả ngay sau mỗi đề thi (Requirement F)
         StorageService.saveAssignment(updatedAssignment);
         try {
           await FirestoreService.saveExam(updatedAssignment);
@@ -182,36 +213,49 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
           console.warn('Lỗi lưu Firestore đề:', fErr);
         }
 
-        // Mark item completed
+        // Đánh dấu hoàn tất đề
         localItems[i] = {
           ...localItems[i],
           assignment: updatedAssignment,
           status: 'completed',
-          solvedCount: solvedResults.length,
-          verifiedCount,
-          needsReviewCount,
+          verifiedCount: vCount,
+          needsReviewCount: nrCount,
           completedAt: new Date().toLocaleTimeString('vi-VN')
         };
         setItems([...localItems]);
 
       } catch (err: any) {
-        console.error(`Lỗi giải đề ${asg.title}:`, err);
-        localItems[i] = {
-          ...localItems[i],
-          status: 'error',
-          errorMsg: err?.message || 'Lỗi kết nối hoặc vượt hạn mức tạm thời'
-        };
-        setItems([...localItems]);
+        console.error(`Lỗi thẩm định đề ${asg.title}:`, err);
+        const is429 = err?.status === 429 || err?.isQuota || String(err?.message || err).includes('429') || String(err?.message || err).includes('RESOURCE_EXHAUSTED') || String(err?.message || err).includes('quota');
+
+        if (is429) {
+          // Gặp 429 thì DỪNG TIẾN TRÌNH NGAY, không retry liên tục, không fallback (Requirement F)
+          stopRequestedRef.current = true;
+          localItems[i] = {
+            ...localItems[i],
+            status: 'error',
+            errorMsg: 'Dừng tiến trình do vượt hạn mức API (429 RESOURCE_EXHAUSTED). Đã bảo toàn kết quả các đề thẩm định trước đó.'
+          };
+          setItems([...localItems]);
+          break; // Thoát vòng lặp batch ngay lập tức
+        } else {
+          localItems[i] = {
+            ...localItems[i],
+            status: 'error',
+            errorMsg: err?.message || 'Lỗi kết nối khi thẩm định đề'
+          };
+          setItems([...localItems]);
+        }
       }
 
-      // Small throttle pause between exams to prevent hitting API rate limits and 503 spikes
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Nghỉ nhẹ 1.5s giữa các đề để giữ RPM ổn định
+      await new Promise(resolve => setTimeout(resolve, 1500));
     }
 
     setIsRunning(false);
     isRunningRef.current = false;
 
-    // Check if all are done
+    // Kiểm tra hoàn tất toàn bộ
     const allDone = localItems.every(i => i.status === 'completed');
     if (allDone && !stopRequestedRef.current && !pauseRequestedRef.current) {
       setIsCompletedAll(true);
@@ -258,14 +302,14 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
             <div>
               <div className="flex items-center space-x-2">
                 <h3 className="font-black text-lg sm:text-xl text-white tracking-tight">
-                  AI Giải Đề Hàng Loạt & Lập Đáp Án Chuẩn
+                  AI Thẩm Định Kho Đề Hàng Loạt (Gemini 3.8 Flash)
                 </h3>
                 <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full bg-white/20 text-white text-[10px] font-black uppercase tracking-wider">
-                  Chạy Tự Động
+                  Dual-Pass 2 Vòng
                 </span>
               </div>
               <p className="text-xs text-violet-100 mt-0.5">
-                Tự động giải toán từng câu, điền đáp án chuẩn xác và lưu đồng bộ • Bảo toàn 100% dữ liệu gốc
+                Thẩm định tính chính xác của đề thi, phát hiện câu nghi vấn • Bảo toàn 100% đề gốc và bảng đáp án hiện tại
               </p>
             </div>
           </div>
@@ -301,14 +345,14 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
 
               <div className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800 flex items-center space-x-1.5 shadow-2xs">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Đã giải xong:</span>
+                <span>Đã thẩm định:</span>
                 <strong className="text-sm font-black">{completedCount} đề</strong>
               </div>
 
               {errorCount > 0 && (
                 <div className="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 font-bold border border-rose-200 dark:border-rose-800 flex items-center space-x-1.5 shadow-2xs">
                   <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                  <span>Cần thử lại:</span>
+                  <span>Chưa xong:</span>
                   <strong className="text-sm font-black">{errorCount} đề</strong>
                 </div>
               )}
@@ -318,7 +362,7 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
             {isRunning && currentIndex >= 0 && items[currentIndex] && (
               <div className="flex items-center space-x-2 text-violet-700 dark:text-violet-300 font-semibold animate-pulse">
                 <Loader2 className="w-4 h-4 animate-spin text-violet-600" />
-                <span>Đang xử lý: Đề {currentIndex + 1}/{totalExams} ({currentQuestionProgress.current}/{currentQuestionProgress.total} câu)</span>
+                <span>Đang thẩm định: Đề {currentIndex + 1}/{totalExams} ({currentQuestionProgress.current}/{currentQuestionProgress.total} câu)</span>
               </div>
             )}
           </div>
@@ -326,7 +370,7 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
           {/* Overall Progress Bar */}
           <div className="space-y-1.5">
             <div className="flex justify-between text-xs font-bold">
-              <span className="text-slate-700 dark:text-slate-300">Tiến độ hoàn thành:</span>
+              <span className="text-slate-700 dark:text-slate-300">Tiến độ thẩm định:</span>
               <span className="text-violet-700 dark:text-violet-400 font-black">{overallPercent}% ({completedCount}/{totalExams} đề)</span>
             </div>
             <div className="w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden p-0.5 shadow-inner">
@@ -341,7 +385,7 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
         {/* EXAM LIST STATUS */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-2.5">
           <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 px-2">
-            <span>Danh sách đề thi được phân công AI giải:</span>
+            <span>Danh sách đề thi thẩm định đối soát:</span>
             <span>Trạng thái</span>
           </div>
 
@@ -392,15 +436,15 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
                     </div>
 
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-2">
-                      <span>{item.totalQuestions} câu trắc nghiệm</span>
+                      <span>{item.totalQuestions} câu hỏi</span>
                       {isCurrentSolving && (
                         <span className="text-violet-600 font-bold">
-                          • Đang giải câu {currentQuestionProgress.current}/{currentQuestionProgress.total}...
+                          • Đang đối soát câu {currentQuestionProgress.current}/{currentQuestionProgress.total}...
                         </span>
                       )}
                       {isCompleted && (
                         <span className="text-emerald-600 font-medium">
-                          • Đã hoàn thiện lúc {item.completedAt}
+                          • Hoàn tất lúc {item.completedAt}
                         </span>
                       )}
                       {isError && (
@@ -417,7 +461,7 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
                   {isCurrentSolving && (
                     <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl bg-violet-100 dark:bg-violet-900 text-violet-800 dark:text-violet-200 text-xs font-bold animate-pulse">
                       <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-600" />
-                      <span>Đang giải...</span>
+                      <span>Đang đối soát...</span>
                     </span>
                   )}
 
@@ -425,16 +469,16 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
                     <div className="flex items-center space-x-1.5">
                       <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200 text-xs font-bold">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Đã giải</span>
+                        <span>Đã thẩm định</span>
                       </span>
                       {item.needsReviewCount && item.needsReviewCount > 0 ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 text-[11px] font-bold" title="Có câu hỏi phát hiện sự khác biệt giữa giải xuôi và thử ngược">
-                          <span>{item.needsReviewCount} câu nghi vấn</span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 text-[11px] font-bold" title="Có câu hỏi phát hiện sự khác biệt cần xem lại">
+                          <span>{item.needsReviewCount} câu cần xem lại</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold" title="Đã thẩm định kép 2 vòng trùng khớp 100%">
+                        <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold" title="Đã thẩm định 100% đạt chuẩn">
                           <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                          <span>Khớp 100%</span>
+                          <span>100% chuẩn</span>
                         </span>
                       )}
                     </div>
@@ -462,7 +506,7 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
         <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="text-xs text-slate-500 flex items-center space-x-1.5">
             <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>Tự động lưu vào bộ nhớ máy và Cloud sau mỗi đề thi hoàn tất.</span>
+            <span>Tự động lưu vào bộ nhớ máy và Cloud sau mỗi đề thi. AI không tự ý sửa đáp án gốc.</span>
           </div>
 
           <div className="flex items-center space-x-2.5">
@@ -474,7 +518,7 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
               >
                 <Play className="w-4 h-4 fill-white" />
                 <span>
-                  {completedCount > 0 ? `Tiếp tục giải (${totalExams - completedCount} đề còn lại)` : `Bắt đầu giải ${totalExams} đề`}
+                  {completedCount > 0 ? `Tiếp tục thẩm định (${totalExams - completedCount} đề còn lại)` : `Bắt đầu thẩm định ${totalExams} đề`}
                 </span>
               </button>
             )}

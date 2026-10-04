@@ -31,7 +31,9 @@ export interface SocraticLearningEvent {
     | 'student_submitted_correction'
     | 'correction_verified'
     | 'remedial_exercise_generated'
-    | 'remedial_exercise_completed';
+    | 'remedial_exercise_completed'
+    | 'mistake_recorded'
+    | 'mistake_mastered';
   questionId: string;
   level?: SocraticHintLevel;
   timestamp: string;
@@ -67,6 +69,8 @@ export interface LearningProgressState {
   recordCorrectionVerified: (questionId: string, isCorrect: boolean, isProgress: boolean) => void;
   recordRemedialExerciseGenerated: (questionId: string, remedialId: string, skillTarget?: string) => void;
   recordRemedialExerciseCompleted: (remedialId: string, isCorrect: boolean) => void;
+  recordMistakeDetected: (questionId: string, errorType?: string, firstErrorStep?: number) => void;
+  recordMistakeMastered: (questionId: string, attemptsCount: number) => void;
   getSocraticStats: () => { hintCount: number; chatCount: number; revisionCount: number; totalXp: number };
   resetProgress: () => void;
   
@@ -260,6 +264,12 @@ export const useLearningProgressStore = create<LearningProgressState>()(
 
       recordRemedialExerciseGenerated: (questionId: string, remedialId: string, skillTarget?: string) => {
         const state = get();
+        // Chống duplicate event khi rerender
+        const isDuplicate = state.socraticEvents.some(
+          e => e.type === 'remedial_exercise_generated' && (e.questionId === remedialId || e.questionId === questionId)
+        );
+        if (isDuplicate) return;
+
         const event: SocraticLearningEvent = {
           id: 'rem_gen_' + Date.now(),
           type: 'remedial_exercise_generated',
@@ -288,6 +298,54 @@ export const useLearningProgressStore = create<LearningProgressState>()(
         set({
           socraticEvents: [event, ...state.socraticEvents.slice(0, 199)],
           socraticXp: state.socraticXp + (isCorrect ? 30 : 10)
+        });
+      },
+
+      recordMistakeDetected: (questionId: string, errorType?: string, firstErrorStep?: number) => {
+        const state = get();
+        // Chống ghi nhận duplicate câu sai nhiều lần
+        const isDuplicate = state.socraticEvents.some(
+          e => e.type === 'mistake_recorded' && e.questionId === questionId
+        );
+        if (isDuplicate) return;
+
+        const event: SocraticLearningEvent = {
+          id: 'mis_rec_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+          type: 'mistake_recorded',
+          questionId,
+          stepNumber: firstErrorStep,
+          errorType,
+          timestamp: new Date().toISOString(),
+          xpEarned: 5,
+          detail: firstErrorStep
+            ? `Lưu vết câu sai vào Sổ tay: Bước ${firstErrorStep} (${errorType || 'Cần củng cố'})`
+            : 'Lưu câu sai vào Sổ tay câu sai để luyện lại'
+        };
+        set({
+          socraticEvents: [event, ...state.socraticEvents.slice(0, 199)],
+          socraticXp: state.socraticXp + 5
+        });
+      },
+
+      recordMistakeMastered: (questionId: string, attemptsCount: number) => {
+        const state = get();
+        // Chống ghi nhận mastered trùng lặp cho cùng một câu
+        const isDuplicate = state.socraticEvents.some(
+          e => e.type === 'mistake_mastered' && e.questionId === questionId
+        );
+        if (isDuplicate) return;
+
+        const event: SocraticLearningEvent = {
+          id: 'mis_mas_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+          type: 'mistake_mastered',
+          questionId,
+          timestamp: new Date().toISOString(),
+          xpEarned: 40,
+          detail: `🏆 Khắc phục thành công lỗ hổng kiến thức sau ${attemptsCount} lượt luyện tập!`
+        };
+        set({
+          socraticEvents: [event, ...state.socraticEvents.slice(0, 199)],
+          socraticXp: state.socraticXp + 40
         });
       },
 

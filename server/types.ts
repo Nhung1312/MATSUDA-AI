@@ -105,6 +105,7 @@ export interface StepGradingResponse {
     finalAnswerLatex: string;
   };
   analysisSource: 'ai' | 'rule' | 'unavailable';
+  needsTeacherReview?: boolean;
   modelUsed?: string;
   message?: string;
 }

@@ -25,12 +25,12 @@ import {
 } from 'firebase/firestore';
 
 export const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyBp8x8uUnx2wqEC3m0kb8_0r8Hr62AOX04",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "toan-thcs-2026.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "toan-thcs-2026",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "toan-thcs-2026.firebasestorage.app",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "103179763579",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:103179763579:web:a245a638ea9bd2609147de"
+  apiKey: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || "AIzaSyBp8x8uUnx2wqEC3m0kb8_0r8Hr62AOX04",
+  authDomain: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN) || "toan-thcs-2026.firebaseapp.com",
+  projectId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_PROJECT_ID) || "toan-thcs-2026",
+  storageBucket: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET) || "toan-thcs-2026.firebasestorage.app",
+  messagingSenderId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID) || "103179763579",
+  appId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_APP_ID) || "1:103179763579:web:a245a638ea9bd2609147de"
 };
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);

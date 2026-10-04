@@ -4,8 +4,34 @@
  * Hỗ trợ cả câu trắc nghiệm, trả lời ngắn và câu tự luận có đính kèm ảnh bài làm học sinh.
  */
 
-import { Assignment, Submission, StudentAnswer, AssignmentStats, QuestionAnalysis, ViolationEvent, Contest, ContestSubmission, Question } from '../types';
+import { 
+  Assignment, 
+  Submission, 
+  StudentAnswer, 
+  AssignmentStats, 
+  QuestionAnalysis, 
+  ViolationEvent, 
+  Contest, 
+  ContestSubmission, 
+  Question,
+  StepAnalysis,
+  StepErrorType,
+  StepGradingResponse
+} from '../types';
 import { isEssayQuestion } from '../utils/questionUtils';
+import { stepGradingService } from './stepGradingService';
+import { StorageService } from './storageService';
+import { FirestoreService } from './firestoreService';
+
+export interface GradeSingleSubmissionWithAiResult {
+  success: boolean;
+  submission: Submission;
+  hasErrors: boolean;
+  needsTeacherReview: boolean;
+  totalErrors: number;
+  firstError?: { step: number; type: StepErrorType; explanation: string };
+  errorMsg?: string;
+}
 
 export class GradingService {
   /**
@@ -178,7 +204,16 @@ export class GradingService {
         hasEssay = true;
         if (aiEval && typeof aiEval.score === 'number') {
           pointsEarned = Math.min(questionPoints, Math.max(0, aiEval.score));
-          isCorrect = pointsEarned >= (questionPoints * 0.5);
+          const stepRes = (aiEval as any).stepGradingResponse;
+          const hasError = !!(aiEval as any).firstErrorStep || !!stepRes?.firstErrorStep || (stepRes?.analysis || []).some((s: any) => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
+          if (stepRes && typeof stepRes.isAllCorrect === 'boolean') {
+            isCorrect = stepRes.isAllCorrect && !hasError;
+          } else if (hasError) {
+            isCorrect = false;
+          } else {
+            // Không dùng ngưỡng 50%: tự luận chỉ đúng hoàn toàn khi đạt trọn vẹn điểm và không có lỗi
+            isCorrect = pointsEarned >= questionPoints;
+          }
           earnedEssayPoints += pointsEarned;
         } else {
           isEssayGraded = false;
@@ -335,7 +370,16 @@ export class GradingService {
         // Với câu tự luận: nếu đã có điểm AI chấm
         if (aiEval && typeof aiEval.score === 'number') {
           pointsEarned = Math.min(q.points, Math.max(0, aiEval.score));
-          isCorrect = pointsEarned >= (q.points * 0.5);
+          const stepRes = (aiEval as any).stepGradingResponse;
+          const hasError = !!(aiEval as any).firstErrorStep || !!stepRes?.firstErrorStep || (stepRes?.analysis || []).some((s: any) => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
+          if (stepRes && typeof stepRes.isAllCorrect === 'boolean') {
+            isCorrect = stepRes.isAllCorrect && !hasError;
+          } else if (hasError) {
+            isCorrect = false;
+          } else {
+            // Không dùng ngưỡng 50%: tự luận chỉ đúng hoàn toàn khi đạt trọn vẹn điểm và không có lỗi
+            isCorrect = pointsEarned >= q.points;
+          }
           earnedEssayPoints += pointsEarned;
         } else if (solutionText || images.length > 0 || selected) {
           // Đã có lời giải/ảnh nhưng chưa chấm
@@ -388,7 +432,13 @@ export class GradingService {
         maxPoints: q.points,
         aiFeedback: aiEval?.feedback,
         aiScore: aiEval?.score,
-        aiGraded: aiEval?.graded
+        aiGraded: aiEval?.graded,
+        stepAnalysis: (aiEval as any)?.stepAnalysis || (aiEval as any)?.stepGradingResponse?.analysis,
+        firstErrorStep: (aiEval as any)?.firstErrorStep !== undefined ? (aiEval as any)?.firstErrorStep : (aiEval as any)?.stepGradingResponse?.firstErrorStep,
+        firstErrorType: (aiEval as any)?.firstErrorType || (aiEval as any)?.stepGradingResponse?.firstErrorType,
+        firstErrorExplanation: (aiEval as any)?.firstErrorExplanation || (aiEval as any)?.stepGradingResponse?.firstErrorExplanation,
+        needsTeacherReview: (aiEval as any)?.needsTeacherReview !== undefined ? (aiEval as any)?.needsTeacherReview : (aiEval as any)?.stepGradingResponse?.needsTeacherReview,
+        stepGradingResponse: (aiEval as any)?.stepGradingResponse
       };
     });
 
@@ -512,6 +562,219 @@ export class GradingService {
       lowestScore,
       questionAnalyses,
       mostMissedQuestions
+    };
+  }
+
+  /**
+   * LÕI CHẤM BÀI ĐỘC NHẤT (Single Grading Core):
+   * Chấm điểm một bài nộp học sinh (trực tuyến hoặc bài giấy) bằng AI Vision & Step-by-Step.
+   * Dùng chung cho cả chấm cá nhân và vòng lặp chấm hàng loạt.
+   */
+  static async gradeSingleSubmissionWithAI(params: {
+    assignment: Assignment;
+    submission: Submission;
+    onProgress?: (message: string) => void;
+    signal?: AbortSignal;
+  }): Promise<GradeSingleSubmissionWithAiResult> {
+    const { assignment, submission, onProgress, signal } = params;
+
+    if (signal?.aborted) {
+      throw new Error('Quá trình chấm bài đã bị tạm dừng bởi người dùng.');
+    }
+
+    onProgress?.(`Bắt đầu phân tích bài làm của ${submission.studentName}...`);
+
+    let totalEarned = 0;
+    let totalMax = 0;
+    let correctCnt = 0;
+    let wrongCnt = 0;
+    let overallNeedsReview = false;
+    let totalErrorsCount = 0;
+    let firstFoundError: { step: number; type: StepErrorType; explanation: string } | undefined = undefined;
+
+    const updatedAnswers: StudentAnswer[] = [];
+
+    for (let qIdx = 0; qIdx < assignment.questions.length; qIdx++) {
+      if (signal?.aborted) {
+        throw new Error('Quá trình chấm bài đã bị tạm dừng bởi người dùng.');
+      }
+
+      const q = assignment.questions[qIdx];
+      const isEssay = isEssayQuestion(q);
+      const existingAns = submission.answers.find(a => a.questionId === q.id);
+
+      const maxPoints = q.points || 1.0;
+      totalMax += maxPoints;
+
+      if (!isEssay) {
+        // Trắc nghiệm & trả lời ngắn: Đánh giá tức thì
+        const selected = (existingAns?.selectedAnswer || '').trim();
+        let isCorrect = false;
+        let points = 0;
+
+        if (q.type === 'short_answer') {
+          const res = GradingService.evaluateShortAnswer(q, selected);
+          isCorrect = res.isCorrect;
+          points = isCorrect ? maxPoints : 0;
+        } else {
+          const res = GradingService.evaluateMultipleChoiceAnswer(q, selected);
+          isCorrect = res.isCorrect;
+          points = isCorrect ? maxPoints : 0;
+        }
+
+        if (isCorrect) correctCnt++; else wrongCnt++;
+        totalEarned += points;
+
+        updatedAnswers.push({
+          ...(existingAns || {
+            questionId: q.id,
+            selectedAnswer: selected,
+            isCorrect,
+            pointsEarned: points,
+            maxPoints
+          }),
+          isCorrect,
+          pointsEarned: points,
+          maxPoints
+        });
+        continue;
+      }
+
+      // TỰ LUẬN: Đọc trực tiếp từ ảnh gốc (Vision) & Phân tích từng bước (Step-by-step)
+      onProgress?.(`Đang chấm tự luận câu ${qIdx + 1}/${assignment.questions.length}...`);
+
+      const solutionText = existingAns?.studentSolutionText || '';
+      // Gom ảnh từ câu hỏi riêng hoặc ảnh bài làm giấy tổng thể của submission
+      const images: string[] = (existingAns?.essayImages && existingAns.essayImages.length > 0)
+        ? existingAns.essayImages
+        : (submission.essayImages || []);
+
+      if (!solutionText && images.length === 0 && !existingAns?.selectedAnswer) {
+        // Học sinh bỏ trống không làm câu này
+        wrongCnt++;
+        updatedAnswers.push({
+          questionId: q.id,
+          selectedAnswer: '',
+          studentSolutionText: '',
+          essayImages: [],
+          isCorrect: false,
+          pointsEarned: 0,
+          maxPoints,
+          aiFeedback: 'Học sinh chưa điền lời giải hoặc chưa tải ảnh bài làm cho câu này.',
+          aiScore: 0,
+          aiGraded: true
+        });
+        continue;
+      }
+
+      try {
+        const stepRes: StepGradingResponse = await stepGradingService.analyzeStepByStep({
+          questionId: q.id,
+          questionText: q.question,
+          grade: String(assignment.grade),
+          topic: assignment.topic,
+          maxPoints: q.points,
+          correctAnswer: q.correctAnswer,
+          rubric: q.rubric,
+          studentSolutionText: solutionText,
+          essayImages: images
+        });
+
+        const scoreEarned = Math.min(maxPoints, Math.max(0, stepRes.score));
+        const hasStepError = !!stepRes.firstErrorStep || (stepRes.analysis || []).some(s => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
+        const isCorrect = !hasStepError && (stepRes.isAllCorrect === true || ((stepRes.analysis || []).length > 0 && (stepRes.analysis || []).every(s => s.status === 'correct') && scoreEarned >= maxPoints));
+
+        if (isCorrect) correctCnt++; else wrongCnt++;
+        totalEarned += scoreEarned;
+
+        const needsReview = !!stepRes.needsTeacherReview;
+        if (needsReview) overallNeedsReview = true;
+
+        if (stepRes.firstErrorStep) {
+          totalErrorsCount++;
+          if (!firstFoundError) {
+            firstFoundError = {
+              step: stepRes.firstErrorStep,
+              type: stepRes.firstErrorType || 'other',
+              explanation: stepRes.firstErrorExplanation || 'Có bước biến đổi sai'
+            };
+          }
+        }
+
+        updatedAnswers.push({
+          ...(existingAns || { questionId: q.id, selectedAnswer: '' }),
+          questionId: q.id,
+          studentSolutionText: solutionText,
+          essayImages: images,
+          isCorrect,
+          pointsEarned: scoreEarned,
+          maxPoints,
+          teacherScore: scoreEarned,
+          teacherFeedback: `[Gemini AI]: ${stepRes.feedback}`,
+          aiScore: scoreEarned,
+          aiFeedback: stepRes.feedback,
+          aiGraded: true,
+          stepAnalysis: stepRes.analysis,
+          firstErrorStep: stepRes.firstErrorStep,
+          firstErrorType: stepRes.firstErrorType,
+          firstErrorExplanation: stepRes.firstErrorExplanation,
+          needsTeacherReview: needsReview,
+          stepGradingResponse: stepRes
+        });
+      } catch (err: any) {
+        console.error(`[GradingService] Lỗi chấm câu ${q.id}:`, err);
+        const fallbackScore = existingAns?.teacherScore ?? existingAns?.pointsEarned ?? 0;
+        totalEarned += fallbackScore;
+        if (existingAns?.isCorrect) correctCnt++; else wrongCnt++;
+        overallNeedsReview = true;
+
+        updatedAnswers.push({
+          ...(existingAns || { questionId: q.id, selectedAnswer: '' }),
+          questionId: q.id,
+          isCorrect: existingAns?.isCorrect ?? false,
+          pointsEarned: fallbackScore,
+          maxPoints,
+          needsTeacherReview: true,
+          aiFeedback: `Lỗi AI khi chấm câu này: ${err?.message || 'Không thể phản hồi'}. Giáo viên vui lòng chấm tay.`
+        });
+      }
+    }
+
+    const rawScore = totalMax > 0 ? (totalEarned / totalMax) * 10 : 0;
+    const finalScore = Math.round(rawScore * 10) / 10;
+
+    const updatedSubmission: Submission = {
+      ...submission,
+      answers: updatedAnswers,
+      totalScore: finalScore,
+      correctCount: correctCnt,
+      wrongCount: wrongCnt,
+      hasEssayQuestions: assignment.questions.some(q => isEssayQuestion(q)),
+      gradingStatus: overallNeedsReview ? 'needs_review' : 'graded',
+      needsTeacherReview: overallNeedsReview,
+      errorSummary: {
+        totalErrors: totalErrorsCount,
+        firstErrorStep: firstFoundError?.step || null,
+        firstErrorType: firstFoundError?.type || null,
+        firstErrorExplanation: firstFoundError?.explanation || null
+      }
+    };
+
+    // Tự động lưu bền vững vào IndexedDB/LocalStorage và Firestore
+    try {
+      StorageService.saveSubmission(updatedSubmission);
+      await FirestoreService.saveResult(updatedSubmission).catch(() => {});
+    } catch (saveErr) {
+      console.warn('Lỗi lưu kết quả chấm vào bộ nhớ:', saveErr);
+    }
+
+    return {
+      success: true,
+      submission: updatedSubmission,
+      hasErrors: totalErrorsCount > 0,
+      needsTeacherReview: overallNeedsReview,
+      totalErrors: totalErrorsCount,
+      firstError: firstFoundError
     };
   }
 

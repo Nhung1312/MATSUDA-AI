@@ -35,6 +35,8 @@ import {
   Link2,
   Sparkles,
   AlertTriangle,
+  AlertCircle,
+  ShieldCheck,
   Image as ImageIcon,
   CheckSquare,
   Square
@@ -72,6 +74,7 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
   const [filterClass, setFilterClass] = useState<string>(initialFilterClass || 'all');
   const [filterMissingImagesOnly, setFilterMissingImagesOnly] = useState<boolean>(false);
   const [filterUnsolvedOnly, setFilterUnsolvedOnly] = useState<boolean>(false);
+  const [filterVerificationStatus, setFilterVerificationStatus] = useState<'all' | 'unverified' | 'needs_review' | 'verified'>('all');
   const [selectedAssignmentIds, setSelectedAssignmentIds] = useState<string[]>([]);
   const [showBatchSolveModal, setShowBatchSolveModal] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'title' | 'questions' | 'duration'>('newest');
@@ -200,7 +203,20 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
     return safeAssignments.filter(asg => (asg.questions || []).some(q => isQuestionMissingImage(q))).length;
   }, [safeAssignments]);
 
-  const hasActiveFilters = filterGrade !== 'all' || filterTopicCategory !== 'all' || filterClass !== 'all' || searchQuery.trim() !== '' || filterMissingImagesOnly || filterUnsolvedOnly;
+  // Thống kê theo trạng thái thẩm định (Đề cũ không có verificationStatus được coi là unverified)
+  const totalUnverified = useMemo(() => {
+    return safeAssignments.filter(a => (!a.verificationStatus || a.verificationStatus === 'unverified')).length;
+  }, [safeAssignments]);
+
+  const totalNeedsReview = useMemo(() => {
+    return safeAssignments.filter(a => a.verificationStatus === 'needs_review').length;
+  }, [safeAssignments]);
+
+  const totalVerified = useMemo(() => {
+    return safeAssignments.filter(a => a.verificationStatus === 'verified').length;
+  }, [safeAssignments]);
+
+  const hasActiveFilters = filterGrade !== 'all' || filterTopicCategory !== 'all' || filterClass !== 'all' || searchQuery.trim() !== '' || filterMissingImagesOnly || filterUnsolvedOnly || filterVerificationStatus !== 'all';
 
   const clearAllFilters = () => {
     setFilterGrade('all');
@@ -208,6 +224,7 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
     setFilterClass('all');
     setFilterMissingImagesOnly(false);
     setFilterUnsolvedOnly(false);
+    setFilterVerificationStatus('all');
     setSearchQuery('');
   };
 
@@ -226,6 +243,12 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
         if (filterTopicCategory !== 'all' && !matchesTopicCategory(a.topic, filterTopicCategory)) return false;
         if (filterMissingImagesOnly && !(a.questions || []).some(q => isQuestionMissingImage(q))) return false;
         if (filterUnsolvedOnly && !isAssignmentUnsolved(a)) return false;
+        if (filterVerificationStatus !== 'all') {
+          const vStatus = a.verificationStatus || 'unverified';
+          if (filterVerificationStatus === 'unverified' && vStatus !== 'unverified') return false;
+          if (filterVerificationStatus === 'needs_review' && vStatus !== 'needs_review') return false;
+          if (filterVerificationStatus === 'verified' && vStatus !== 'verified') return false;
+        }
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase().trim();
           const matchTitle = (a.title || '').toLowerCase().includes(q);
@@ -245,7 +268,7 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
         if (sortBy === 'duration') return (b.durationMinutes || 0) - (a.durationMinutes || 0);
         return 0;
       });
-  }, [safeAssignments, safeClasses, filterGrade, filterClass, filterTopicCategory, filterMissingImagesOnly, filterUnsolvedOnly, searchQuery, sortBy]);
+  }, [safeAssignments, safeClasses, filterGrade, filterClass, filterTopicCategory, filterMissingImagesOnly, filterUnsolvedOnly, filterVerificationStatus, searchQuery, sortBy]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -376,84 +399,148 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
         </div>
 
         {/* Quick Topic Pills & Active Filters State */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-slate-500 dark:text-slate-400 font-medium">Lọc nhanh:</span>
-            
-            {/* Quick buttons */}
-            <button
-              onClick={() => setFilterTopicCategory(filterTopicCategory === 'algebra' ? 'all' : 'algebra')}
-              className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                filterTopicCategory === 'algebra'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
-            >
-              <Calculator className="w-3 h-3" />
-              <span>Đại số</span>
-            </button>
+        <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
+          {/* Bộ lọc trạng thái thẩm định đề thi */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-slate-500 dark:text-slate-400 font-bold shrink-0">Thẩm định đề:</span>
+              <button
+                type="button"
+                onClick={() => setFilterVerificationStatus('all')}
+                className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  filterVerificationStatus === 'all'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                Tất cả ({safeAssignments.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterVerificationStatus(filterVerificationStatus === 'unverified' ? 'all' : 'unverified')}
+                className={`inline-flex items-center space-x-1 px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  filterVerificationStatus === 'unverified'
+                    ? 'bg-amber-500 text-white shadow-xs'
+                    : 'bg-amber-100/70 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 hover:bg-amber-200 border border-amber-300 dark:border-amber-800'
+                }`}
+              >
+                <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                <span>Chưa thẩm định ({totalUnverified})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterVerificationStatus(filterVerificationStatus === 'needs_review' ? 'all' : 'needs_review')}
+                className={`inline-flex items-center space-x-1 px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  filterVerificationStatus === 'needs_review'
+                    ? 'bg-rose-500 text-white shadow-xs'
+                    : 'bg-rose-100/70 dark:bg-rose-950/60 text-rose-900 dark:text-rose-200 hover:bg-rose-200 border border-rose-300 dark:border-rose-800'
+                }`}
+              >
+                <AlertCircle className="w-3 h-3 text-rose-600 dark:text-rose-400" />
+                <span>Cần xem lại ({totalNeedsReview})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterVerificationStatus(filterVerificationStatus === 'verified' ? 'all' : 'verified')}
+                className={`inline-flex items-center space-x-1 px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  filterVerificationStatus === 'verified'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-emerald-100/70 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 hover:bg-emerald-200 border border-emerald-300 dark:border-emerald-800'
+                }`}
+              >
+                <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                <span>Đã thẩm định ({totalVerified})</span>
+              </button>
+            </div>
 
-            <button
-              onClick={() => setFilterTopicCategory(filterTopicCategory === 'geometry' ? 'all' : 'geometry')}
-              className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                filterTopicCategory === 'geometry'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
-            >
-              <Shapes className="w-3 h-3" />
-              <span>Hình học</span>
-            </button>
-
-            <button
-              onClick={() => setFilterTopicCategory(filterTopicCategory === 'statistics' ? 'all' : 'statistics')}
-              className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                filterTopicCategory === 'statistics'
-                  ? 'bg-purple-600 text-white shadow-xs'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
-            >
-              <PieChart className="w-3 h-3" />
-              <span>Xác suất & Thống kê</span>
-            </button>
-
-            {/* MỚI: Nút lọc nhanh các đề có câu hỏi thiếu hình vẽ */}
-            <button
-              onClick={() => setFilterMissingImagesOnly(!filterMissingImagesOnly)}
-              className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                filterMissingImagesOnly
-                  ? 'bg-amber-500 text-white shadow-xs'
-                  : totalMissingImagesAssignments > 0
-                  ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-200 hover:bg-amber-200 border border-amber-300 dark:border-amber-800'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
-              title="Lọc các đề thi có chứa câu hỏi nhắc đến hình vẽ nhưng chưa có ảnh minh họa"
-            >
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-              <span>Đề có câu thiếu hình ({totalMissingImagesAssignments})</span>
-            </button>
-
-            {/* MỚI: Nút lọc nhanh các đề chưa có đáp án chuẩn */}
-            <button
-              onClick={() => setFilterUnsolvedOnly(!filterUnsolvedOnly)}
-              className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                filterUnsolvedOnly
-                  ? 'bg-violet-600 text-white shadow-xs'
-                  : totalUnsolvedAssignments > 0
-                  ? 'bg-violet-100 dark:bg-violet-950/70 text-violet-900 dark:text-violet-200 hover:bg-violet-200 border border-violet-300 dark:border-violet-800'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
-              title="Lọc các đề thi chưa có bảng đáp án chuẩn (mặc định A)"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
-              <span>Đề chưa có đáp án ({totalUnsolvedAssignments})</span>
-            </button>
+            <div className="flex items-center space-x-3 text-slate-500 dark:text-slate-400">
+              <span>
+                Hiển thị <strong className="text-slate-800 dark:text-slate-100">{filteredAssignments.length}</strong> / {assignments.length} bài
+              </span>
+              {hasActiveFilters && (
+                <button
+                  onClick={clearAllFilters}
+                  className="inline-flex items-center space-x-1 text-indigo-600 dark:text-indigo-400 hover:underline font-semibold cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Xóa bộ lọc</span>
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center space-x-3 text-slate-500 dark:text-slate-400">
-            <span>
-              Hiển thị <strong className="text-slate-800 dark:text-slate-100">{filteredAssignments.length}</strong> / {assignments.length} bài
-            </span>
+          {/* Dòng lọc theo bộ môn & trạng thái đặc biệt */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-800/80">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-slate-500 dark:text-slate-400 font-medium">Chủ đề:</span>
+              
+              <button
+                onClick={() => setFilterTopicCategory(filterTopicCategory === 'algebra' ? 'all' : 'algebra')}
+                className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  filterTopicCategory === 'algebra'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <Calculator className="w-3 h-3" />
+                <span>Đại số</span>
+              </button>
+
+              <button
+                onClick={() => setFilterTopicCategory(filterTopicCategory === 'geometry' ? 'all' : 'geometry')}
+                className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  filterTopicCategory === 'geometry'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <Shapes className="w-3 h-3" />
+                <span>Hình học</span>
+              </button>
+
+              <button
+                onClick={() => setFilterTopicCategory(filterTopicCategory === 'statistics' ? 'all' : 'statistics')}
+                className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  filterTopicCategory === 'statistics'
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <PieChart className="w-3 h-3" />
+                <span>Xác suất & Thống kê</span>
+              </button>
+
+              <button
+                onClick={() => setFilterMissingImagesOnly(!filterMissingImagesOnly)}
+                className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  filterMissingImagesOnly
+                    ? 'bg-amber-500 text-white shadow-xs'
+                    : totalMissingImagesAssignments > 0
+                    ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-200 hover:bg-amber-200 border border-amber-300 dark:border-amber-800'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+                title="Lọc các đề thi có chứa câu hỏi nhắc đến hình vẽ nhưng chưa có ảnh minh họa"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                <span>Đề thiếu hình ({totalMissingImagesAssignments})</span>
+              </button>
+
+              <button
+                onClick={() => setFilterUnsolvedOnly(!filterUnsolvedOnly)}
+                className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  filterUnsolvedOnly
+                    ? 'bg-violet-600 text-white shadow-xs'
+                    : totalUnsolvedAssignments > 0
+                    ? 'bg-violet-100 dark:bg-violet-950/70 text-violet-900 dark:text-violet-200 hover:bg-violet-200 border border-violet-300 dark:border-violet-800'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+                title="Lọc các đề thi chưa có bảng đáp án chuẩn (mặc định A)"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+                <span>Chưa có đáp án ({totalUnsolvedAssignments})</span>
+              </button>
+            </div>
+
             {filteredAssignments.length > 0 && (
               <button
                 onClick={handleDeleteAllFiltered}
@@ -463,15 +550,6 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
               >
                 <Trash2 className="w-3.5 h-3.5 text-rose-500" />
                 <span>{deletingId === 'all' ? 'Đang xóa...' : `Xóa tất cả (${filteredAssignments.length})`}</span>
-              </button>
-            )}
-            {hasActiveFilters && (
-              <button
-                onClick={clearAllFilters}
-                className="inline-flex items-center space-x-1 text-indigo-600 dark:text-indigo-400 hover:underline font-semibold cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-                <span>Xóa bộ lọc</span>
               </button>
             )}
           </div>
@@ -506,6 +584,24 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
             )}
           </button>
 
+          {/* Nút chọn nhanh tất cả đề chưa thẩm định */}
+          {totalUnverified > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                const unverifiedIds = safeAssignments
+                  .filter(a => !a.verificationStatus || a.verificationStatus === 'unverified')
+                  .map(a => a.id);
+                setSelectedAssignmentIds(unverifiedIds);
+              }}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer active:scale-95"
+              title="Chọn nhanh toàn bộ các đề thi chưa được AI thẩm định"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-white" />
+              <span>⚡ Chọn nhanh {totalUnverified} đề chưa thẩm định</span>
+            </button>
+          )}
+
           {/* Nút chọn nhanh tất cả đề chưa có đáp án */}
           {totalUnsolvedAssignments > 0 && (
             <button
@@ -518,7 +614,7 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
               title="Chọn nhanh toàn bộ các đề thi đang để đáp án mặc định A"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>⚡ Chọn nhanh {totalUnsolvedAssignments} đề chưa có đáp án</span>
+              <span>⚡ Chọn {totalUnsolvedAssignments} đề chưa có đáp án</span>
             </button>
           )}
 
@@ -529,7 +625,7 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
           )}
         </div>
 
-        {/* Nút kích hoạt AI giải hàng loạt khi có đề được chọn */}
+        {/* Nút kích hoạt AI thẩm định hàng loạt khi có đề được chọn */}
         {selectedAssignmentIds.length > 0 && (
           <div className="flex items-center space-x-2">
             <button
@@ -543,10 +639,10 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
               type="button"
               onClick={() => setShowBatchSolveModal(true)}
               className="inline-flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-black text-xs sm:text-sm rounded-xl shadow-md transition-all active:scale-95 cursor-pointer animate-pulse"
-              title="Bắt đầu tiến trình AI tự động giải ngầm cho toàn bộ đề thi đã chọn"
+              title="Bắt đầu tiến trình AI Thẩm định ngầm cho toàn bộ đề thi đã chọn (Gemini 3.8 Flash, Dual-Pass 2 vòng)"
             >
               <Sparkles className="w-4 h-4 text-amber-300" />
-              <span>🤖 Bắt đầu AI Giải {selectedAssignmentIds.length} đề đã chọn</span>
+              <span>🤖 Bắt đầu AI Thẩm định {selectedAssignmentIds.length} đề đã chọn</span>
             </button>
           </div>
         )}
@@ -632,11 +728,25 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
                         {isGeometry ? '📐 Hình học' : isStatistics ? '📊 Thống kê' : '🔢 Đại số'}
                       </span>
 
-                      {/* Huy hiệu nếu đề nhập từ kho cũ chưa thẩm định */}
-                      {asg.verificationStatus === 'unverified' && (
-                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 flex items-center gap-1 shadow-2xs" title="Đề nhập từ kho cũ, chưa thẩm định. Chưa đưa vào luyện tập học sinh">
+                      {/* Huy hiệu trạng thái thẩm định */}
+                      {(!asg.verificationStatus || asg.verificationStatus === 'unverified') && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 flex items-center gap-1 shadow-2xs" title="Đề chưa thẩm định. Thầy/Cô hãy bấm AI Thẩm định để đối soát">
                           <AlertTriangle className="w-3 h-3 text-amber-600" />
                           <span>Chưa thẩm định</span>
+                        </span>
+                      )}
+
+                      {asg.verificationStatus === 'needs_review' && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-rose-100 dark:bg-rose-950 text-rose-900 dark:text-rose-200 border border-rose-300 dark:border-rose-800 flex items-center gap-1 shadow-2xs" title="Đề có câu nghi vấn cần giáo viên xem lại">
+                          <AlertCircle className="w-3 h-3 text-rose-600 animate-pulse" />
+                          <span>Cần xem lại</span>
+                        </span>
+                      )}
+
+                      {asg.verificationStatus === 'verified' && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-100 dark:bg-emerald-950 text-emerald-900 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1 shadow-2xs" title="Đề đã được AI thẩm định và giáo viên xác nhận">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          <span>Đã thẩm định</span>
                         </span>
                       )}
 
@@ -762,11 +872,35 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1.5 mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 text-xs">
                   <button
                     onClick={() => setAiSolvingAssignment(asg)}
-                    className="flex items-center justify-center space-x-1 py-2 px-1.5 bg-violet-50 dark:bg-violet-950/60 hover:bg-violet-100 dark:hover:bg-violet-900/80 text-violet-700 dark:text-violet-300 font-bold rounded-xl transition-colors border border-violet-200 dark:border-violet-800 cursor-pointer shadow-2xs"
-                    title="AI Tự động giải toán & Thiết lập bảng đáp án chuẩn A-B-C-D (Bảo toàn 100% đề thi)"
+                    className={`flex items-center justify-center space-x-1 py-2 px-1.5 font-bold rounded-xl transition-colors border cursor-pointer shadow-2xs ${
+                      asg.verificationStatus === 'needs_review'
+                        ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-700 animate-pulse'
+                        : asg.verificationStatus === 'verified'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
+                        : 'bg-violet-50 dark:bg-violet-950/60 hover:bg-violet-100 dark:hover:bg-violet-900/80 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-800'
+                    }`}
+                    title={
+                      asg.verificationStatus === 'needs_review'
+                        ? 'Đề có câu nghi vấn - Bấm để duyệt và đối soát đáp án'
+                        : asg.verificationStatus === 'verified'
+                        ? 'Đề đã thẩm định - Bấm để xem lại chi tiết'
+                        : 'Bấm để AI Thẩm định đối soát đề thi (Dual-Pass 2 vòng)'
+                    }
                   >
-                    <Sparkles className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
-                    <span>AI Lập đáp án</span>
+                    {asg.verificationStatus === 'needs_review' ? (
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                    ) : asg.verificationStatus === 'verified' ? (
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+                    )}
+                    <span>
+                      {asg.verificationStatus === 'needs_review'
+                        ? 'Duyệt câu nghi vấn'
+                        : asg.verificationStatus === 'verified'
+                        ? 'Đã thẩm định'
+                        : 'AI Thẩm định'}
+                    </span>
                   </button>
 
                   <button
@@ -886,9 +1020,13 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
           topic={aiSolvingAssignment.topic}
           questions={aiSolvingAssignment.questions || []}
           onApplyAnswers={async (updatedQuestions) => {
+            const allVerified = updatedQuestions.length > 0 && updatedQuestions.every(q => q.verificationStatus === 'verified' && !q.needsReview);
+            const hasSuspicious = updatedQuestions.some(q => q.verificationStatus === 'needs_review' || q.needsReview === true);
             const updatedAsg: Assignment = {
               ...aiSolvingAssignment,
-              questions: updatedQuestions
+              questions: updatedQuestions,
+              verificationStatus: allVerified ? 'verified' : (hasSuspicious ? 'needs_review' : 'unverified'),
+              eligibleForSampleBank: allVerified ? true : false
             };
             // 1. Lưu đồng bộ lên Cloud Firestore
             try {
@@ -898,7 +1036,7 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
             }
             // 2. Lưu bộ nhớ máy LocalStorage
             StorageService.saveAssignment(updatedAsg);
-            alert(`Đã cập nhật bảng đáp án chuẩn thành công cho đề "${updatedAsg.title}"!\nHọc sinh khi nộp bài sẽ được tự động so khớp chính xác 100%.`);
+            alert(`Đã cập nhật trạng thái thẩm định cho đề "${updatedAsg.title}"!\nTrạng thái: ${allVerified ? 'ĐÃ THẨM ĐỊNH 100% (Đủ điều kiện đề mẫu)' : 'CẦN XEM LẠI CÁC CÂU NGHI VẤN'}.`);
             setAiSolvingAssignment(null);
             await onRefresh();
           }}

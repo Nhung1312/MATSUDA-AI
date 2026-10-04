@@ -9,10 +9,26 @@ import { SocraticRequest, SocraticResponse } from '../types.js';
 
 export const socraticRouter = Router();
 
-socraticRouter.post('/', async (req: Request, res: Response) => {
+socraticRouter.post(['/', '/socratic'], async (req: Request, res: Response) => {
   try {
-    const body: SocraticRequest = req.body;
-    const { level = 'hint1', context, studentMessage, chatHistory } = body || {};
+    const body: any = req.body || {};
+    const level = body.level || 'hint1';
+    const studentMessage = body.studentMessage || '';
+    const chatHistory = body.chatHistory || [];
+
+    // Hỗ trợ cả định dạng SocraticContext lẫn Matsuda format (problem / context string)
+    let context: any = body.context;
+    if (typeof context === 'string' || !context || !context.questionText) {
+      if (body.problem || typeof context === 'string') {
+        context = {
+          questionText: body.problem || (typeof context === 'string' ? context : ''),
+          grade: body.classification?.grade || 'THCS',
+          topic: body.classification?.topic || 'Toán',
+          detectedError: typeof context === 'string' ? context : undefined,
+          studentWork: body.studentWork || '',
+        };
+      }
+    }
 
     if (!context || !context.questionText) {
       return res.status(400).json({
@@ -67,6 +83,11 @@ socraticRouter.post('/', async (req: Request, res: Response) => {
         `${context.errorType ? `- Phân loại lỗi: "${context.errorType}".\n` : ''}` +
         `${context.referenceStepLatex ? `- Biểu thức biến đổi đúng chuẩn: "${context.referenceStepLatex}".\n` : ''}` +
         `YÊU CẦU SƯ PHẠM: Bắt đầu hỗ trợ trực tiếp từ chính BƯỚC ${context.firstErrorStep}. Khẳng định các bước trước em đã làm đúng để động viên, sau đó đặt câu hỏi gợi mở để em nhìn ra lỗi ở bước này (ví dụ: "Đến bước này em làm đúng rồi. Em hãy nhìn lại phép biến đổi... Dấu thay đổi thế nào khi chuyển vế?"). TUYỆT ĐỐI KHÔNG giải lại toàn bộ bài từ đầu.\n`;
+    }
+
+    if (Array.isArray(context.stepAnalysis) && context.stepAnalysis.length > 0) {
+      contextDescription += `\nKẾT QUẢ PHÂN TÍCH TỪNG BƯỚC ĐÃ CHẤM (StepAnalysis):\n` +
+        context.stepAnalysis.map((s: any) => `  - Bước ${s.stepIndex} [${s.status}${s.isFirstError ? ' - LỖI GỐC' : ''}]: Học sinh viết: "${s.studentLatex}". ${s.comment ? `Nhận xét: ${s.comment}` : ''}`).join('\n') + '\n';
     }
 
     if (Array.isArray(context.previousHints) && context.previousHints.length > 0) {

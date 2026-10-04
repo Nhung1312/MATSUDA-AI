@@ -5,6 +5,7 @@ import { GradingService } from '../../services/gradingService';
 import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
 import { aiService, HybridAIService } from '../../services/aiService';
+import { stepGradingService } from '../../services/stepGradingService';
 import { useTheme } from '../../context/ThemeContext';
 import { shuffleAssignmentQuestionsAndOptions, formatViolationTime } from '../../utils/antiCheatUtils';
 import { isEssayQuestion, getQuestionTypeLabel } from '../../utils/questionUtils';
@@ -239,6 +240,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
   const [fontSizeScale, setFontSizeScale] = useState<'normal' | 'large' | 'xlarge'>('normal');
   const [isFocusMode, setIsFocusMode] = useState<boolean>(false);
   const [isSubmittingWithAI, setIsSubmittingWithAI] = useState<boolean>(false);
+  const isSubmittingRef = useRef<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(() => soundEffects.isMuted());
   const [matrixFilter, setMatrixFilter] = useState<'all' | 'unanswered' | 'flagged'>('all');
 
@@ -729,6 +731,9 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
   };
 
   const submitExam = async () => {
+    if (isSubmittingRef.current || isSubmittingWithAI) return;
+    isSubmittingRef.current = true;
+    setShowSubmitModal(false);
     soundEffects.playSuccess();
     setIsSubmittingWithAI(true);
 
@@ -743,7 +748,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
     const submittedAt = new Date().toISOString();
     const aiFeedbacks: Record<string, { score?: number; feedback?: string; graded?: boolean }> = {};
 
-    // 1. Tự động chấm điểm AI cho các câu tự luận nếu có
+    // 1. Tự động chấm điểm AI cho các câu tự luận nếu có (Unified Vision & Step-by-Step Core)
     const essayQuestions = currentAssignment.questions.filter((q) => isEssayQuestion(q));
     if (essayQuestions.length > 0) {
       for (const eq of essayQuestions) {
@@ -751,28 +756,32 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
         const images = essayImagesByQuestion[eq.id] || [];
 
         if (solutionText || images.length > 0) {
-          if (aiService.hasApiKey()) {
-            try {
-              const evalResult = await aiService.gradeEssay({
-                questionText: eq.question,
-                studentAnswerText: solutionText,
-                essayImages: images,
-                maxPoints: eq.points,
-                correctAnswerCriteria: eq.correctAnswer,
-                rubric: eq.rubric,
-                grade: currentAssignment.grade,
-                topicHint: eq.topicHint
-              });
+          try {
+            const stepRes = await stepGradingService.analyzeStepByStep({
+              questionId: eq.id,
+              questionText: eq.question,
+              grade: String(currentAssignment.grade),
+              topic: currentAssignment.topic,
+              maxPoints: eq.points,
+              correctAnswer: eq.correctAnswer,
+              rubric: eq.rubric,
+              studentSolutionText: solutionText,
+              essayImages: images
+            });
 
-              aiFeedbacks[eq.id] = {
-                score: evalResult.score,
-                feedback: evalResult.feedback,
-                graded: true
-              };
-            } catch (e) {
-              console.warn('AI evaluation error on submit:', e);
-            }
-          } else {
+            aiFeedbacks[eq.id] = {
+              score: stepRes.score,
+              feedback: stepRes.feedback,
+              graded: true,
+              stepAnalysis: stepRes.analysis,
+              firstErrorStep: stepRes.firstErrorStep,
+              firstErrorType: stepRes.firstErrorType,
+              firstErrorExplanation: stepRes.firstErrorExplanation,
+              needsTeacherReview: stepRes.needsTeacherReview,
+              stepGradingResponse: stepRes
+            } as any;
+          } catch (e) {
+            console.warn('AI step evaluation on submit warning:', e);
             aiFeedbacks[eq.id] = {
               graded: false,
               feedback: 'Bài tự luận đã được ghi nhận đầy đủ và đang chờ chấm điểm.'
@@ -815,6 +824,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
 
     StorageService.saveSubmission(submission);
     setIsSubmittingWithAI(false);
+    isSubmittingRef.current = false;
     onFinishExam(submission);
   };
 

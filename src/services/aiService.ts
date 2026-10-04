@@ -111,6 +111,12 @@ export interface IAIService {
     onProgress?: (current: number, total: number) => void;
   }): Promise<QuestionVerificationResult[]>;
 
+  verifySingleQuestion(params: {
+    question: Question;
+    grade?: string;
+    topic?: string;
+  }): Promise<QuestionVerificationResult>;
+
   /**
    * Chấm bài tự luận (kết hợp nhận diện ảnh chụp chữ viết tay / hình vẽ + văn bản)
    */
@@ -619,30 +625,15 @@ Trả về duy nhất định dạng JSON (không có ký tự ngoài JSON) theo
       };
     }
 
-    // Phân tích văn bản cơ bản
-    const length = studentAnswerText.trim().length;
-    let earnedRatio = 0.85; // Mặc định chấm tích cực nếu có nộp bài
-    if (hasImages) {
-      earnedRatio = 0.9;
-    } else if (length < 20) {
-      earnedRatio = 0.5;
-    }
-
-    const calculatedScore = Math.round((maxPoints * earnedRatio) * 4) / 4; // Làm tròn 0.25 điểm
-
+    // An toàn tuyệt đối: Không đủ căn cứ chấm → KHÔNG tự tạo điểm giả (85%, 90%, 50%)
+    // Bảo toàn nguyên vẹn bài làm của học sinh và chuyển sang chế độ Giáo viên thẩm định
     return {
-      score: Math.min(maxPoints, Math.max(0.25, calculatedScore)),
+      score: 0,
       maxScore: maxPoints,
-      feedback: `Bài làm ${hasImages ? `có đính kèm ${essayImages.length} ảnh chụp lời giải chi tiết` : 'được trình bày đầy đủ'}. Các bước lập luận tương đối rõ ràng và đúng định hướng.`,
-      strengths: [
-        'Trình bày lời giải có hệ thống, đúng mạch tư duy',
-        hasImages ? 'Ảnh chụp bài làm rõ ràng, đầy đủ các bước nháp và biến đổi' : 'Trình bày súc tích'
-      ],
-      improvements: [
-        'Chú ý ghi rõ điều kiện xác định và đơn vị (nếu có)',
-        'Kiểm tra lại bước kết luận cuối cùng của bài toán'
-      ],
-      stepByStepCorrection: '• Bước 1: Nêu điều kiện xác định.\n• Bước 2: Biến đổi biểu thức / Lập luận hình học theo định lý.\n• Bước 3: Tính toán cẩn thận và kết luận nghiệm.'
+      feedback: `Hệ thống đã ghi nhận an toàn bài làm của học sinh${hasImages ? ` (kèm ${essayImages.length} ảnh bài làm)` : ''}. Do AI chưa phân tích tự động được bài này, điểm số được giữ nguyên ở trạng thái chờ Giáo viên thẩm định để chấm điểm trực tiếp theo barem.`,
+      strengths: ['Bài làm và các bước giải đã được tiếp nhận đầy đủ'],
+      improvements: ['Chờ giáo viên trực tiếp chấm và nhận xét chi tiết'],
+      stepByStepCorrection: 'Giáo viên sẽ xem xét từng bước bài giải và chấm điểm trực tiếp.'
     };
   }
 
@@ -1257,15 +1248,24 @@ ${q.explanation ? `[Lời giải hiện tại]: ${q.explanation.substring(0, 300
 `).join('\n')}
 
 QUY TẮC THẨM ĐỊNH LƯỢT 1 (TIẾT KIỆM TỐI ĐA TOKEN):
+Mỗi câu kiểm tra đầy đủ:
+- Đề bài (question)
+- Các phương án lựa chọn (options)
+- Đáp án hiện tại (correctAnswer)
+- Lời giải hiện tại (explanation)
+- Tính nhất quán giữa đáp án và lời giải.
+
 1. Giải nhanh câu hỏi để tìm đáp án đúng (A, B, C, D hoặc kết quả số/biểu thức ngắn).
-2. So sánh với [Đáp án hiện tại] và [Lời giải hiện tại].
-3. Nếu đáp án bạn giải ra TRÙNG KHỚP với [Đáp án hiện tại], không có lỗi đề hay mâu thuẫn:
+2. So sánh với [Đáp án hiện tại] và kiểm tra tính nhất quán giữa [Đáp án hiện tại] và [Lời giải hiện tại].
+3. Nếu đáp án bạn giải ra TRÙNG KHỚP với [Đáp án hiện tại], và lời giải nhất quán không mâu thuẫn, options chuẩn xác:
    => proposedAnswer = đáp án đúng, matchesCurrentAnswer = true, confidence = "high", needsReview = false, reason = "Ngắn gọn 1 câu xác nhận".
 4. Nếu có BẤT KỲ nghi ngờ nào:
-   - Đáp án khác [Đáp án hiện tại],
-   - Đề sai, thiếu dữ kiện, nhiều đáp án đúng, hoặc không có đáp án đúng,
-   - Lời giải hiện tại mâu thuẫn với đáp án hiện tại,
-   - Hoặc kết quả chưa chắc chắn
+   - AI khác [Đáp án hiện tại],
+   - Độ tin cậy thấp (confidence thấp),
+   - Lời giải mâu thuẫn với đáp án,
+   - Câu thiếu dữ kiện hoặc đề bài có lỗi,
+   - Options có vấn đề (thiếu phương án, nhiều đáp án đúng, hoặc không có đáp án đúng),
+   - Hoặc needsReview = true
    => proposedAnswer = đáp án AI tìm ra, matchesCurrentAnswer = false, confidence = "needs_review", needsReview = true, reason = "Nêu rõ lý do nghi ngờ ngắn gọn".
 
 Trả về DUY NHẤT một JSON Array theo định dạng:
@@ -1447,6 +1447,22 @@ Trả về DUY NHẤT một JSON theo định dạng:
     }
 
     return results;
+  }
+
+  /**
+   * Thẩm định đơn lẻ 1 câu hỏi (tái sử dụng Dual-Pass 2 vòng của verifyExamQuestions)
+   */
+  async verifySingleQuestion(params: {
+    question: Question;
+    grade?: string;
+    topic?: string;
+  }): Promise<QuestionVerificationResult> {
+    const results = await this.verifyExamQuestions({
+      questions: [params.question],
+      grade: params.grade,
+      topic: params.topic
+    });
+    return results[0];
   }
 
   /**

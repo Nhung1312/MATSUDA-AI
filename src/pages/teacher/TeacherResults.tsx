@@ -1,14 +1,17 @@
 import React, { useState, useMemo } from 'react';
-import { Assignment, ClassRoom, Submission, QuestionAnalysis, StudentAnswer } from '../../types';
+import { Assignment, ClassRoom, Submission, QuestionAnalysis, StudentAnswer, StepAnalysis, StepErrorType, StepGradingResponse } from '../../types';
 import { GradingService } from '../../services/gradingService';
 import { aiService } from '../../services/aiService';
+import { stepGradingService } from '../../services/stepGradingService';
 import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
 import { MathDisplay } from '../../components/MathDisplay';
+import { StepGradingBreakdown } from '../../components/StepGradingBreakdown';
 import { PrintExamModal } from '../../components/PrintExamModal';
 import { ImageLightboxModal } from '../../components/ImageLightboxModal';
 import { ClassCompetencyMatrix } from '../../components/ClassCompetencyMatrix';
 import { GenerateSimilarExamModal } from '../../components/GenerateSimilarExamModal';
+import { BatchGradingModal } from '../../components/BatchGradingModal';
 import { isEssayQuestion, getQuestionTypeLabel } from '../../utils/questionUtils';
 import { 
   BarChart3, 
@@ -39,7 +42,9 @@ import {
   Save,
   Check,
   Brain,
-  ZoomIn
+  ZoomIn,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 
 interface TeacherResultsProps {
@@ -86,8 +91,18 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   const [teacherFeedbackInput, setTeacherFeedbackInput] = useState<Record<string, string>>({});
   const [savedGradeSuccess, setSavedGradeSuccess] = useState<Record<string, boolean>>({});
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
+  const [expandedStepAnalysis, setExpandedStepAnalysis] = useState<Record<string, boolean>>({});
+
+  const toggleStepAnalysis = (qId: string) => {
+    setExpandedStepAnalysis(prev => ({
+      ...prev,
+      [qId]: prev[qId] === false ? true : false
+    }));
+  };
 
   // Batch AI Essay Grading
+  const [showBatchGradingModal, setShowBatchGradingModal] = useState<boolean>(false);
+  const [gradingSingleInProgress, setGradingSingleInProgress] = useState<boolean>(false);
   const [isBatchGrading, setIsBatchGrading] = useState<boolean>(false);
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; studentName: string } | null>(null);
   const [batchResultMsg, setBatchResultMsg] = useState<string | null>(null);
@@ -185,38 +200,88 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     }
   };
 
-  // On-demand AI Essay Grading for a single question
+  // On-demand AI Essay Grading for a single question (Step-by-step)
   const handleAiGradeSingleQuestion = async (ans: StudentAnswer, question: any) => {
     if (!selectedSubmissionDetail || !currentAssignment) return;
-    if (!aiService.hasApiKey()) {
-      alert('Bạn chưa cài đặt Google Gemini API Key. Vui lòng vào Cài đặt để nhập API Key từ Google AI Studio.');
-      return;
-    }
     setGradingAiInProgress(prev => ({ ...prev, [ans.questionId]: true }));
     try {
-      const res = await aiService.gradeEssay({
+      let scoreVal = 0;
+      let feedbackVal = '';
+      let stepAnalysisData: StepAnalysis[] | undefined = undefined;
+      let firstErrorStepVal: number | null = null;
+      let firstErrorTypeVal: StepErrorType | null = null;
+      let firstErrorExplVal: string | null = null;
+      let needsReviewVal = false;
+      let stepResp: StepGradingResponse | undefined = undefined;
+
+      // 1. Ưu tiên gọi bộ chấm theo từng bước Step-by-Step qua backend server
+      const stepRes = await stepGradingService.analyzeStepByStep({
+        questionId: question.id,
         questionText: question.question,
-        studentAnswerText: ans.studentSolutionText || '',
-        essayImages: ans.essayImages || [],
+        grade: String(currentAssignment.grade),
+        topic: currentAssignment.topic,
         maxPoints: question.points,
-        correctAnswerCriteria: question.correctAnswer,
+        correctAnswer: question.correctAnswer,
         rubric: question.rubric,
-        grade: currentAssignment.grade,
-        topicHint: question.topicHint
+        studentSolutionText: ans.studentSolutionText || '',
+        essayImages: ans.essayImages || []
       });
 
-      const updatedAnswers = selectedSubmissionDetail.answers.map(a => {
+      if (stepRes && stepRes.success && Array.isArray(stepRes.analysis) && stepRes.analysis.length > 0) {
+        scoreVal = stepRes.score;
+        feedbackVal = stepRes.feedback;
+        stepAnalysisData = stepRes.analysis;
+        firstErrorStepVal = stepRes.firstErrorStep;
+        firstErrorTypeVal = stepRes.firstErrorType;
+        firstErrorExplVal = stepRes.firstErrorExplanation;
+        needsReviewVal = !!stepRes.needsTeacherReview;
+        stepResp = stepRes;
+      } else {
+        // Fallback sang aiService.gradeEssay nếu backend không trả về step analysis
+        if (!aiService.hasApiKey()) {
+          alert('Chưa cấu hình GEMINI_API_KEY. Vui lòng kiểm tra lại cấu hình hệ thống.');
+          return;
+        }
+        const res = await aiService.gradeEssay({
+          questionText: question.question,
+          studentAnswerText: ans.studentSolutionText || '',
+          essayImages: ans.essayImages || [],
+          maxPoints: question.points,
+          correctAnswerCriteria: question.correctAnswer,
+          rubric: question.rubric,
+          grade: currentAssignment.grade,
+          topicHint: question.topicHint
+        });
+        scoreVal = res.score;
+        feedbackVal = res.feedback;
+      }
+
+      let isCorrect = false;
+      const hasStepError = !!firstErrorStepVal || (stepAnalysisData || []).some(s => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
+      if (stepResp && typeof stepResp.isAllCorrect === 'boolean') {
+        isCorrect = stepResp.isAllCorrect && !hasStepError;
+      } else if (hasStepError) {
+        isCorrect = false;
+      } else {
+        isCorrect = scoreVal >= question.points;
+      }
+      const updatedAnswers: StudentAnswer[] = selectedSubmissionDetail.answers.map(a => {
         if (a.questionId === ans.questionId) {
-          const isCorrect = res.score >= (question.points * 0.5);
           return {
             ...a,
-            pointsEarned: res.score,
-            teacherScore: res.score,
-            teacherFeedback: `[Gemini AI]: ${res.feedback}`,
+            pointsEarned: scoreVal,
+            teacherScore: scoreVal,
+            teacherFeedback: `[Gemini AI]: ${feedbackVal}`,
             isCorrect,
-            aiScore: res.score,
-            aiFeedback: res.feedback,
-            aiGraded: true
+            aiScore: scoreVal,
+            aiFeedback: feedbackVal,
+            aiGraded: true,
+            stepAnalysis: stepAnalysisData,
+            firstErrorStep: firstErrorStepVal,
+            firstErrorType: firstErrorTypeVal,
+            firstErrorExplanation: firstErrorExplVal,
+            needsTeacherReview: needsReviewVal,
+            stepGradingResponse: stepResp
           };
         }
         return a;
@@ -246,9 +311,14 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       };
 
       setSelectedSubmissionDetail(updatedSubmission);
+      // Cập nhật giá trị input cho giáo viên tiện duyệt
+      setTeacherScoreInput(prev => ({ ...prev, [ans.questionId]: scoreVal }));
+      setTeacherFeedbackInput(prev => ({ ...prev, [ans.questionId]: `[Gemini AI]: ${feedbackVal}` }));
+      setExpandedStepAnalysis(prev => ({ ...prev, [ans.questionId]: true }));
+
       StorageService.saveSubmission(updatedSubmission);
       FirestoreService.saveResult(updatedSubmission).catch(() => {});
-      alert(`AI đã chấm xong: ${res.score}/${question.points} điểm.`);
+      alert(`AI đã phân tích và chấm xong: ${scoreVal}/${question.points} điểm.`);
     } catch (e: any) {
       alert('Lỗi chấm bài bằng AI: ' + (e?.message || String(e)));
     } finally {
@@ -256,119 +326,26 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     }
   };
 
-  // Chấm hàng loạt bài tự luận của bài tập bằng Gemini AI
-  const handleBatchAiGradeAssignment = async () => {
+  // Chấm hàng loạt bài kiểm tra bằng AI (Matsuda Batch AI Engine)
+  const handleBatchAiGradeAssignment = () => {
+    setShowBatchGradingModal(true);
+  };
+
+  // Chấm AI toàn bộ bài nộp của 1 học sinh bằng lõi duy nhất GradingService.gradeSingleSubmissionWithAI
+  const handleGradeEntireSingleSubmission = async (sub: Submission) => {
     if (!currentAssignment) return;
-    if (!aiService.hasApiKey()) {
-      alert('Bạn chưa cài đặt Google Gemini API Key. Vui lòng vào Cài đặt để nhập API Key từ Google AI Studio.');
-      return;
-    }
-
-    const essayQuestions = currentAssignment.questions.filter(q => isEssayQuestion(q));
-    if (essayQuestions.length === 0) {
-      alert('Bài tập này không có câu hỏi tự luận.');
-      return;
-    }
-
-    if (currentSubmissions.length === 0) {
-      alert('Chưa có học sinh nào nộp bài tập này.');
-      return;
-    }
-
-    const confirmAction = window.confirm(
-      `Hệ thống sẽ dùng Gemini AI để tự động phân tích và chấm điểm toàn bộ bài tự luận cho ${currentSubmissions.length} bài nộp của lớp.\n\nThầy/Cô có muốn bắt đầu không?`
-    );
-    if (!confirmAction) return;
-
-    setIsBatchGrading(true);
-    setBatchResultMsg(null);
-    let successCount = 0;
-
+    setGradingSingleInProgress(true);
     try {
-      for (let i = 0; i < currentSubmissions.length; i++) {
-        const sub = currentSubmissions[i];
-        setBatchProgress({
-          current: i + 1,
-          total: currentSubmissions.length,
-          studentName: sub.studentName
-        });
-
-        const updatedAnswers = [...sub.answers];
-        let totalEarned = 0;
-        let totalMax = 0;
-        let correctCnt = 0;
-        let wrongCnt = 0;
-
-        for (let qIdx = 0; qIdx < currentAssignment.questions.length; qIdx++) {
-          const q = currentAssignment.questions[qIdx];
-          const isEssay = isEssayQuestion(q);
-          const ansIndex = updatedAnswers.findIndex(a => a.questionId === q.id);
-          const ans = ansIndex >= 0 ? updatedAnswers[ansIndex] : null;
-
-          if (isEssay && ans) {
-            try {
-              const res = await aiService.gradeEssay({
-                questionText: q.question,
-                studentAnswerText: ans.studentSolutionText || '',
-                essayImages: ans.essayImages || [],
-                maxPoints: q.points,
-                correctAnswerCriteria: q.correctAnswer,
-                rubric: q.rubric,
-                grade: currentAssignment.grade,
-                topicHint: q.topicHint
-              });
-
-              const isCorrect = res.score >= (q.points * 0.5);
-              updatedAnswers[ansIndex] = {
-                ...ans,
-                pointsEarned: res.score,
-                teacherScore: res.score,
-                teacherFeedback: `[Gemini AI]: ${res.feedback}`,
-                isCorrect,
-                aiScore: res.score,
-                aiFeedback: res.feedback,
-                aiGraded: true
-              };
-
-              totalEarned += res.score;
-              if (isCorrect) correctCnt++; else wrongCnt++;
-            } catch (err) {
-              console.warn(`Lỗi chấm AI câu ${q.id} cho ${sub.studentName}:`, err);
-              const pts = ans.teacherScore ?? ans.pointsEarned ?? 0;
-              totalEarned += pts;
-              if (ans.isCorrect) correctCnt++; else wrongCnt++;
-            }
-          } else if (ans) {
-            const pts = ans.teacherScore ?? ans.pointsEarned ?? 0;
-            totalEarned += pts;
-            if (ans.isCorrect) correctCnt++; else wrongCnt++;
-          }
-          totalMax += (q.points || 1);
-        }
-
-        const rawScore = totalMax > 0 ? (totalEarned / totalMax) * 10 : 0;
-        const totalScore = Math.round(rawScore * 10) / 10;
-
-        const updatedSub: Submission = {
-          ...sub,
-          answers: updatedAnswers,
-          totalScore,
-          correctCount: correctCnt,
-          wrongCount: wrongCnt,
-          gradingStatus: 'graded'
-        };
-
-        StorageService.saveSubmission(updatedSub);
-        await FirestoreService.saveResult(updatedSub).catch(() => {});
-        successCount++;
-      }
-
-      setBatchResultMsg(`✅ Hoàn thành! Đã dùng Gemini AI chấm điểm tự luận cho ${successCount} bài nộp của lớp.`);
-    } catch (batchErr: any) {
-      alert('Quá trình chấm hàng loạt gặp sự cố: ' + (batchErr?.message || String(batchErr)));
+      const res = await GradingService.gradeSingleSubmissionWithAI({
+        assignment: currentAssignment,
+        submission: sub
+      });
+      setSelectedSubmissionDetail(res.submission);
+      alert(`AI đã phân tích và chấm xong toàn bài: ${res.submission.totalScore}/10 điểm.`);
+    } catch (e: any) {
+      alert('Lỗi chấm bài: ' + (e?.message || String(e)));
     } finally {
-      setIsBatchGrading(false);
-      setBatchProgress(null);
+      setGradingSingleInProgress(false);
     }
   };
 
@@ -380,7 +357,8 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
 
     const updatedAnswers = selectedSubmissionDetail.answers.map(a => {
       if (a.questionId === ans.questionId) {
-        const isCorrect = scoreVal >= (question.points * 0.5);
+        // Giáo viên tự chấm tay: điểm trọn vẹn mới xem là đúng hoàn toàn, không dùng ngưỡng 50%
+        const isCorrect = scoreVal >= (question.points || 1);
         return {
           ...a,
           pointsEarned: scoreVal,
@@ -508,6 +486,15 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
           </div>
 
           <button
+            onClick={() => setShowBatchGradingModal(true)}
+            className="inline-flex items-center space-x-1.5 px-4 py-2.5 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer"
+            title="Mở trình chấm bài cả lớp bằng AI (Hỗ trợ cả trực tuyến và bài giấy)"
+          >
+            <Sparkles className="w-4 h-4 text-amber-300" />
+            <span>Chấm Hàng Loạt AI</span>
+          </button>
+
+          <button
             onClick={() => setShowPrintModal(true)}
             className="inline-flex items-center space-x-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all active:scale-95"
             title="In bản giấy hoặc lưu PDF chuẩn A4"
@@ -598,16 +585,11 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
 
           <div className="flex items-center space-x-2 shrink-0">
             <button
-              onClick={handleBatchAiGradeAssignment}
-              disabled={isBatchGrading || currentSubmissions.length === 0}
-              className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:to-indigo-700 text-white font-black text-xs shadow-md shadow-purple-500/20 flex items-center space-x-2 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+              onClick={() => setShowBatchGradingModal(true)}
+              className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:to-indigo-700 text-white font-black text-xs shadow-md shadow-purple-500/20 flex items-center space-x-2 transition-all active:scale-95 cursor-pointer"
             >
-              <Sparkles className="w-4 h-4" />
-              <span>
-                {isBatchGrading
-                  ? 'Đang chấm điểm...'
-                  : `AI Chấm Toàn Bộ Tự Luận (${currentSubmissions.length} bài)`}
-              </span>
+              <Sparkles className="w-4 h-4 text-amber-300" />
+              <span>Mở Trình Chấm Hàng Loạt AI ({currentSubmissions.length} bài)</span>
             </button>
           </div>
         </div>
@@ -1254,7 +1236,14 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                           {idx + 1}
                         </td>
                         <td className="py-3 px-4 font-bold text-slate-800">
-                          {sub.studentName}
+                          <div className="flex items-center space-x-1.5">
+                            <span>{sub.studentName}</span>
+                            {sub.submissionSource === 'paper' && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-800 font-extrabold text-[9px]">
+                                Bài giấy
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 px-3 text-center">
                           {sub.hasEssayQuestions && sub.gradingStatus === 'pending_teacher_grading' ? (
@@ -1264,6 +1253,17 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                               </span>
                               <span className="text-[11px] text-slate-500 font-semibold">
                                 TN: {sub.mcqScore !== undefined ? sub.mcqScore.toFixed(1) : sub.totalScore.toFixed(1)}đ
+                              </span>
+                            </div>
+                          ) : sub.needsTeacherReview || sub.gradingStatus === 'needs_review' ? (
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span
+                                className={`inline-block px-3 py-1 rounded-xl font-extrabold text-sm border ${scoreColor}`}
+                              >
+                                {sub.totalScore.toFixed(1)}
+                              </span>
+                              <span className="inline-block px-2 py-0.5 rounded-full font-black text-[9px] bg-amber-100 text-amber-900 border border-amber-300">
+                                ⚠️ Cần GV duyệt
                               </span>
                             </div>
                           ) : (
@@ -1389,12 +1389,23 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                   <strong className="text-indigo-600 text-sm">{selectedSubmissionDetail.totalScore}/10</strong>
                 </p>
               </div>
-              <button
-                onClick={() => setSelectedSubmissionDetail(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-              >
-                ✕
-              </button>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => handleGradeEntireSingleSubmission(selectedSubmissionDetail)}
+                  disabled={gradingSingleInProgress}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                  title="Chấm toàn bộ các câu tự luận bài này theo từng bước"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <span>{gradingSingleInProgress ? 'Đang chấm AI...' : 'AI Chấm Toàn Bài Này'}</span>
+                </button>
+                <button
+                  onClick={() => setSelectedSubmissionDetail(null)}
+                  className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             {/* Anti-Cheat Teacher Audit Box */}
@@ -1576,7 +1587,14 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                     )}
 
                     {/* AI Grading result */}
-                    {ans.aiGraded && (
+                    {ans.needsTeacherReview && (
+                      <div className="mb-2 p-2.5 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span><strong>Lưu ý:</strong> AI phát hiện nét chữ chưa hoàn toàn rõ hoặc điểm số cần giáo viên đối chiếu lại barem.</span>
+                      </div>
+                    )}
+
+                    {ans.aiGraded && !ans.stepAnalysis && !ans.stepGradingResponse && (
                       <div className="mb-2 p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-xs text-indigo-950 space-y-1">
                         <div className="flex items-center justify-between font-extrabold text-indigo-900">
                           <span className="flex items-center gap-1">
@@ -1587,6 +1605,49 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                         <p className="leading-relaxed whitespace-pre-line text-indigo-900/90 text-[11px]">
                           {ans.aiFeedback}
                         </p>
+                      </div>
+                    )}
+
+                    {/* Step-by-Step Breakdown for Teacher */}
+                    {(ans.stepAnalysis || ans.stepGradingResponse) && (
+                      <div className="mb-3 p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="inline-flex items-center gap-1.5 text-xs font-black text-indigo-700 bg-indigo-100/80 px-2.5 py-1 rounded-lg">
+                            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Sơ đồ chẩn đoán từng bước (AI Step-by-Step)</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => toggleStepAnalysis(ans.questionId)}
+                            className="text-xs font-bold text-slate-600 hover:text-indigo-600 flex items-center gap-1 cursor-pointer"
+                          >
+                            <span>{expandedStepAnalysis[ans.questionId] !== false ? 'Thu gọn' : 'Xem chi tiết'}</span>
+                            {expandedStepAnalysis[ans.questionId] !== false ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                        {expandedStepAnalysis[ans.questionId] !== false && (
+                          <StepGradingBreakdown
+                            questionId={String(question.order || 1)}
+                            questionText={question.question}
+                            grade={String(currentAssignment.grade)}
+                            topic={currentAssignment.topic}
+                            result={ans.stepGradingResponse || {
+                              success: true,
+                              analysis: ans.stepAnalysis || [],
+                              firstErrorStep: ans.firstErrorStep ?? null,
+                              firstErrorType: (ans.firstErrorType as any) ?? null,
+                              firstErrorExplanation: ans.firstErrorExplanation ?? null,
+                              totalSteps: ans.stepAnalysis?.length || 0,
+                              correctStepsCount: ans.stepAnalysis?.filter(s => s.status === 'correct').length || 0,
+                              isAllCorrect: !ans.firstErrorStep && (ans.stepAnalysis?.every(s => s.status === 'correct') ?? false),
+                              score: ans.aiScore ?? ans.pointsEarned,
+                              maxScore: question.points,
+                              feedback: ans.aiFeedback || 'Đã phân tích từng bước.',
+                              analysisSource: 'ai',
+                              needsTeacherReview: ans.needsTeacherReview
+                            }}
+                          />
+                        )}
                       </div>
                     )}
 
@@ -1604,7 +1665,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                             className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[11px] font-bold border border-indigo-200 cursor-pointer disabled:opacity-50"
                           >
                             <Sparkles className={`w-3 h-3 ${isLoadingAI ? 'animate-spin' : ''}`} />
-                            <span>{isLoadingAI ? 'AI đang chấm...' : '✨ Chấm bằng AI'}</span>
+                            <span>{isLoadingAI ? 'AI đang chấm...' : '✨ Chấm bằng AI (Từng bước)'}</span>
                           </button>
                         </div>
 
@@ -1748,6 +1809,23 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
           classes={classes}
           onSuccess={(newAsg) => {
             setSelectedAsgId(newAsg.id);
+          }}
+        />
+      )}
+
+      {/* Modal: Batch AI Grading (Đợt 2 - Matsuda Batch Engine) */}
+      {showBatchGradingModal && currentAssignment && (
+        <BatchGradingModal
+          isOpen={showBatchGradingModal}
+          onClose={() => setShowBatchGradingModal(false)}
+          assignment={currentAssignment}
+          submissions={currentSubmissions}
+          classStudents={classStudents}
+          onSubmissionsUpdated={(updatedList) => {
+            // Cập nhật danh sách kết quả cục bộ
+            updatedList.forEach(s => StorageService.saveSubmission(s));
+            // Cập nhật state nếu cần
+            window.dispatchEvent(new CustomEvent('submissions-updated'));
           }}
         />
       )}

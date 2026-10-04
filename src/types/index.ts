@@ -110,6 +110,13 @@ export interface StudentAnswer {
   aiGraded?: boolean; // Đã được AI chấm
   teacherFeedback?: string; // Nhận xét của giáo viên
   teacherScore?: number; // Điểm giáo viên chấm hoặc điều chỉnh
+  // Optional fields cho Step-by-Step Analysis (Đợt 1 - Tương thích 100% dữ liệu cũ)
+  stepAnalysis?: StepAnalysis[];
+  firstErrorStep?: number | null;
+  firstErrorType?: StepErrorType | null;
+  firstErrorExplanation?: string | null;
+  needsTeacherReview?: boolean;
+  stepGradingResponse?: StepGradingResponse;
 }
 
 export interface EssayGradingResult {
@@ -142,7 +149,15 @@ export interface Submission {
   essayImages?: string[]; // Ảnh bài làm tổng thể đính kèm nếu có
   isAiGraded?: boolean;
   hasEssayQuestions?: boolean;
-  gradingStatus?: 'graded' | 'pending_teacher_grading';
+  gradingStatus?: 'graded' | 'pending_teacher_grading' | 'needs_review' | 'failed' | 'grading';
+  needsTeacherReview?: boolean;
+  submissionSource?: 'online' | 'paper';
+  errorSummary?: {
+    totalErrors: number;
+    firstErrorStep?: number | null;
+    firstErrorType?: StepErrorType | null;
+    firstErrorExplanation?: string | null;
+  };
   mcqScore?: number;
   mcqPoints?: number;
   maxMcqPoints?: number;
@@ -228,6 +243,20 @@ export interface PaymentRequest {
 // ==========================================
 // MỚI: SỔ TAY CÂU SAI (MISTAKE VAULT)
 // ==========================================
+export type MistakeMasteryStatus = 'needs_practice' | 'practicing' | 'improving' | 'mastered';
+
+export interface MistakePracticeAttempt {
+  id: string;
+  attemptedAt: string; // ISO date
+  type: 'retry_original' | 'remedial_isomorphic' | 'socratic_correction';
+  studentAnswer: string;
+  isCorrect: boolean;
+  score?: number;
+  feedback?: string;
+  usedTutor?: boolean;
+  maxHintLevelUsed?: SocraticHintLevel;
+}
+
 export interface MistakeRecord {
   id: string; // `${assignmentId}_${questionId}`
   assignmentId: string;
@@ -241,6 +270,19 @@ export interface MistakeRecord {
   lastPracticedAt?: string;
   practiceCount: number; // Số lần đã thử luyện lại
   aiHint?: string; // Gợi ý bước giải lưu trữ
+
+  // OPTIONAL ENHANCEMENTS (Chu trình khép kín câu sai -> luyện lại -> tiến bộ)
+  masteryStatus?: MistakeMasteryStatus;
+  firstErrorStep?: number | null;
+  firstErrorType?: StepErrorType;
+  firstErrorExplanation?: string | null;
+  stepAnalysis?: StepAnalysis[];
+  cascadingStepsCount?: number;
+  studentWork?: string;
+  essayImages?: string[];
+  remedialExercise?: RemedialExercise;
+  practiceAttempts?: MistakePracticeAttempt[];
+  consecutiveCorrectCount?: number;
 }
 
 // ==========================================
@@ -336,6 +378,10 @@ export interface SocraticContext {
   referenceStepLatex?: string;
   previousHints?: string[];
   currentHintLevel?: SocraticHintLevel;
+  stepAnalysis?: StepAnalysis[];
+  essayImages?: string[];
+  studentAnswer?: any;
+  mistakeRecordId?: string;
 }
 
 export interface SocraticMessage {
@@ -421,6 +467,7 @@ export interface StepGradingResponse {
     finalAnswerLatex: string;
   };
   analysisSource: 'ai' | 'rule' | 'unavailable';
+  needsTeacherReview?: boolean;
   modelUsed?: string;
   message?: string;
 }

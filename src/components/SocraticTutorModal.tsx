@@ -14,10 +14,26 @@ import {
   AlertCircle,
   HelpCircle,
   PenTool,
-  Info
+  Info,
+  CheckCircle2,
+  Image as ImageIcon,
+  Zap,
+  Target,
+  ArrowRight,
+  Eye,
+  EyeOff
 } from 'lucide-react';
-import { SocraticContext, SocraticHintLevel, SocraticMessage } from '../types';
+import {
+  SocraticContext,
+  SocraticHintLevel,
+  SocraticMessage,
+  VerifyCorrectionResponse,
+  RemedialExercise
+} from '../types';
 import { socraticService } from '../services/socraticService';
+import { stepGradingService } from '../services/stepGradingService';
+import { useLearningProgressStore } from '../store/useLearningProgressStore';
+import { useMistakeVaultStore } from '../store/useMistakeVaultStore';
 import { MathDisplay } from './MathDisplay';
 
 interface SocraticTutorModalProps {
@@ -57,18 +73,31 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Scratchpad state
+  // Scratchpad (Thử sửa bước này)
   const [scratchpadText, setScratchpadText] = useState('');
-  const [isScratchpadOpen, setIsScratchpadOpen] = useState(false);
+  const [isScratchpadOpen, setIsScratchpadOpen] = useState(true);
+  const [scratchpadImageBase64, setScratchpadImageBase64] = useState<string | null>(null);
+  const [scratchpadImageName, setScratchpadImageName] = useState<string | null>(null);
+  const [isVerifyingScratchpad, setIsVerifyingScratchpad] = useState(false);
+  const [scratchpadEvalResult, setScratchpadEvalResult] = useState<VerifyCorrectionResponse | null>(null);
 
+  // Remedial (Bài tập củng cố tương tự)
+  const [remedialExercise, setRemedialExercise] = useState<RemedialExercise | null>(null);
+  const [isGeneratingRemedial, setIsGeneratingRemedial] = useState(false);
+  const [showRemedialHint, setShowRemedialHint] = useState(false);
+  const [showRemedialSolution, setShowRemedialSolution] = useState(false);
+  const [studentRemedialInput, setStudentRemedialInput] = useState('');
+  const [remedialFeedback, setRemedialFeedback] = useState<string | null>(null);
+
+  const scratchpadFileInputRef = useRef<HTMLInputElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto scroll to bottom when messages update
+  // Auto scroll to bottom of chat when new messages appear
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  // Sync state back to parent per-question store whenever it updates
+  // Sync state back to parent store
   useEffect(() => {
     if (context?.questionId && onUpdateQuestionSocraticState) {
       onUpdateQuestionSocraticState({
@@ -79,18 +108,28 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
     }
   }, [messages, activeHintLevel, scratchpadText, context?.questionId]);
 
-  // Reset or initialize context when opened or when questionId changes
+  // Reset or initialize context when opened or questionId changes
   useEffect(() => {
     if (isOpen && context) {
       setErrorMessage(null);
+      setScratchpadEvalResult(null);
+      setRemedialExercise(null);
+      setRemedialFeedback(null);
+      setShowRemedialHint(false);
+      setShowRemedialSolution(false);
 
-      // 1. Restore messages for this specific question if available
       if (savedMessages && savedMessages.length > 0) {
         setMessages(savedMessages);
       } else {
         const welcomeText = context.firstErrorStep
-          ? `Chào em! Thầy/Cô đã xem bài làm của em. Các bước trước đó em làm rất tốt, tuy nhiên ở **Bước ${context.firstErrorStep}** đang có một chút sơ suất${context.errorType ? ` (${context.errorType})` : ''}.\n\n🎯 **Thầy/Cô sẽ đồng hành cùng em tháo gỡ nút thắt từ đúng bước sai này, không giải lại từ đầu.**\n\n👉 Em hãy bấm **Gợi ý 1** để nhớ lại công thức/quy tắc liên quan nhé!`
-          : `Chào em! Thầy/Cô là **Gia sư Socratic AI**. Thầy/Cô sẽ đồng hành cùng em tìm ra phương pháp giải câu hỏi này từng bước một, **không giải hộ để em tự mình rèn luyện tư duy**.\n\n👉 Em hãy bấm **Gợi ý 1** để nhớ lại công thức nền tảng, hoặc gõ thắc mắc cụ thể vào khung trò chuyện bên dưới nhé!`;
+          ? `Chào em! Thầy/Cô đã đối chiếu bài làm của em.\n\n` +
+            `✅ Các bước trước đó em đã làm rất chính xác và logic.\n` +
+            `⚠️ Ở **Bước ${context.firstErrorStep}** có một nút thắt cần gỡ${context.errorType ? ` (*${context.errorType}*)` : ''}.\n\n` +
+            `🎯 **Thầy/Cô sẽ đồng hành cùng em sửa đúng từ chính bước này, không giải lại từ đầu.**\n\n` +
+            `👉 Em hãy bấm **Gợi ý 1** để nhớ lại công thức/quy tắc liên quan, hoặc thử viết lại bước đúng vào khung **"Thử sửa bước này"** ở bên trái nhé!`
+          : `Chào em! Thầy/Cô là **Gia sư Socratic AI**.\n\n` +
+            `Thầy/Cô sẽ đồng hành cùng em tìm ra phương pháp giải câu hỏi này từng bước một, **không giải hộ để em tự mình rèn luyện tư duy**.\n\n` +
+            `👉 Em hãy bấm **Gợi ý 1** để nhớ lại công thức nền tảng, hoặc gõ thắc mắc cụ thể vào khung trò chuyện nhé!`;
 
         const welcomeMessage: SocraticMessage = {
           id: 'welcome_' + Date.now(),
@@ -101,18 +140,16 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
         setMessages([welcomeMessage]);
       }
 
-      // 2. Restore active hint level if previously used for this question
       if (savedActiveHintLevel !== undefined) {
         setActiveHintLevel(savedActiveHintLevel);
       } else {
         setActiveHintLevel(null);
       }
 
-      // 3. Restore scratchpad text
       if (savedScratchpadText !== undefined) {
         setScratchpadText(savedScratchpadText);
       } else if (context.studentWork) {
-        setScratchpadText(context.studentWork);
+        setScratchpadText('');
       } else {
         setScratchpadText('');
       }
@@ -121,13 +158,32 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
 
   if (!isOpen || !context) return null;
 
+  // Quick Math Insert Helper
+  const handleInsertMathSymbol = (latex: string) => {
+    setScratchpadText((prev) => prev + latex);
+  };
+
+  // Image Upload for Scratchpad
+  const handleScratchpadImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setScratchpadImageName(file.name);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setScratchpadImageBase64(ev.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Socratic 3-Level Hints
   const handleRequestHint = async (level: SocraticHintLevel) => {
     if (isLoading) return;
     setErrorMessage(null);
     setActiveHintLevel(level);
 
     const levelTitles: Record<SocraticHintLevel, string> = {
-      hint1: '💡 Gợi ý 1 (Nhẹ): Công thức & Định lý nền tảng',
+      hint1: '💡 Gợi ý 1 (Nhẹ): Khái niệm & Công thức nền tảng',
       hint2: '🔍 Gợi ý 2 (Vừa): Nút thắt tư duy & Bước biến đổi đầu',
       hint3: '📘 Gợi ý 3 (Sâu): Dẫn dắt từng bước suy luận',
       chat: 'Trao đổi thảo luận',
@@ -145,14 +201,13 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
     setIsLoading(true);
 
     if (level === 'hint1') {
-      setLoadingText('Đang truy xuất kiến thức & công thức nền tảng...');
+      setLoadingText('Đang truy xuất công thức & quy tắc nền tảng...');
     } else if (level === 'hint2') {
       setLoadingText('Đang phân tích nút thắt và hướng biến đổi đầu tiên...');
     } else {
       setLoadingText('Đang soạn gợi ý dẫn dắt chi tiết theo sư phạm...');
     }
 
-    // Convert history for API
     const historyPayload = messages.map((m) => ({
       role: m.role,
       text: m.text,
@@ -179,6 +234,9 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
 
       setMessages((prev) => [...prev, modelMessage]);
       onHintRequested?.(level);
+      try {
+        useLearningProgressStore.getState().recordSocraticHintUsed(context.questionId || 'q_socratic', level);
+      } catch {}
     } catch (err: any) {
       setErrorMessage('Không thể nhận phản hồi từ Gia sư lúc này. Em hãy bấm thử lại nhé!');
     } finally {
@@ -186,6 +244,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
     }
   };
 
+  // Custom Socratic Chat Message
   const handleSendCustomMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const query = inputMsg.trim();
@@ -233,11 +292,159 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
 
       setMessages((prev) => [...prev, modelMessage]);
       onChatUsed?.();
+      try {
+        useLearningProgressStore.getState().recordSocraticChatUsed(context.questionId || 'q_socratic');
+      } catch {}
     } catch (err: any) {
       setErrorMessage('Có sự cố kết nối khi gửi tin nhắn. Em hãy thử lại nhé!');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // 🎯 Verify Scratchpad / Bước sửa của học sinh
+  const handleVerifyScratchpad = async () => {
+    const textVal = scratchpadText.trim();
+    if (!textVal && !scratchpadImageBase64) {
+      setErrorMessage('Vui lòng gõ bước biến đổi làm lại hoặc tải ảnh giấy nháp của em nhé!');
+      return;
+    }
+
+    setIsVerifyingScratchpad(true);
+    setScratchpadEvalResult(null);
+
+    try {
+      useLearningProgressStore.getState().recordStudentSubmittedCorrection(context.questionId || 'q_socratic', context.firstErrorStep || 1);
+    } catch {}
+
+    try {
+      const result = await stepGradingService.verifyCorrection({
+        questionText: context.questionText,
+        grade: context.grade || 'THCS',
+        topic: context.topic || 'Toán',
+        firstErrorStep: context.firstErrorStep || 1,
+        firstErrorLatex: context.firstErrorLatex,
+        errorType: context.errorType,
+        studentCorrection: textVal,
+        correctionImage: scratchpadImageBase64 || undefined,
+        originalWork: context.studentWork,
+      });
+
+      setScratchpadEvalResult(result);
+
+      // Append result to chat dialogue for comprehensive record
+      const chatLogText = `**[KẾT QUẢ THỬ SỨC LÀM LẠI]**\n${result.evaluationTitle}\n\n${result.feedback}${
+        result.nextAdvice ? `\n\n👉 *Lời khuyên:* ${result.nextAdvice}` : ''
+      }`;
+
+      const evalMsg: SocraticMessage = {
+        id: 'eval_' + Date.now(),
+        role: 'model',
+        text: chatLogText,
+        level: result.isCorrect ? 'hint1' : 'hint2',
+        timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      };
+
+      setMessages((prev) => [...prev, evalMsg]);
+
+      // Ghi nhận tiến bộ vào useLearningProgressStore
+      try {
+        useLearningProgressStore.getState().recordCorrectionVerified(context.questionId || 'q_socratic', result.isCorrect, result.isProgress);
+      } catch {}
+
+      // Nếu mở từ một MistakeRecord, ghi nhận practice attempt vào Sổ tay câu sai!
+      if (context.mistakeRecordId) {
+        try {
+          useMistakeVaultStore.getState().recordPracticeAttempt(context.mistakeRecordId, result.isCorrect, {
+            type: 'socratic_correction',
+            studentAnswer: textVal || 'Sửa bước qua nháp',
+            feedback: `${result.evaluationTitle}: ${result.feedback}`,
+            usedTutor: true,
+          });
+        } catch (e) {
+          console.warn('[SocraticTutorModal] recordPracticeAttempt error:', e);
+        }
+      }
+
+      // If correct and callback provided
+      if (result.isCorrect && onApplyScratchpadToWork && textVal) {
+        onApplyScratchpadToWork(textVal);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setErrorMessage('Chưa thể chấm bước sửa lúc này. Em hãy đối chiếu với gợi ý của Gia sư nhé!');
+    } finally {
+      setIsVerifyingScratchpad(false);
+    }
+  };
+
+  // Generate Remedial Exercise (Isomorphic Practice)
+  const handleGenerateRemedial = async () => {
+    if (isGeneratingRemedial) return;
+    setIsGeneratingRemedial(true);
+    setRemedialFeedback(null);
+    setShowRemedialHint(false);
+    setShowRemedialSolution(false);
+
+    try {
+      const res = await stepGradingService.generateRemedial({
+        sourceQuestionId: context.questionId || 'q_socratic',
+        sourceQuestionText: context.questionText,
+        grade: context.grade || 'THCS',
+        topic: context.topic || 'Toán',
+        sourceErrorType: context.errorType || 'other',
+        sourceFirstErrorStep: context.firstErrorStep || 1,
+        skillTarget: context.errorType ? `Khắc phục lỗi ${context.errorType}` : 'Kỹ năng biến đổi chuẩn xác',
+        difficulty: 'standard',
+        studentMistakeSummary: context.detectedError,
+      });
+
+      if (res.success && res.exercise) {
+        setRemedialExercise(res.exercise);
+        try {
+          useLearningProgressStore.getState().recordRemedialExerciseGenerated(
+            context.questionId || 'q_socratic',
+            res.exercise.id,
+            res.exercise.metadata?.skillTarget
+          );
+          if (context.mistakeRecordId) {
+            useMistakeVaultStore.getState().saveRemedialExercise(context.mistakeRecordId, res.exercise);
+          }
+        } catch {}
+      }
+    } catch (err: any) {
+      console.error(err);
+    } finally {
+      setIsGeneratingRemedial(false);
+    }
+  };
+
+  // Check Remedial Answer
+  const handleCheckRemedial = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!remedialExercise || !studentRemedialInput.trim()) return;
+
+    const normStudent = studentRemedialInput.trim().replace(/\s+/g, '').toLowerCase();
+    const normCorrect = remedialExercise.finalAnswer.trim().replace(/\$+/g, '').replace(/\s+/g, '').toLowerCase();
+    const isCorrect = normStudent.includes(normCorrect) || normCorrect.includes(normStudent);
+
+    if (isCorrect) {
+      setRemedialFeedback('🎉 Hoàn toàn chính xác! Em đã làm chủ dạng bài và vượt qua hoàn toàn lỗ hổng kiến thức.');
+    } else {
+      setRemedialFeedback('💡 Đáp số của em chưa khớp. Em hãy bấm "Xem gợi ý phương pháp" hoặc "Xem lời giải chi tiết" để đối chiếu nhé!');
+    }
+
+    try {
+      useLearningProgressStore.getState().recordRemedialExerciseCompleted(remedialExercise.id, isCorrect);
+      if (context.mistakeRecordId) {
+        useMistakeVaultStore.getState().recordPracticeAttempt(context.mistakeRecordId, isCorrect, {
+          type: 'remedial_isomorphic',
+          studentAnswer: studentRemedialInput.trim(),
+          feedback: isCorrect ? 'Làm chủ bài tập tương tự qua Gia sư Socratic' : 'Chưa khớp đáp số bài tập tương tự',
+          usedTutor: true
+        });
+      }
+    } catch {}
   };
 
   const handleCopyText = (id: string, text: string) => {
@@ -246,15 +453,9 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleSendScratchpadToTutor = () => {
-    if (!scratchpadText.trim()) return;
-    const reviewQuery = `Em vừa thử sức làm nháp như sau:\n"${scratchpadText.trim()}"\nThầy/Cô xem giúp em hướng làm này đã đúng chưa và em cần sửa ở đâu ạ?`;
-    setInputMsg(reviewQuery);
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/70 backdrop-blur-xs transition-opacity">
-      <div className="relative w-full max-w-4xl h-[94vh] sm:h-[88vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl flex flex-col border border-indigo-100 dark:border-slate-800 overflow-hidden text-slate-900 dark:text-slate-100">
+      <div className="relative w-full max-w-5xl h-[94vh] sm:h-[90vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl flex flex-col border border-indigo-100 dark:border-slate-800 overflow-hidden text-slate-900 dark:text-slate-100">
         
         {/* ========================================================= */}
         {/* HEADER BAR                                                */}
@@ -267,14 +468,14 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
             <div>
               <div className="flex items-center space-x-2">
                 <h3 className="font-extrabold text-sm sm:text-base tracking-tight flex items-center gap-1.5">
-                  Gia sư Socratic AI
+                  Gia sư AI – Sửa lỗi này
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-slate-950 uppercase tracking-wider">
-                    Gợi mở 1-chạm
+                    Socratic Scaffolding
                   </span>
                 </h3>
               </div>
               <p className="text-[11px] sm:text-xs text-indigo-100/90 font-medium">
-                Dẫn dắt tư duy từng bước • Không giải bài hộ • Tự tin làm chủ Toán học
+                Dẫn dắt tư duy từng bước • Tháo gỡ từ bước sai đầu tiên • Không giải bài hộ
               </p>
             </div>
           </div>
@@ -290,28 +491,27 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
         </div>
 
         {/* ========================================================= */}
-        {/* BODY CONTAINER (SPLIT / STACK VIEW)                       */}
+        {/* BODY CONTAINER: SPLIT VIEW                                */}
         {/* ========================================================= */}
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
           
-          {/* LEFT PANEL: QUESTION CONTEXT & SCRATCHPAD                */}
-          <div className="w-full lg:w-[38%] border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/60 p-3 sm:p-4 overflow-y-auto space-y-3 shrink-0">
+          {/* LEFT PANEL: QUESTION CONTEXT, FIRST ERROR & SCRATCHPAD   */}
+          <div className="w-full lg:w-[42%] border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/60 p-3 sm:p-4 overflow-y-auto space-y-3 shrink-0">
             
             {/* Question Card */}
-            <div className="bg-white dark:bg-slate-900 rounded-xl p-3 sm:p-3.5 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
               <div className="flex items-center justify-between text-xs font-bold text-indigo-600 dark:text-indigo-400 pb-1.5 border-b border-slate-100 dark:border-slate-800">
                 <span className="flex items-center gap-1">
                   <HelpCircle className="w-3.5 h-3.5" />
-                  <span>Câu hỏi đang giải</span>
+                  <span>Đề bài câu hỏi</span>
                 </span>
                 {context.grade && (
-                  <span className="px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/80 text-[10px]">
-                    Lớp {context.grade}
+                  <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/80 text-[10px] font-black text-indigo-700 dark:text-indigo-300">
+                    Lớp {context.grade} • {context.topic || 'Toán học'}
                   </span>
                 )}
               </div>
 
-              {/* Render Question Text with KaTeX */}
               <div className="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-medium">
                 <MathDisplay content={context.questionText} />
               </div>
@@ -319,7 +519,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
               {/* Multiple Choice Options if available */}
               {context.answerOptions && context.answerOptions.length > 0 && (
                 <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1">
-                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Phương án:</div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Các phương án:</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs">
                     {context.answerOptions.map((opt) => (
                       <div
@@ -342,102 +542,286 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                 </div>
               )}
 
-              {/* First error banner if available */}
-              {context.firstErrorStep && (
-                <div className="p-2.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200 text-xs space-y-1">
+              {/* Callout: Điểm xuất phát hỗ trợ (Bước sai đầu tiên) */}
+              {context.firstErrorStep ? (
+                <div className="p-3 rounded-xl bg-rose-50/80 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200 text-xs space-y-1.5">
                   <div className="font-extrabold flex items-center gap-1.5 text-rose-700 dark:text-rose-300">
                     <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                     <span>Nút thắt cần gỡ: Bước {context.firstErrorStep}</span>
+                    {context.errorType && (
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-rose-100 dark:bg-rose-900 text-rose-800 dark:text-rose-200 font-bold">
+                        {context.errorType}
+                      </span>
+                    )}
                   </div>
                   {context.firstErrorLatex && (
-                    <div className="font-mono text-[11px] p-1.5 rounded bg-white/60 dark:bg-slate-900/60 border border-rose-200 dark:border-rose-900">
+                    <div className="font-mono text-xs p-2 rounded-lg bg-white/70 dark:bg-slate-900/70 border border-rose-200 dark:border-rose-900">
                       <MathDisplay content={context.firstErrorLatex} />
                     </div>
                   )}
+                  {context.detectedError && (
+                    <div className="text-[11px] text-rose-800 dark:text-rose-300 leading-tight">
+                      {context.detectedError}
+                    </div>
+                  )}
                 </div>
-              )}
-
-              {/* Existing Detected Error if available */}
-              {context.detectedError && !context.firstErrorStep && (
-                <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              ) : context.detectedError ? (
+                <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <div className="min-w-0">
-                    <span className="font-bold">Lưu ý lỗi trước đó:</span> {context.detectedError}
+                    <span className="font-bold">Nhận xét bài làm:</span> {context.detectedError}
                   </div>
                 </div>
-              )}
+              ) : null}
             </div>
 
-            {/* Interactive Scratchpad Toggle & Box */}
-            <div className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
-              <div className="flex items-center justify-between">
+            {/* INTERACTIVE SCRATCHPAD: THỬ SỬA BƯỚC NÀY (MATSUDA VERIFIER) */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 border-2 border-indigo-200 dark:border-indigo-800/80 shadow-xs space-y-2.5">
+              <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsScratchpadOpen(!isScratchpadOpen)}
-                  className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+                  className="flex items-center gap-1.5 text-xs font-black text-indigo-700 dark:text-indigo-300 hover:text-indigo-800 cursor-pointer"
                 >
-                  <PenTool className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                  <span>Bảng nháp thử sức tại chỗ</span>
+                  <PenTool className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>Thử sửa bước này (Bảng nháp tại chỗ)</span>
                 </button>
                 <span className="text-[11px] text-slate-400 font-medium">
-                  {isScratchpadOpen ? 'Đang mở' : 'Nhấn để mở'}
+                  {isScratchpadOpen ? '▾ Thu gọn' : '▸ Mở rộng'}
                 </span>
               </div>
 
               {isScratchpadOpen && (
-                <div className="space-y-2 pt-1">
+                <div className="space-y-2.5">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Em hãy thử viết lại bước biến đổi đúng hoặc giải thích cách làm mới:
+                  </p>
+
+                  {/* Math Quick Keys Bar (Từ Matsuda) */}
+                  <div className="flex flex-wrap gap-1 p-1.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+                    {[
+                      { label: '+', val: ' + ' },
+                      { label: '-', val: ' - ' },
+                      { label: '·', val: ' \\cdot ' },
+                      { label: 'a/b', val: ' \\frac{a}{b} ' },
+                      { label: '√x', val: ' \\sqrt{x} ' },
+                      { label: 'x²', val: '^2 ' },
+                      { label: '≤', val: ' \\le ' },
+                      { label: '≥', val: ' \\ge ' },
+                      { label: '±', val: ' \\pm ' },
+                      { label: 'Δ', val: ' \\Delta ' },
+                      { label: '⇔', val: ' \\iff ' },
+                      { label: '⇒', val: ' \\implies ' },
+                      { label: '(', val: '(' },
+                      { label: ')', val: ')' },
+                    ].map((sym, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleInsertMathSymbol(sym.val)}
+                        className="px-2 py-1 bg-white dark:bg-slate-700 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-slate-700 dark:text-slate-200 text-xs font-mono font-bold rounded-md border border-slate-200 dark:border-slate-600 transition-colors shadow-2xs cursor-pointer"
+                      >
+                        {sym.label}
+                      </button>
+                    ))}
+                  </div>
+
                   <textarea
-                    rows={4}
+                    rows={3}
                     value={scratchpadText}
                     onChange={(e) => setScratchpadText(e.target.value)}
-                    placeholder="Gõ các bước biến đổi thử lại của em tại đây (VD: Bước 1: 2x - 4 = 0 => 2x = 4...)..."
-                    className="w-full text-xs font-mono p-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100 placeholder:font-sans placeholder:text-slate-400 resize-none"
+                    placeholder={`Gõ bước sửa lại của em tại đây (VD: 2x - 6 = 0 => 2x = 6 => x = 3)...`}
+                    className="w-full text-xs font-mono p-3 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100 placeholder:font-sans placeholder:text-slate-400 resize-none"
                   />
-                  <div className="flex items-center justify-between gap-2">
+
+                  {/* Upload photo of scratchpad */}
+                  <div className="flex items-center justify-between text-xs">
+                    <input
+                      ref={scratchpadFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleScratchpadImageChange}
+                      className="hidden"
+                    />
                     <button
                       type="button"
-                      onClick={handleSendScratchpadToTutor}
-                      className="px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                      onClick={() => scratchpadFileInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-400 hover:text-indigo-600 cursor-pointer"
                     >
-                      <Sparkles className="w-3 h-3 text-indigo-500" />
-                      <span>Nhờ Gia sư nhận xét nháp</span>
+                      <ImageIcon className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>{scratchpadImageName ? `✓ ${scratchpadImageName}` : 'Hoặc tải ảnh giấy nháp'}</span>
                     </button>
-                    {onApplyScratchpadToWork && scratchpadText.trim() && (
+
+                    {scratchpadImageBase64 && (
                       <button
                         type="button"
-                        onClick={() => onApplyScratchpadToWork(scratchpadText)}
-                        className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors cursor-pointer"
+                        onClick={() => {
+                          setScratchpadImageBase64(null);
+                          setScratchpadImageName(null);
+                        }}
+                        className="text-[11px] text-rose-500 hover:underline cursor-pointer"
                       >
-                        Lưu vào bài làm
+                        Xóa ảnh
                       </button>
                     )}
                   </div>
+
+                  {/* Verify Action Button */}
+                  <button
+                    type="button"
+                    disabled={isVerifyingScratchpad || (!scratchpadText.trim() && !scratchpadImageBase64)}
+                    onClick={handleVerifyScratchpad}
+                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs shadow-md shadow-emerald-500/20 flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {isVerifyingScratchpad ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                        <span>AI đang phân tích bước sửa...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 text-amber-300" />
+                        <span>🎯 Chấm bước sửa này</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Verification Result Card */}
+                  {scratchpadEvalResult && (
+                    <div className={`p-3 rounded-xl border text-xs space-y-1.5 animate-in fade-in duration-200 ${
+                      scratchpadEvalResult.isCorrect
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
+                        : scratchpadEvalResult.isProgress
+                        ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-300 dark:border-blue-800 text-blue-900 dark:text-blue-200'
+                        : 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200'
+                    }`}>
+                      <div className="font-extrabold flex items-center gap-1.5">
+                        {scratchpadEvalResult.isCorrect ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        ) : scratchpadEvalResult.isProgress ? (
+                          <Lightbulb className="w-4 h-4 text-blue-600" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 text-rose-600" />
+                        )}
+                        <span>{scratchpadEvalResult.evaluationTitle}</span>
+                      </div>
+                      <div className="leading-relaxed font-medium">
+                        <MathDisplay content={scratchpadEvalResult.feedback} />
+                      </div>
+                      {scratchpadEvalResult.nextAdvice && (
+                        <div className="font-bold pt-1 border-t border-black/5 dark:border-white/5">
+                          👉 <MathDisplay content={scratchpadEvalResult.nextAdvice} />
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Quick Socratic Tip Banner */}
-            <div className="p-2.5 rounded-xl bg-blue-50/80 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 text-[11px] text-blue-900 dark:text-blue-300 space-y-1">
-              <div className="font-bold flex items-center gap-1">
-                <Info className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                <span>Phương pháp tư duy Socratic:</span>
+            {/* REMEDIAL PRACTICE (BÀI TẬP CỦNG CỐ CÙNG DẠNG) */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Target className="w-4 h-4 text-indigo-600" />
+                  <span>Bài tập rèn luyện củng cố</span>
+                </span>
+                {!remedialExercise && (
+                  <button
+                    type="button"
+                    disabled={isGeneratingRemedial}
+                    onClick={handleGenerateRemedial}
+                    className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 font-extrabold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    {isGeneratingRemedial ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3 h-3" />
+                    )}
+                    <span>Tạo bài tương tự</span>
+                  </button>
+                )}
               </div>
-              <p className="leading-relaxed text-blue-800/90 dark:text-blue-300/90">
-                Hãy bắt đầu từ <strong>Gợi ý 1</strong> để nhớ lại công thức. Chỉ mở tiếp <strong>Gợi ý 2 &amp; 3</strong> khi thật sự cần thiết để não bộ tự rèn luyện phản xạ toán học!
-              </p>
+
+              {remedialExercise && (
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs space-y-2">
+                  <div className="font-extrabold text-indigo-700 dark:text-indigo-300">
+                    {remedialExercise.title}
+                  </div>
+                  <div className="font-medium text-slate-800 dark:text-slate-200">
+                    <MathDisplay content={remedialExercise.problemLatex} />
+                  </div>
+
+                  <form onSubmit={handleCheckRemedial} className="flex gap-1.5 pt-1">
+                    <input
+                      type="text"
+                      value={studentRemedialInput}
+                      onChange={(e) => setStudentRemedialInput(e.target.value)}
+                      placeholder="Nhập đáp số (VD: x = 5)..."
+                      className="flex-1 px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                    />
+                    <button
+                      type="submit"
+                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs cursor-pointer"
+                    >
+                      Kiểm tra
+                    </button>
+                  </form>
+
+                  {remedialFeedback && (
+                    <div className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-900 dark:text-indigo-200 text-[11px] font-semibold">
+                      {remedialFeedback}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 pt-1 border-t border-slate-200 dark:border-slate-700">
+                    <button
+                      type="button"
+                      onClick={() => setShowRemedialHint(!showRemedialHint)}
+                      className="text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                    >
+                      {showRemedialHint ? 'Ẩn gợi ý' : '💡 Xem gợi ý'}
+                    </button>
+                    <span>•</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowRemedialSolution(!showRemedialSolution)}
+                      className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                    >
+                      {showRemedialSolution ? 'Ẩn lời giải' : '📖 Lời giải chi tiết'}
+                    </button>
+                  </div>
+
+                  {showRemedialHint && (
+                    <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 text-[11px]">
+                      <MathDisplay content={remedialExercise.hint} />
+                    </div>
+                  )}
+
+                  {showRemedialSolution && (
+                    <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/60 text-slate-800 dark:text-slate-200 text-[11px] space-y-1">
+                      <div className="font-bold text-indigo-600">Lời giải mẫu:</div>
+                      <MathDisplay content={remedialExercise.solutionLatex} />
+                      <div className="font-bold text-emerald-600">
+                        Đáp số: <MathDisplay content={remedialExercise.finalAnswer} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
           {/* RIGHT PANEL: SOCRATIC DIALOGUE & 3 HINT BUTTONS        */}
           <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 overflow-hidden">
             
-            {/* 3 Quick Action Hint Buttons Bar */}
+            {/* 3 Quick Action Hint Buttons Bar (Tư duy Matsuda Scaffolding) */}
             <div className="p-2.5 sm:p-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 disabled={isLoading}
                 onClick={() => handleRequestHint('hint1')}
-                className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl border text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                   activeHintLevel === 'hint1'
                     ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
                     : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/80 text-amber-800 dark:text-amber-300 hover:bg-amber-100'
@@ -451,7 +835,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                 type="button"
                 disabled={isLoading}
                 onClick={() => handleRequestHint('hint2')}
-                className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl border text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                   activeHintLevel === 'hint2'
                     ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
                     : 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800/80 text-blue-800 dark:text-blue-300 hover:bg-blue-100'
@@ -465,7 +849,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                 type="button"
                 disabled={isLoading}
                 onClick={() => handleRequestHint('hint3')}
-                className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl border text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                   activeHintLevel === 'hint3'
                     ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
                     : 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/80 text-indigo-800 dark:text-indigo-300 hover:bg-indigo-100'
@@ -507,7 +891,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                       </div>
                     )}
 
-                    {/* Offline / Rule-based Fallback Badge (Tuân thủ Mục VII) */}
+                    {/* Offline / Rule-based Fallback Badge */}
                     {msg.isFallback && msg.role === 'model' && (
                       <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
                         <AlertCircle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
@@ -589,13 +973,13 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                   value={inputMsg}
                   onChange={(e) => setInputMsg(e.target.value)}
                   disabled={isLoading}
-                  placeholder="Gõ câu hỏi hoặc trao đổi cùng Gia sư AI (VD: Bước tiếp theo làm thế nào ạ?)..."
-                  className="flex-1 px-3.5 py-2 bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 disabled:opacity-50"
+                  placeholder="Hỏi Gia sư AI (VD: Tại sao bước này lại đổi dấu vậy Thầy/Cô?)..."
+                  className="flex-1 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 disabled:opacity-50"
                 />
                 <button
                   type="submit"
                   disabled={!inputMsg.trim() || isLoading}
-                  className="py-2 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-xs transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  className="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-xs sm:text-sm flex items-center gap-1.5 shadow-xs transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Gửi</span>

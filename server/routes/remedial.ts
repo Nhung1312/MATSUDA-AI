@@ -45,20 +45,18 @@ QUY TẮC BẮT BUỘC:
  * Endpoint: POST /api/remedial/generate
  * Tự sinh bài toán tương tự cùng dạng (Isomorphic Problem) kèm Metadata nguồn gốc
  */
-remedialRouter.post('/generate', async (req: Request, res: Response) => {
+remedialRouter.post(['/generate', '/reroll'], async (req: Request, res: Response) => {
   try {
-    const body: RemedialGenerateRequest = req.body;
-    const {
-      sourceQuestionId = 'q1',
-      sourceQuestionText,
-      grade = 'THCS',
-      topic = 'Toán',
-      sourceErrorType = 'sign',
-      sourceFirstErrorStep = 1,
-      skillTarget = 'Kỹ năng biến đổi đại số',
-      difficulty = 'standard',
-      studentMistakeSummary
-    } = body || {};
+    const body: any = req.body || {};
+    const sourceQuestionId = body.sourceQuestionId || body.questionId || 'q1';
+    const sourceQuestionText = body.sourceQuestionText || body.problemStatementLatex || body.problem || '';
+    const grade = body.grade || body.classification?.grade || 'THCS';
+    const topic = body.topic || body.classification?.topic || 'Toán';
+    const sourceErrorType = body.sourceErrorType || body.errorType || 'sign';
+    const sourceFirstErrorStep = body.sourceFirstErrorStep || 1;
+    const skillTarget = body.skillTarget || body.classification?.subtopic || 'Kỹ năng biến đổi đại số';
+    const difficulty = body.difficulty || 'standard';
+    const studentMistakeSummary = body.studentMistakeSummary || body.errorComment || body.feedback || '';
 
     if (!sourceQuestionText) {
       return res.status(400).json({

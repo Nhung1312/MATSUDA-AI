@@ -285,7 +285,7 @@ export const TeacherContestResults: React.FC<TeacherContestResultsProps> = ({
               const teacherScore = res.score;
               const teacherFeedback = `[Gemini AI]: ${res.feedback}`;
               const pointsEarned = res.score;
-              const isCorrect = res.score >= (q.points * 0.5);
+              const isCorrect = res.score >= (q.points || 2.0);
 
               updatedAnswers[ansIndex] = {
                 ...ans,
@@ -373,7 +373,7 @@ export const TeacherContestResults: React.FC<TeacherContestResultsProps> = ({
             teacherScore: teacherScoreInput,
             teacherFeedback: teacherFeedbackInput,
             pointsEarned: teacherScoreInput,
-            isCorrect: teacherScoreInput >= (a.maxPoints * 0.5)
+            isCorrect: teacherScoreInput >= (a.maxPoints || 1)
           };
         }
         return a;

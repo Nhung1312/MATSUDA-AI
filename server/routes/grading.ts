@@ -17,41 +17,39 @@ import {
 
 export const gradingRouter = Router();
 
-const STEP_GRADING_SYSTEM_PROMPT = `Bạn là Chuyên gia Giáo viên Toán THCS (Lớp 6 đến Lớp 9) xuất sắc và chuẩn mực sư phạm.
+const STEP_GRADING_SYSTEM_PROMPT = `Bạn là Chuyên gia Giáo viên Toán THCS (Lớp 6 đến Lớp 9) xuất sắc và chuẩn mực sư phạm hàng đầu (Bộ sách GDPT 2018).
 Nhiệm vụ: Phân tích, đối chiếu và chấm chi tiết bài làm tự luận của học sinh THCS TỪNG BƯỚC MỘT (Step-by-step Mathematical Grading).
 
-NGUYÊN TẮC CỐT LÕI (BẮT BUỘC):
-1. PHÂN TÍCH TỪNG DÒNG BIẾN ĐỔI:
-   - Đọc kỹ bài làm học sinh (từ văn bản gõ hoặc ảnh viết tay).
-   - Chia bài làm thành từng bước toán học cụ thể (stepIndex = 1, 2, 3...).
-   - TUYỆT ĐỐI không chỉ xem mỗi đáp số cuối hay chỉ chấm dòng đầu rồi dừng lại.
+HỆ THỐNG CHẤM TOÁN THCS TOÀN DIỆN (MATSUDA VISION):
+Bạn xử lý linh hoạt mọi dạng toán THCS:
+1. Số học & Đại số: Số tự nhiên, số nguyên, phân số, số thập phân, lũy thừa, căn bậc hai, đơn thức, đa thức, hằng đẳng thức, phân tích đa thức thành nhân tử, rút gọn biểu thức, phương trình, bất phương trình, hệ phương trình, bài toán tìm x, tìm GTLN/GTNN.
+2. Hình học & Chứng minh: Tam giác bằng nhau, tam giác đồng dạng, định lý Pythagore, hệ thức lượng, đường tròn, tứ giác nội tiếp, tiếp tuyến, diện tích, thể tích. Bóc tách rõ Giả thiết (GT), Kết luận (KL), định lý áp dụng và hình vẽ minh họa.
+3. Bài toán thực tế & Thống kê: Chuyển động, năng suất, kinh tế (lãi suất, phần trăm), hình học thực tế, bảng số liệu, xác suất.
 
-2. PHÁT HIỆN BƯỚC SAI ĐẦU TIÊN (FIRST ERROR DETECTION - QUAN TRỌNG NHẤT):
+NGUYÊN TẮC CỐT LÕI (BẮT BUỘC):
+1. ĐỌC TRỰC TIẾP TỪ ẢNH GỐC (GEMINI VISION):
+   - Đọc trực tiếp nét chữ viết tay, công thức, sơ đồ và hình vẽ từ ảnh gốc đính kèm. Tuyệt đối không suy đoán khi không có căn cứ.
+   - Nếu bài làm gồm nhiều ảnh/trang, đọc tuần tự theo đúng thứ tự pageIndex từ 0 đến N-1.
+   - Phân biệt rõ số mũ ($3^5$ vs $5^3$), dấu âm (-), phân số, căn thức, dấu ngoặc.
+   - TUYỆT ĐỐI không coi "chữ xấu hoặc ảnh hơi tối" là "học sinh không làm". Nếu nét chữ quá mờ, không chắc chắn: gán status="uncertain", confidence < 0.70.
+
+2. PHÂN TÍCH TỪNG DÒNG BIẾN ĐỔI:
+   - Đọc và chấm ĐẦY ĐỦ TẤT CẢ CÁC DÒNG BIẾN ĐỔI của học sinh từ đầu đến đáp số cuối (stepIndex = 1, 2, 3...). TUYỆT ĐỐI không chỉ xem mỗi đáp số cuối hay chỉ chấm dòng đầu rồi dừng lại.
+
+3. PHÁT HIỆN BƯỚC SAI ĐẦU TIÊN (FIRST ERROR DETECTION):
    - Xác định chính xác bước đầu tiên học sinh mắc sai lầm toán học: gán status="first_error" và isFirstError=true.
    - Các bước tiếp theo:
      + Nếu bước tiếp theo sử dụng kết quả sai từ bước trước nhưng bản thân phép biến đổi là hợp lý theo kết quả đó: BẮT BUỘC đánh dấu status="cascading_error", isFollowUpError=true. KHÔNG coi là lỗi mới và KHÔNG trừ điểm lặp lại.
      + Nếu học sinh phát sinh một lỗi sai MỚI hoàn toàn độc lập với lỗi trước: đánh dấu status="independent_error", isIndependentError=true.
      + Nếu bước đó đúng đắn: status="correct".
-     + Nếu hình ảnh hoặc chữ viết quá mờ, không chắc chắn: status="uncertain", gán confidence < 0.70. TUYỆT ĐỐI KHÔNG tự động kết luận học sinh làm sai khi nét chữ không rõ.
+     + Nếu hình ảnh hoặc chữ viết quá mờ: status="uncertain", gán confidence < 0.70.
 
-3. PHÂN LOẠI LỖI (errorType):
-   - Thuộc đúng một trong các loại sau:
-     + "sign": Sai dấu (nhầm dấu âm/dương, quên đổi dấu khi chuyển vế, quên đổi dấu khi phá ngoặc có dấu trừ đằng trước).
-     + "calculation": Sai số học cơ bản (cộng, trừ, nhân, chia, rút gọn phân số nhầm).
-     + "formula": Áp dụng sai công thức, hằng đẳng thức, quy tắc lũy thừa, căn bậc hai.
-     + "logical": Lập luận suy diễn thiếu căn cứ, ngộ nhận hình học, suy ngược chiều logic.
-     + "condition": Quên hoặc xét thiếu điều kiện xác định (ĐKXĐ), điều kiện nghiệm nguyên, bài toán thực tế.
-     + "transformation": Biến đổi sai quy tắc tương đương (chia cho biểu thức chưa khác 0, bình phương không đặt điều kiện).
-     + "concept": Nhầm lẫn khái niệm toán học (ước vs bội, nghiệm vs tập nghiệm).
-     + "other": Lỗi khác.
-     + "None": Không có lỗi (bước đúng).
+4. PHÂN LOẠI LỖI (errorType):
+   - "sign" (sai dấu), "calculation" (sai tính toán), "formula" (sai công thức/hằng đẳng thức), "logical" (lập luận thiếu căn cứ/ngộ nhận hình học), "condition" (quên ĐKXĐ), "transformation" (biến đổi sai quy tắc tương đương), "concept" (nhầm khái niệm), "other" (lỗi khác), "None" (bước đúng).
 
-4. CÔNG THỨC TOÁN LATEX:
-   - Dùng \\frac{a}{b} cho phân số, \\cdot cho phép nhân (TUYỆT ĐỐI KHÔNG dùng \\times để tránh lỗi JSON escape), lũy thừa bọc ngoặc {}.
-   - Mọi biểu thức toán học trong lời nhận xét PHẢI bọc trong cặp dấu $...$.
-
-5. NỘI DUNG NHẬN XÉT:
-   - Chỉ rõ: Đến bước nào em làm đúng? Bước đầu tiên sai ở đâu? Vì sao bước đó sai? Cách sửa đúng bằng công thức LaTeX (correctionLatex).`;
+5. CÔNG THỨC TOÁN LATEX:
+   - Dùng \\frac{a}{b} cho phân số, \\cdot cho phép nhân (TUYỆT ĐỐI KHÔNG dùng \\times để tránh lỗi escape JSON), lũy thừa bọc ngoặc {}.
+   - Mọi biểu thức toán học trong lời nhận xét PHẢI bọc trong cặp dấu $...$.`;
 
 /**
  * Endpoint: POST /api/grading/step-analysis
@@ -111,7 +109,21 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
       promptText += `BÀI LÀM TỰ LUẬN DO HỌC SINH GÕ/NHẬP:\n"${studentSolutionText}"\n\n`;
     }
     if (essayImages && essayImages.length > 0) {
-      promptText += `Học sinh có tải kèm ${essayImages.length} ảnh bài làm viết tay. Hãy nhận diện cấu trúc từng bước giải từ hình ảnh đính kèm.\n\n`;
+      if (essayImages.length > 1) {
+        promptText += `Học sinh có tải kèm ${essayImages.length} ảnh bài làm viết tay tương ứng thứ tự pageIndex từ 0 đến ${essayImages.length - 1}. Hãy đọc tất cả các trang ảnh bài làm theo đúng trình tự. QUAN TRỌNG:
+1. Đọc và chấm ĐẦY ĐỦ TẤT CẢ CÁC DÒNG BIẾN ĐỔI của học sinh từ đầu đến đáp số cuối, tuyệt đối không dừng lại ở mỗi Bước 1.
+2. Gán đúng \`pageIndex\` (0 cho ảnh 1, 1 cho ảnh 2...) cho mỗi bước trong mảng analysis để biết bước giải nằm ở trang ảnh nào.
+3. Nhận diện chuẩn xác nét chữ viết tay, phân biệt rõ số mũ, dấu âm (-), phân số, căn thức, ký hiệu hình học, giả thiết (GT), kết luận (KL) và hình vẽ nếu có.
+4. Nếu nét chữ mờ, ảnh tối hoặc không chắc chắn: status="uncertain", gán confidence < 0.70 và giải thích rõ trong comment. TUYỆT ĐỐI không coi "không đọc rõ" là "học sinh làm sai", không trừ điểm chỉ vì chữ xấu.
+5. Viết công thức Toán bằng LaTeX chuẩn: \\frac{tử}{mẫu} cho phân số, \\cdot cho phép nhân, bọc công thức trong $...$.\n\n`;
+      } else {
+        promptText += `Học sinh có tải kèm 1 ảnh bài làm viết tay. Hãy đọc trực tiếp ảnh gốc bài làm. QUAN TRỌNG:
+1. Đọc và chấm ĐẦY ĐỦ TẤT CẢ CÁC DÒNG BIẾN ĐỔI của học sinh từ đầu đến đáp số cuối, tuyệt đối không dừng lại ở mỗi Bước 1.
+2. Gán pageIndex = 0 cho các bước.
+3. Nhận diện chuẩn xác nét chữ viết tay, phân biệt rõ số mũ, dấu âm (-), phân số, căn thức, ký hiệu hình học, giả thiết (GT), kết luận (KL) và hình vẽ nếu có.
+4. Nếu nét chữ mờ, ảnh tối hoặc không chắc chắn: status="uncertain", gán confidence < 0.70 và giải thích rõ trong comment. TUYỆT ĐỐI không coi "không đọc rõ" là "học sinh làm sai", không trừ điểm chỉ vì chữ xấu.
+5. Viết công thức Toán bằng LaTeX chuẩn: \\frac{tử}{mẫu} cho phân số, \\cdot cho phép nhân, bọc công thức trong $...$.\n\n`;
+      }
     }
     promptText += `YÊU CẦU ĐẦU RA:
 1. Trả về mảng \`analysis\` chứa mọi bước biến đổi của học sinh.
@@ -151,6 +163,7 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
             type: Type.OBJECT,
             properties: {
               stepIndex: { type: Type.INTEGER, description: 'Chỉ số bước bắt đầu từ 1' },
+              pageIndex: { type: Type.INTEGER, description: 'Chỉ số trang ảnh bài làm (0 cho ảnh 1, 1 cho ảnh 2...), mặc định 0' },
               studentLatex: { type: Type.STRING, description: 'Biểu thức hoặc nội dung bước học sinh viết dạng LaTeX' },
               referenceStepLatex: { type: Type.STRING, description: 'Biểu thức chuẩn tương ứng dạng LaTeX' },
               status: {
@@ -248,7 +261,9 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
 
     const normalizedAnalysis: StepAnalysis[] = rawAnalysis.map((rawStep, index) => {
       const stepIdx = rawStep.stepIndex || (index + 1);
-      const conf = typeof rawStep.confidence === 'number' ? Math.max(0, Math.min(1, rawStep.confidence)) : 0.95;
+      // Đợt 7C: Không tự hiểu AI chắc chắn 95% khi thiếu confidence. Mặc định bảo thủ 0.60 (<0.70) để giáo viên rà soát.
+      const hasExplicitConf = typeof rawStep.confidence === 'number' && !isNaN(rawStep.confidence);
+      const conf = hasExplicitConf ? Math.max(0, Math.min(1, rawStep.confidence)) : 0.60;
       
       let status: StepStatus = 'correct';
       const rawStatus = String(rawStep.status || '').toLowerCase();
@@ -259,7 +274,7 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
         status = 'cascading_error';
       } else if (rawStatus === 'independent_error' || rawStep.isIndependentError) {
         status = 'independent_error';
-      } else if (rawStatus === 'uncertain' || rawStatus === 'unclear' || conf < 0.70) {
+      } else if (rawStatus === 'uncertain' || rawStatus === 'unclear' || conf < 0.70 || !hasExplicitConf) {
         status = 'uncertain';
       } else if (rawStatus === 'incorrect') {
         status = detectedFirstErrorIndex === null ? 'first_error' : 'cascading_error';
@@ -288,6 +303,7 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
       return {
         stepIndex: stepIdx,
         stepNumber: stepIdx,
+        pageIndex: typeof rawStep.pageIndex === 'number' ? Math.max(0, Math.floor(rawStep.pageIndex)) : 0,
         studentLatex: sanitizeMathData(rawStep.studentLatex || rawStep.studentText || `Bước ${stepIdx}`),
         studentText: rawStep.studentText ? sanitizeMathData(rawStep.studentText) : undefined,
         referenceStepLatex: rawStep.referenceStepLatex ? sanitizeMathData(rawStep.referenceStepLatex) : undefined,
@@ -303,14 +319,54 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
       };
     });
 
-    // Tính toán số liệu tổng hợp
+    // Tính toán số liệu tổng hợp & Kiểm tra an toàn sư phạm (Safety Check)
     const totalSteps = normalizedAnalysis.length;
     const correctStepsCount = normalizedAnalysis.filter(s => s.status === 'correct').length;
-    const isAllCorrect = detectedFirstErrorIndex === null && normalizedAnalysis.every(s => s.status === 'correct');
+    const hasRealError = detectedFirstErrorIndex !== null || normalizedAnalysis.some(s => s.status === 'independent_error');
+    const hasUncertainStep = normalizedAnalysis.some(s => s.status === 'uncertain' || s.confidence < 0.70);
+    // Tách rõ đúng hoàn toàn: Không có lỗi thực tế, không có bước không chắc chắn, và toàn bộ bước đúng
+    const isAllCorrect = !hasRealError && !hasUncertainStep && normalizedAnalysis.length > 0 && normalizedAnalysis.every(s => s.status === 'correct');
 
     const firstError = detectedFirstErrorIndex 
       ? normalizedAnalysis.find(s => s.stepIndex === detectedFirstErrorIndex)
       : null;
+
+    let needsTeacherReview = hasUncertainStep;
+    let computedScore: number;
+
+    const aiProposedScore = typeof resultJson.score === 'number' ? Math.min(maxPoints, Math.max(0, resultJson.score)) : null;
+
+    if (isAllCorrect) {
+      computedScore = maxPoints;
+    } else if (hasRealError) {
+      if (aiProposedScore !== null) {
+        // SAFETY CHECK: Chống mâu thuẫn điểm số ("AI nói có lỗi nhưng vẫn cho điểm tối đa")
+        if (aiProposedScore >= maxPoints) {
+          // Áp dụng mức trần an toàn có tính đến barem và vị trí lỗi sai
+          const cap = (detectedFirstErrorIndex === 1) ? maxPoints * 0.5 : maxPoints * 0.75;
+          const ratioBased = totalSteps > 0 ? (correctStepsCount / totalSteps) * maxPoints : 0;
+          computedScore = Math.round(Math.min(cap, Math.max(0, ratioBased)) * 4) / 4;
+          needsTeacherReview = true;
+        } else {
+          // Tôn trọng mức điểm AI trừ theo barem/rubric, làm tròn đến 0.25đ chuẩn sư phạm GDPT
+          computedScore = Math.round(aiProposedScore * 4) / 4;
+        }
+      } else {
+        // Fallback khi AI không trả về trường score
+        const ratio = totalSteps > 0 ? (correctStepsCount / totalSteps) : 0;
+        computedScore = Math.round(maxPoints * ratio * 4) / 4;
+        needsTeacherReview = true;
+      }
+    } else {
+      // Trường hợp không có bước sai rõ ràng nhưng có bước uncertain (không tự cho maxPoints)
+      computedScore = aiProposedScore !== null ? Math.round(aiProposedScore * 4) / 4 : 0;
+      needsTeacherReview = true;
+    }
+
+    let feedbackText = sanitizeMathData(resultJson.feedback || 'Đã hoàn tất phân tích chi tiết từng bước.');
+    if (needsTeacherReview && !feedbackText.includes('giáo viên xem lại')) {
+      feedbackText += ' (Lưu ý: Câu này có nét chữ chưa hoàn toàn rõ hoặc điểm số cần giáo viên đối chiếu thêm).';
+    }
 
     const finalResponse: StepGradingResponse = {
       success: true,
@@ -321,9 +377,10 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
       totalSteps,
       correctStepsCount,
       isAllCorrect,
-      score: typeof resultJson.score === 'number' ? Math.min(maxPoints, Math.max(0, resultJson.score)) : (isAllCorrect ? maxPoints : Math.round((correctStepsCount / Math.max(1, totalSteps)) * maxPoints * 10) / 10),
+      score: Math.min(maxPoints, Math.max(0, computedScore)),
       maxScore: maxPoints,
-      feedback: sanitizeMathData(resultJson.feedback || 'Đã hoàn tất phân tích chi tiết từng bước.'),
+      feedback: feedbackText,
+      needsTeacherReview,
       referenceSolution: resultJson.referenceSolution ? {
         steps: Array.isArray(resultJson.referenceSolution.steps)
           ? resultJson.referenceSolution.steps.map((st: any) => ({
@@ -531,10 +588,10 @@ function generateRuleBasedGrading(req: StepGradingRequest): StepGradingResponse 
         stepIndex: stepIdx,
         stepNumber: stepIdx,
         studentLatex: sanitizeMathData(line),
-        status: 'correct',
-        comment: `Bước ${stepIdx}: Đã ghi nhận dòng biến đổi của học sinh.`,
-        confidence: 0.75,
-        errorType: 'None',
+        status: 'uncertain',
+        comment: `Bước ${stepIdx}: Đã ghi nhận dòng biến đổi của học sinh. Chờ giáo viên thẩm định và cho điểm.`,
+        confidence: 0.50,
+        errorType: 'other',
         isFirstError: false,
         isFollowUpError: false,
         isIndependentError: false
@@ -549,11 +606,12 @@ function generateRuleBasedGrading(req: StepGradingRequest): StepGradingResponse 
     firstErrorType: null,
     firstErrorExplanation: null,
     totalSteps: steps.length,
-    correctStepsCount: steps.filter(s => s.status === 'correct').length,
-    isAllCorrect: steps.every(s => s.status === 'correct'),
-    score: maxPoints,
+    correctStepsCount: 0,
+    isAllCorrect: false,
+    score: 0,
     maxScore: maxPoints,
-    feedback: 'Bài làm đã được ghi nhận an toàn bằng Bộ chấm dự phòng (Rule-based). Kết quả chi tiết đang chờ giáo viên duyệt.',
+    feedback: 'Bài làm đã được tiếp nhận an toàn. Do AI đang gián đoạn hoặc chưa đủ căn cứ phân tích tự động, câu hỏi này được chuyển sang chế độ Giáo viên thẩm định để chấm điểm trực tiếp.',
+    needsTeacherReview: true,
     analysisSource: 'rule',
   };
 }

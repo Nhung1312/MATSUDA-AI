@@ -25,14 +25,21 @@ import {
   Layers,
   PlayCircle,
   ChevronRight,
-  CheckCheck
+  CheckCheck,
+  Bot,
+  Target,
+  Loader2,
+  Zap
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useMistakeVaultStore } from '../store/useMistakeVaultStore';
-import { MistakeRecord, GradeLevel } from '../types';
+import { useLearningProgressStore } from '../store/useLearningProgressStore';
+import { MistakeRecord, GradeLevel, SocraticContext, RemedialExercise } from '../types';
 import { MathDisplay } from './MathDisplay';
 import { aiService } from '../services/aiService';
+import { stepGradingService } from '../services/stepGradingService';
 import { soundEffects } from '../utils/soundEffects';
+import { SocraticTutorModal } from './SocraticTutorModal';
 
 interface MistakeVaultModalProps {
   isOpen: boolean;
@@ -44,6 +51,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
     mistakes,
     recordPracticeAttempt,
     markAsMastered,
+    saveRemedialExercise,
     saveAiHint,
     removeMistake,
     clearMasteredMistakes,
@@ -52,7 +60,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
 
   const [selectedGrade, setSelectedGrade] = useState<'all' | GradeLevel>('all');
   const [selectedExamTitle, setSelectedExamTitle] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<'unmastered' | 'all' | 'mastered'>('unmastered');
+  const [statusFilter, setStatusFilter] = useState<'unmastered' | 'improving' | 'mastered' | 'all'>('unmastered');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Interactive re-test states per mistake
@@ -60,6 +68,14 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
   const [testResultByMistake, setTestResultByMistake] = useState<Record<string, { tested: boolean; isCorrect: boolean }>>({});
   const [loadingAiHint, setLoadingAiHint] = useState<Record<string, boolean>>({});
   const [showExplanation, setShowExplanation] = useState<Record<string, boolean>>({});
+
+  // Remedial Exercise & Socratic states per mistake
+  const [generatingRemedialByMistake, setGeneratingRemedialByMistake] = useState<Record<string, boolean>>({});
+  const [remedialAnswerByMistake, setRemedialAnswerByMistake] = useState<Record<string, string>>({});
+  const [remedialResultByMistake, setRemedialResultByMistake] = useState<Record<string, { tested: boolean; isCorrect: boolean; feedback?: string }>>({});
+  const [showRemedialHintByMistake, setShowRemedialHintByMistake] = useState<Record<string, boolean>>({});
+  const [showRemedialSolutionByMistake, setShowRemedialSolutionByMistake] = useState<Record<string, boolean>>({});
+  const [activeSocraticContext, setActiveSocraticContext] = useState<SocraticContext | null>(null);
 
   // Mini Quiz Mode
   const [quizMode, setQuizMode] = useState<boolean>(false);
@@ -90,8 +106,9 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
         const examTitle = m.assignmentTitle || m.assignmentId || 'Đề kiểm tra & Luyện tập chung';
         if (examTitle !== selectedExamTitle) return false;
       }
-      if (statusFilter === 'unmastered' && m.mastered) return false;
-      if (statusFilter === 'mastered' && !m.mastered) return false;
+      if (statusFilter === 'unmastered' && (m.masteryStatus === 'mastered' || m.mastered || m.masteryStatus === 'improving')) return false;
+      if (statusFilter === 'improving' && m.masteryStatus !== 'improving') return false;
+      if (statusFilter === 'mastered' && !m.mastered && m.masteryStatus !== 'mastered') return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchText = (m.question.question || '').toLowerCase();
@@ -102,8 +119,9 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
     });
   }, [mistakes, selectedGrade, selectedExamTitle, statusFilter, searchQuery]);
 
-  const activeCount = mistakes.filter((m) => !m.mastered).length;
-  const masteredCount = mistakes.filter((m) => m.mastered).length;
+  const needsPracticeCount = mistakes.filter((m) => !m.mastered && (m.masteryStatus === 'needs_practice' || m.masteryStatus === 'practicing' || !m.masteryStatus)).length;
+  const improvingCount = mistakes.filter((m) => m.masteryStatus === 'improving').length;
+  const masteredCount = mistakes.filter((m) => m.mastered || m.masteryStatus === 'mastered').length;
 
   // List of all unique exams available in vault
   const allAvailableExams = useMemo(() => {
@@ -220,12 +238,168 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
     }
   };
 
+  // Generate Remedial Exercise (Isomorphic Problem)
+  const handleGenerateRemedialForMistake = async (m: MistakeRecord) => {
+    setGeneratingRemedialByMistake(prev => ({ ...prev, [m.id]: true }));
+    try {
+      const res = await stepGradingService.generateRemedial({
+        sourceQuestionId: m.question.id,
+        sourceQuestionText: m.question.question,
+        grade: String(m.grade),
+        topic: m.assignmentTitle || 'Toán THCS',
+        sourceErrorType: m.firstErrorType || 'other',
+        sourceFirstErrorStep: m.firstErrorStep || 1,
+        skillTarget: m.firstErrorType ? `Khắc phục lỗi ${m.firstErrorType}` : 'Kỹ năng biến đổi chuẩn xác',
+        difficulty: 'standard',
+        studentMistakeSummary: m.firstErrorExplanation || m.studentAnswer
+      });
+      if (res.success && res.exercise) {
+        saveRemedialExercise(m.id, res.exercise);
+        try {
+          useLearningProgressStore.getState().recordRemedialExerciseGenerated(
+            m.question.id,
+            res.exercise.id,
+            res.exercise.metadata?.skillTarget
+          );
+        } catch {}
+      } else {
+        alert(res.message || 'Chưa thể tạo bài tập tương tự lúc này. Bạn vui lòng thử lại sau giây lát nhé!');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Không thể kết nối máy chủ tạo bài tập tương tự. Bạn hãy thử lại sau nhé!');
+    } finally {
+      setGeneratingRemedialByMistake(prev => ({ ...prev, [m.id]: false }));
+    }
+  };
+
+  // Check Remedial Answer
+  const handleCheckRemedialForMistake = (m: MistakeRecord) => {
+    const ex = m.remedialExercise;
+    if (!ex) return;
+    const ans = (remedialAnswerByMistake[m.id] || '').trim();
+    if (!ans) {
+      alert('Vui lòng nhập đáp số hoặc bước biến đổi của em trước khi kiểm tra.');
+      return;
+    }
+
+    const normStudent = ans.replace(/\s+/g, '').toLowerCase();
+    const normCorrect = ex.finalAnswer.replace(/\$+/g, '').replace(/\s+/g, '').toLowerCase();
+    const isCorrect = normStudent.includes(normCorrect) || normCorrect.includes(normStudent);
+
+    if (isCorrect) {
+      soundEffects.playSuccess();
+      try {
+        confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
+      } catch {}
+      recordPracticeAttempt(m.id, true, {
+        type: 'remedial_isomorphic',
+        studentAnswer: ans,
+        feedback: 'Chính xác! Đã làm chủ bài tập tương tự.'
+      });
+      useLearningProgressStore.getState().recordRemedialExerciseCompleted(ex.id, true);
+      setRemedialResultByMistake(prev => ({
+        ...prev,
+        [m.id]: { tested: true, isCorrect: true, feedback: '🎉 Hoàn toàn chính xác! Em đã làm chủ dạng bài này.' }
+      }));
+    } else {
+      soundEffects.playFlag();
+      recordPracticeAttempt(m.id, false, {
+        type: 'remedial_isomorphic',
+        studentAnswer: ans,
+        feedback: 'Chưa chính xác.'
+      });
+      useLearningProgressStore.getState().recordRemedialExerciseCompleted(ex.id, false);
+      setRemedialResultByMistake(prev => ({
+        ...prev,
+        [m.id]: { tested: true, isCorrect: false, feedback: '💡 Đáp số chưa khớp. Em hãy bấm "Xem gợi ý phương pháp" để đối chiếu nhé!' }
+      }));
+    }
+  };
+
+  // Open Socratic Tutor for a Mistake
+  const handleOpenSocraticForMistake = (m: MistakeRecord) => {
+    setActiveSocraticContext({
+      questionId: m.question.id,
+      mistakeRecordId: m.id,
+      questionText: m.question.question,
+      grade: String(m.grade),
+      topic: m.assignmentTitle || 'Toán học',
+      firstErrorStep: m.firstErrorStep || undefined,
+      firstErrorType: m.firstErrorType || undefined,
+      firstErrorExplanation: m.firstErrorExplanation || undefined,
+      studentWork: m.studentWork || m.studentAnswer,
+      detectedError: m.firstErrorStep
+        ? `Lỗi gốc tại Bước ${m.firstErrorStep}: ${m.firstErrorExplanation || ''}`
+        : `Đáp án học sinh đã chọn: ${m.studentAnswer}`,
+      stepAnalysis: m.stepAnalysis,
+      essayImages: m.essayImages,
+      answerOptions: m.question.options ? m.question.options.map(o => ({ id: o.id, text: o.text })) : undefined
+    });
+  };
+
+  // Open Socratic Tutor for Remedial Exercise
+  const handleOpenSocraticForRemedial = (m: MistakeRecord) => {
+    if (!m.remedialExercise) return;
+    setActiveSocraticContext({
+      questionId: m.remedialExercise.id,
+      mistakeRecordId: m.id,
+      questionText: `${m.remedialExercise.title}:\n${m.remedialExercise.problemLatex}`,
+      grade: String(m.grade),
+      topic: m.remedialExercise.metadata?.skillTarget || m.assignmentTitle || 'Toán học',
+      firstErrorExplanation: m.firstErrorExplanation || undefined,
+      firstErrorType: m.firstErrorType || undefined,
+      studentWork: remedialAnswerByMistake[m.id] || '',
+      detectedError: `Học sinh đang luyện bài tập tương tự bổ trợ (Isomorphic Problem). Lỗi gốc ở câu trước: ${m.firstErrorExplanation || m.firstErrorType || 'Chưa rõ'}. Cần gợi mở phương pháp tư duy giải bài tương tự này.`,
+    });
+  };
+
+  // Render 4-stage mastery status badge
+  const renderMasteryBadge = (m: MistakeRecord) => {
+    const status = m.masteryStatus || (m.mastered ? 'mastered' : 'needs_practice');
+    switch (status) {
+      case 'mastered':
+        return (
+          <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+            <span>✓ Đã nắm vững</span>
+          </span>
+        );
+      case 'improving':
+        return (
+          <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-200 border border-blue-300 dark:border-blue-800">
+            <Sparkles className="w-3.5 h-3.5 text-blue-600 animate-pulse" />
+            <span>↗ Đang tiến bộ ({m.consecutiveCorrectCount || 1}/2)</span>
+          </span>
+        );
+      case 'practicing':
+        return (
+          <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-800">
+            <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+            <span>⏳ Đang luyện tập</span>
+          </span>
+        );
+      case 'needs_practice':
+      default:
+        return (
+          <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+            <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+            <span>⚠️ Cần luyện lại</span>
+          </span>
+        );
+    }
+  };
+
   // Render single mistake card
   const renderMistakeCard = (m: MistakeRecord, idx: number) => {
     const currentSelected = selectedOptionByMistake[m.id] || '';
     const testResult = testResultByMistake[m.id];
     const isAiLoading = loadingAiHint[m.id];
     const isExpanded = showExplanation[m.id];
+    const remResult = remedialResultByMistake[m.id];
+    const isGeneratingRem = generatingRemedialByMistake[m.id];
+    const showRemHint = showRemedialHintByMistake[m.id];
+    const showRemSol = showRemedialSolutionByMistake[m.id];
 
     return (
       <div
@@ -233,6 +407,8 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
         className={`rounded-2xl border p-4 sm:p-5 transition-all shadow-xs ${
           m.mastered
             ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/80'
+            : m.masteryStatus === 'improving'
+            ? 'bg-blue-50/30 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800/60'
             : 'bg-white dark:bg-slate-800/70 border-slate-200 dark:border-slate-700/80 hover:border-indigo-300'
         }`}
       >
@@ -272,17 +448,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
           </div>
 
           <div className="flex items-center space-x-2">
-            {m.mastered ? (
-              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-200">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Đã nắm vững</span>
-              </span>
-            ) : (
-              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300">
-                <AlertCircle className="w-3.5 h-3.5" />
-                <span>Cần luyện lại</span>
-              </span>
-            )}
+            {renderMasteryBadge(m)}
 
             <button
               onClick={() => removeMistake(m.id)}
@@ -318,12 +484,34 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
           )}
         </div>
 
+        {/* Root Error Diagnosis from Step Grading (Mục 2 & 3) */}
+        {m.firstErrorStep ? (
+          <div className="my-2 p-3 rounded-xl bg-rose-50/90 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-xs space-y-1.5">
+            <div className="font-extrabold flex flex-wrap items-center justify-between gap-1.5 text-rose-800 dark:text-rose-300">
+              <div className="flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>Nút thắt lỗi gốc: Bước {m.firstErrorStep} {m.firstErrorType ? `(${m.firstErrorType})` : ''}</span>
+              </div>
+              {m.cascadingStepsCount && m.cascadingStepsCount > 0 ? (
+                <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-950/80 border border-purple-200 dark:border-purple-800 px-2 py-0.5 rounded-md">
+                  ↳ {m.cascadingStepsCount} bước phía sau kéo theo (không tính lỗi mới)
+                </span>
+              ) : null}
+            </div>
+            {m.firstErrorExplanation && (
+              <div className="text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
+                <MathDisplay text={m.firstErrorExplanation} content={m.firstErrorExplanation} />
+              </div>
+            )}
+          </div>
+        ) : null}
+
         {/* Previous Wrong Answer Reminder */}
         <div className="mb-3 px-3 py-2 rounded-xl bg-rose-50/80 dark:bg-rose-950/40 border border-rose-200/60 dark:border-rose-900/60 text-xs text-rose-700 dark:text-rose-300 flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
             <span>
-              Lần thi trước bạn chọn: <strong>{m.studentAnswer}</strong> (Chưa chính xác). Hãy thử giải và chọn lại:
+              Lần làm trước: <strong>{m.studentAnswer}</strong> (Chưa đạt tối đa). Hãy thử làm lại:
             </span>
           </div>
           {m.practiceCount > 0 && (
@@ -333,42 +521,44 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
           )}
         </div>
 
-        {/* Interactive Options Practice */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 my-3">
-          {(m.question.options || []).map((opt) => {
-            const isSelected = currentSelected === opt.id;
-            return (
-              <button
-                key={opt.id}
-                onClick={() => {
-                  soundEffects.playClick();
-                  setSelectedOptionByMistake((prev) => ({
-                    ...prev,
-                    [m.id]: opt.id
-                  }));
-                }}
-                className={`p-3 rounded-xl border text-left flex items-start space-x-2.5 transition-all cursor-pointer ${
-                  isSelected
-                    ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/70 ring-2 ring-indigo-500/50 text-indigo-900 dark:text-indigo-100 font-semibold'
-                    : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-800 dark:text-slate-200'
-                }`}
-              >
-                <span
-                  className={`w-6 h-6 rounded-lg font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 ${
+        {/* Interactive Options Practice (Trắc nghiệm) */}
+        {Array.isArray(m.question.options) && m.question.options.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 my-3">
+            {m.question.options.map((opt) => {
+              const isSelected = currentSelected === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => {
+                    soundEffects.playClick();
+                    setSelectedOptionByMistake((prev) => ({
+                      ...prev,
+                      [m.id]: opt.id
+                    }));
+                  }}
+                  className={`p-3 rounded-xl border text-left flex items-start space-x-2.5 transition-all cursor-pointer ${
                     isSelected
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                      ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/70 ring-2 ring-indigo-500/50 text-indigo-900 dark:text-indigo-100 font-semibold'
+                      : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-800 dark:text-slate-200'
                   }`}
                 >
-                  {opt.id}
-                </span>
-                <div className="text-xs sm:text-sm font-medium flex-1">
-                  <MathDisplay text={opt.text} content={opt.text} />
-                </div>
-              </button>
-            );
-          })}
-        </div>
+                  <span
+                    className={`w-6 h-6 rounded-lg font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    {opt.id}
+                  </span>
+                  <div className="text-xs sm:text-sm font-medium flex-1">
+                    <MathDisplay text={opt.text} content={opt.text} />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
 
         {/* Feedback Banner after re-checking */}
         {testResult && testResult.tested && (
@@ -383,14 +573,14 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
               <>
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span>
-                  🎉 Chính xác tuyệt vời! Bạn đã khắc phục thành công câu sai này và được ghi nhận là Đã Nắm Vững!
+                  🎉 Chính xác! Bạn đã giải đúng câu này ({m.consecutiveCorrectCount || 1}/2 lần để nắm vững).
                 </span>
               </>
             ) : (
               <>
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                 <span>
-                  Đáp án vừa chọn vẫn chưa đúng. Bạn hãy bấm nút "Gợi ý bước giải từ AI" bên dưới để được hướng dẫn nhé!
+                  Đáp án vừa chọn vẫn chưa đúng. Bạn hãy bấm "Gia sư AI – Sửa lỗi này" để được hướng dẫn tư duy nhé!
                 </span>
               </>
             )}
@@ -398,15 +588,17 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
         )}
 
         {/* Card Bottom Controls */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => handleCheckAnswer(m)}
-              className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-transform active:scale-95 cursor-pointer"
-            >
-              <Check className="w-3.5 h-3.5" />
-              <span>Kiểm tra đáp án</span>
-            </button>
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex flex-wrap items-center gap-2">
+            {Array.isArray(m.question.options) && m.question.options.length > 0 && (
+              <button
+                onClick={() => handleCheckAnswer(m)}
+                className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-transform active:scale-95 cursor-pointer"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Kiểm tra đáp án</span>
+              </button>
+            )}
 
             <button
               onClick={() => handleGetAiHint(m)}
@@ -415,6 +607,32 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
               <span>{isAiLoading ? 'AI đang phân tích...' : m.aiHint ? 'Xem lại gợi ý AI' : 'Gợi ý bước giải AI'}</span>
+            </button>
+
+            {/* Nút sinh bài tương tự cùng dạng (Mục 4 & 5) */}
+            <button
+              type="button"
+              disabled={isGeneratingRem}
+              onClick={() => handleGenerateRemedialForMistake(m)}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+            >
+              {isGeneratingRem ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Target className="w-3.5 h-3.5 text-amber-300" />
+              )}
+              <span>{m.remedialExercise ? 'Đổi bài tương tự khác' : '🎯 Luyện bài tương tự cùng dạng'}</span>
+            </button>
+
+            {/* Nút Gia sư AI Socratic (Mục 6) */}
+            <button
+              type="button"
+              onClick={() => handleOpenSocraticForMistake(m)}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 rounded-xl text-xs font-bold border border-indigo-200 dark:border-indigo-800/80 transition-colors cursor-pointer"
+              title="Nhờ Gia sư Socratic AI dẫn dắt tư duy"
+            >
+              <Bot className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>Gia sư AI – Sửa lỗi này</span>
             </button>
           </div>
 
@@ -428,6 +646,101 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
             {m.mastered ? '✓ Đã nắm vững' : 'Đánh dấu đã hiểu bài'}
           </button>
         </div>
+
+        {/* REMEDIAL PRACTICE WORKOUT CARD (Mục 4 & 5 - Học sinh thực sự làm và nộp) */}
+        {m.remedialExercise && (
+          <div className="mt-3.5 p-4 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border-2 border-purple-200 dark:border-purple-800/80 text-xs space-y-3 animate-in fade-in">
+            <div className="flex items-center justify-between pb-1.5 border-b border-purple-200/80 dark:border-purple-800/60">
+              <div className="font-extrabold text-purple-900 dark:text-purple-200 flex items-center gap-1.5 text-xs sm:text-sm">
+                <Target className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                <span>{m.remedialExercise.title}</span>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-200 dark:bg-purple-900 text-purple-800 dark:text-purple-200">
+                Isomorphic Problem
+              </span>
+            </div>
+
+            <div className="text-slate-800 dark:text-slate-200 font-medium leading-relaxed text-xs sm:text-sm">
+              <MathDisplay content={m.remedialExercise.problemLatex} />
+            </div>
+
+            {/* Input answer form */}
+            <div className="flex flex-col sm:flex-row gap-2 pt-1">
+              <input
+                type="text"
+                value={remedialAnswerByMistake[m.id] || ''}
+                onChange={(e) => setRemedialAnswerByMistake(prev => ({ ...prev, [m.id]: e.target.value }))}
+                placeholder="Nhập đáp số hoặc bước biến đổi của em (VD: x = 5)..."
+                className="flex-1 px-3 py-2 bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              <button
+                type="button"
+                onClick={() => handleCheckRemedialForMistake(m)}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs sm:text-sm shadow-xs transition-transform active:scale-95 cursor-pointer shrink-0"
+              >
+                Kiểm tra bài làm
+              </button>
+            </div>
+
+            {/* Remedial Feedback */}
+            {remResult && (
+              <div className={`p-2.5 rounded-xl border text-xs font-semibold ${
+                remResult.isCorrect
+                  ? 'bg-emerald-100 dark:bg-emerald-950/80 border-emerald-300 text-emerald-800 dark:text-emerald-200'
+                  : 'bg-rose-100 dark:bg-rose-950/80 border-rose-300 text-rose-800 dark:text-rose-200'
+              }`}>
+                {remResult.feedback}
+              </div>
+            )}
+
+            {/* Hint & Solution Toggles */}
+            <div className="flex items-center gap-3 pt-1 border-t border-purple-200/60 dark:border-purple-800/60 text-[11px]">
+              <button
+                type="button"
+                onClick={() => setShowRemedialHintByMistake(prev => ({ ...prev, [m.id]: !prev[m.id] }))}
+                className="font-bold text-amber-700 dark:text-amber-400 hover:underline cursor-pointer flex items-center gap-1"
+              >
+                <Lightbulb className="w-3.5 h-3.5" />
+                <span>{showRemHint ? 'Ẩn gợi ý' : 'Xem gợi ý phương pháp'}</span>
+              </button>
+              <span>•</span>
+              <button
+                type="button"
+                onClick={() => setShowRemedialSolutionByMistake(prev => ({ ...prev, [m.id]: !prev[m.id] }))}
+                className="font-bold text-indigo-700 dark:text-indigo-400 hover:underline cursor-pointer flex items-center gap-1"
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>{showRemSol ? 'Ẩn lời giải' : 'Xem lời giải mẫu'}</span>
+              </button>
+              <span>•</span>
+              <button
+                type="button"
+                onClick={() => handleOpenSocraticForRemedial(m)}
+                className="font-bold text-purple-700 dark:text-purple-400 hover:underline cursor-pointer flex items-center gap-1"
+                title="Nhờ Gia sư AI hướng dẫn tư duy bài tương tự này"
+              >
+                <Bot className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                <span>Gia sư AI – Hướng dẫn bài này</span>
+              </button>
+            </div>
+
+            {showRemHint && (
+              <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 text-amber-900 dark:text-amber-200 text-xs">
+                <MathDisplay content={m.remedialExercise.hint} />
+              </div>
+            )}
+
+            {showRemSol && (
+              <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800 text-slate-800 dark:text-slate-200 text-xs space-y-1.5">
+                <div className="font-bold text-purple-700 dark:text-purple-300">Lời giải chi tiết:</div>
+                <MathDisplay content={m.remedialExercise.solutionLatex} />
+                <div className="font-bold text-emerald-600 dark:text-emerald-400 pt-1">
+                  Đáp số chuẩn: <MathDisplay content={m.remedialExercise.finalAnswer} />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Expanded AI Explanation / Teacher Solution */}
         {(isExpanded || m.aiHint) && (
@@ -454,6 +767,50 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Practice Attempts History */}
+        {Array.isArray(m.practiceAttempts) && m.practiceAttempts.length > 0 && (
+          <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 text-xs">
+            <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1.5 font-semibold">
+              <span className="flex items-center gap-1.5">
+                <RotateCcw className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Lịch sử luyện tập ({m.practiceAttempts.length} lượt):</span>
+              </span>
+              <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                {m.consecutiveCorrectCount && m.consecutiveCorrectCount > 0
+                  ? `🔥 Chuỗi đúng liên tiếp: ${m.consecutiveCorrectCount}/2`
+                  : 'Cần đúng 2 lần liên tiếp để nắm vững'}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {m.practiceAttempts.slice(0, 5).map((att) => (
+                <span
+                  key={att.id}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border ${
+                    att.isCorrect
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                      : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                  }`}
+                  title={`${att.attemptedAt ? new Date(att.attemptedAt).toLocaleTimeString('vi-VN') : ''} - ${att.feedback || (att.isCorrect ? 'Đúng' : 'Sai')}`}
+                >
+                  {att.isCorrect ? (
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                  ) : (
+                    <XCircle className="w-3 h-3 text-rose-600 shrink-0" />
+                  )}
+                  <span>
+                    {att.type === 'remedial_isomorphic'
+                      ? 'Bài tương tự'
+                      : att.type === 'socratic_correction'
+                      ? 'Sửa bước'
+                      : 'Làm lại'}
+                    : {att.isCorrect ? 'Đúng' : 'Sai'}
+                  </span>
+                </span>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -506,8 +863,16 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
             <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 font-bold shadow-2xs">
               <AlertCircle className="w-4 h-4 text-rose-500" />
               <span>Cần khắc phục:</span>
-              <span className="font-black text-rose-600 dark:text-rose-400">{activeCount} câu</span>
+              <span className="font-black text-rose-600 dark:text-rose-400">{needsPracticeCount} câu</span>
             </div>
+
+            {improvingCount > 0 && (
+              <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-300 font-bold shadow-2xs">
+                <Sparkles className="w-4 h-4 text-blue-500" />
+                <span>Đang tiến bộ:</span>
+                <span className="font-black text-blue-600 dark:text-blue-400">{improvingCount} câu</span>
+              </div>
+            )}
 
             <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-900 text-emerald-700 dark:text-emerald-300 font-bold shadow-2xs">
               <CheckCircle2 className="w-4 h-4 text-emerald-500" />
@@ -604,8 +969,19 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                   : 'text-slate-600 dark:text-slate-300'
               }`}
             >
-              <span>🔴 Chưa sửa</span>
-              <span className="font-mono text-[10px]">({activeCount})</span>
+              <span>🔴 Cần luyện</span>
+              <span className="font-mono text-[10px]">({needsPracticeCount})</span>
+            </button>
+            <button
+              onClick={() => setStatusFilter('improving')}
+              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center space-x-1 ${
+                statusFilter === 'improving'
+                  ? 'bg-white dark:bg-blue-600 text-blue-700 dark:text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-300'
+              }`}
+            >
+              <span>🔵 Đang tiến bộ</span>
+              <span className="font-mono text-[10px]">({improvingCount})</span>
             </button>
             <button
               onClick={() => setStatusFilter('mastered')}
@@ -983,6 +1359,15 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
             Đóng sổ tay
           </button>
         </div>
+
+        {/* Socratic AI Tutor Modal for Mistake/Remedial */}
+        {activeSocraticContext && (
+          <SocraticTutorModal
+            isOpen={Boolean(activeSocraticContext)}
+            onClose={() => setActiveSocraticContext(null)}
+            context={activeSocraticContext}
+          />
+        )}
 
       </div>
     </div>,
