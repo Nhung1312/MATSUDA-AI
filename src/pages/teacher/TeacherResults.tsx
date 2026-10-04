@@ -364,7 +364,10 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
           pointsEarned: scoreVal,
           teacherScore: scoreVal,
           teacherFeedback: fbVal,
-          isCorrect
+          isCorrect,
+          needsTeacherReview: false,
+          isProvisional: false,
+          aiGradingError: false
         };
       }
       return a;
@@ -384,12 +387,19 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     const rawScore = totalMax > 0 ? (totalEarned / totalMax) * 10 : 0;
     const totalScore = Math.round(rawScore * 10) / 10;
 
+    // Kiểm tra còn câu nào cần duyệt chưa có điểm giáo viên không
+    const stillNeedsReview = updatedAnswers.some(a => a.needsTeacherReview && a.teacherScore === undefined);
+
     const updatedSubmission: Submission = {
       ...selectedSubmissionDetail,
       answers: updatedAnswers,
       totalScore,
       correctCount: correctCnt,
-      wrongCount: wrongCnt
+      wrongCount: wrongCnt,
+      needsTeacherReview: stillNeedsReview,
+      isProvisional: stillNeedsReview,
+      gradingStatus: stillNeedsReview ? 'needs_review' : 'graded',
+      ungradedCount: updatedAnswers.filter(a => a.needsTeacherReview && a.teacherScore === undefined).length
     };
 
     setSelectedSubmissionDetail(updatedSubmission);

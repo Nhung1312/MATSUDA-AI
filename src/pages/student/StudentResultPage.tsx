@@ -327,19 +327,24 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
   // Filtered list of answers
   const filteredAnswers = submission.answers.filter(ans => {
+    const isAwaitingAnsReview = ans.needsTeacherReview && ans.teacherScore === undefined;
     if (filterType === 'correct') return ans.isCorrect;
-    if (filterType === 'wrong') return !ans.isCorrect;
+    if (filterType === 'wrong') return !ans.isCorrect && !isAwaitingAnsReview;
     return true;
   });
 
   // Calculate score rating banner
-  const hasPendingTeacherGrading = submission.hasEssayQuestions && submission.gradingStatus === 'pending_teacher_grading';
+  const isAwaitingReview = submission.isProvisional || submission.needsTeacherReview || submission.gradingStatus === 'needs_review' || (submission.answers || []).some(a => a.needsTeacherReview && a.teacherScore === undefined);
+  const hasPendingTeacherGrading = (submission.hasEssayQuestions && submission.gradingStatus === 'pending_teacher_grading') || isAwaitingReview;
   const score = submission.totalScore;
-  let ratingColor = hasPendingTeacherGrading ? 'from-purple-600 to-indigo-600' : 'from-indigo-600 to-purple-600';
+  let ratingColor = isAwaitingReview ? 'from-amber-500 to-indigo-600' : hasPendingTeacherGrading ? 'from-purple-600 to-indigo-600' : 'from-indigo-600 to-purple-600';
   let ratingTitle = 'Làm bài khá tốt!';
   let ratingMessage = 'Hãy xem kỹ các câu sai để rút kinh nghiệm cho lần thi tiếp theo nhé.';
 
-  if (score >= 9.0) {
+  if (isAwaitingReview) {
+    ratingTitle = 'Bài thi đang chờ Thầy/Cô duyệt điểm ⏳';
+    ratingMessage = 'Hệ thống ghi nhận có câu hỏi cần Thầy/Cô đối chiếu và xác nhận điểm. Điểm hiển thị là điểm tạm tính và chưa phải điểm chính thức.';
+  } else if (score >= 9.0) {
     ratingColor = 'from-emerald-500 to-teal-600';
     ratingTitle = 'Xuất sắc! Điểm số rất cao 🎉';
     ratingMessage = 'Bạn nắm kiến thức toán học rất vững chắc. Tiếp tục phát huy nhé!';
@@ -395,7 +400,24 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
           {/* Big Score Display */}
           <div className="my-6">
-            {hasPendingTeacherGrading ? (
+            {isAwaitingReview ? (
+              <div className="inline-flex flex-col items-center space-y-2 bg-gradient-to-br from-amber-50 to-indigo-50 dark:from-amber-950/40 dark:to-indigo-950/40 px-8 py-5 rounded-3xl border-2 border-amber-200 dark:border-amber-800 shadow-sm max-w-md mx-auto">
+                <span className="px-3 py-1 rounded-full bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 font-black text-xs uppercase tracking-wider flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Điểm tạm tính • Đang chờ Thầy/Cô duyệt</span>
+                </span>
+                <div className="flex items-baseline space-x-1.5 pt-1">
+                  <span className="text-xs font-bold text-slate-500">Điểm tạm tính:</span>
+                  <span className="text-3xl sm:text-4xl font-black text-amber-700 dark:text-amber-300">
+                    {submission.mcqScore !== undefined ? submission.mcqScore.toFixed(1) : score.toFixed(1)}
+                  </span>
+                  <span className="text-sm font-bold text-slate-400">/ 10</span>
+                </div>
+                <p className="text-[11px] text-amber-800 dark:text-amber-300 italic">
+                  * Điểm chính thức sẽ được cập nhật sau khi Thầy/Cô hoàn tất xem xét và duyệt bài.
+                </p>
+              </div>
+            ) : hasPendingTeacherGrading ? (
               <div className="inline-flex flex-col items-center space-y-2 bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-950/40 dark:to-indigo-950/40 px-8 py-5 rounded-3xl border-2 border-purple-200 dark:border-purple-800 shadow-sm max-w-md mx-auto">
                 <span className="px-3 py-1 rounded-full bg-purple-200/80 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 font-black text-xs uppercase tracking-wider">
                   ⏳ Đang chờ Giáo viên chấm tự luận
@@ -705,11 +727,17 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 const isLoadingGrading = !!loadingAiGrading[question.id];
                 const images = ans.essayImages || [];
 
+                const isAwaitingAnsReview = ans.needsTeacherReview && ans.teacherScore === undefined;
+
                 return (
                   <div
                     key={question.id}
                     className={`bg-white rounded-3xl p-6 sm:p-7 shadow-sm border-2 transition-all ${
-                      isCorrect ? 'border-emerald-200 bg-white' : 'border-rose-300 bg-rose-50/15'
+                      isCorrect
+                        ? 'border-emerald-200 bg-white'
+                        : isAwaitingAnsReview
+                        ? 'border-amber-300 bg-amber-50/15'
+                        : 'border-rose-300 bg-rose-50/15'
                     }`}
                   >
                     {/* Top Question Status Header */}
@@ -717,7 +745,11 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                       <div className="flex items-center space-x-2.5">
                         <span
                           className={`flex items-center justify-center w-8 h-8 rounded-xl text-xs font-black shadow-xs ${
-                            isCorrect ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+                            isCorrect
+                              ? 'bg-emerald-600 text-white'
+                              : isAwaitingAnsReview
+                              ? 'bg-amber-500 text-white'
+                              : 'bg-rose-600 text-white'
                           }`}
                         >
                           {question.order}
@@ -728,10 +760,18 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                           </span>
                           <span
                             className={`text-xs font-bold ml-2 ${
-                              isCorrect ? 'text-emerald-700' : 'text-rose-600'
+                              isCorrect
+                                ? 'text-emerald-700'
+                                : isAwaitingAnsReview
+                                ? 'text-amber-700'
+                                : 'text-rose-600'
                             }`}
                           >
-                            {isCorrect ? `Đúng (+${ans.pointsEarned} điểm)` : `Chưa đúng (+${ans.pointsEarned}/${ans.maxPoints} điểm)`}
+                            {isCorrect
+                              ? `Đúng (+${ans.pointsEarned} điểm)`
+                              : isAwaitingAnsReview
+                              ? `Chưa có điểm chính thức • Chờ Thầy/Cô duyệt`
+                              : `Chưa đúng (+${ans.pointsEarned}/${ans.maxPoints} điểm)`}
                           </span>
                         </div>
                       </div>
@@ -740,6 +780,10 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                         {isCorrect ? (
                           <span className="inline-flex items-center gap-1 text-emerald-800 bg-emerald-100 text-xs font-extrabold px-3 py-1 rounded-full">
                             <CheckCircle2 className="w-3.5 h-3.5" /> Làm đúng
+                          </span>
+                        ) : isAwaitingAnsReview ? (
+                          <span className="inline-flex items-center gap-1 text-amber-800 bg-amber-100 text-xs font-extrabold px-3 py-1 rounded-full">
+                            <Clock className="w-3.5 h-3.5 text-amber-600" /> Chờ GV duyệt
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-rose-800 bg-rose-100 text-xs font-extrabold px-3 py-1 rounded-full">

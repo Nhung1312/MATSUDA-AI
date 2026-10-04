@@ -1303,18 +1303,37 @@ Trả về DUY NHẤT một JSON Array theo định dạng:
           quotaErr.status = 429;
           throw quotaErr;
         }
-        // Thử lại 1 lần nếu 503 tạm thời
+        // Thử lại nếu 503 tạm thời do spikes
         if (status === 503 || errStr.includes('503') || errStr.includes('UNAVAILABLE')) {
-          await new Promise(r => setTimeout(r, 2000));
-          const res = await ai.models.generateContent({
-            model,
-            contents: [{ text: promptL1 }],
-            config: { responseMimeType: 'application/json' }
-          });
-          const rawText = res.text || '';
-          const jsonMatch = rawText.match(/\[[\s\S]*\]/);
-          if (jsonMatch) {
-            pass1List = JSON.parse(jsonMatch[0]);
+          let retrySuccess = false;
+          for (const delay of [2500, 4000]) {
+            try {
+              await new Promise(r => setTimeout(r, delay));
+              const res = await ai.models.generateContent({
+                model,
+                contents: [{ text: promptL1 }],
+                config: { responseMimeType: 'application/json' }
+              });
+              const rawText = res.text || '';
+              const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+              if (jsonMatch) {
+                pass1List = JSON.parse(jsonMatch[0]);
+                retrySuccess = true;
+                break;
+              }
+            } catch (retryErr: any) {
+              const rStatus = retryErr?.status || retryErr?.code || 0;
+              const rErrStr = String(retryErr?.message || retryErr);
+              if (rStatus === 429 || rErrStr.includes('429') || rErrStr.includes('RESOURCE_EXHAUSTED') || rErrStr.includes('quota')) {
+                const quotaErr: any = new Error('Model hiện đã vượt hạn mức API (429 RESOURCE_EXHAUSTED).');
+                quotaErr.isQuota = true;
+                quotaErr.status = 429;
+                throw quotaErr;
+              }
+            }
+          }
+          if (!retrySuccess && pass1List.length === 0) {
+            throw err;
           }
         } else {
           throw err;

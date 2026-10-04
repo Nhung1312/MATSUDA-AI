@@ -116,6 +116,8 @@ export interface StudentAnswer {
   firstErrorType?: StepErrorType | null;
   firstErrorExplanation?: string | null;
   needsTeacherReview?: boolean;
+  isProvisional?: boolean; // Điểm số tạm tính (AI lỗi hoặc chờ GV duyệt, không phải điểm 0 thật)
+  aiGradingError?: boolean; // Đánh dấu khi AI gặp lỗi xử lý hoặc ảnh không rõ
   stepGradingResponse?: StepGradingResponse;
 }
 
@@ -137,8 +139,10 @@ export interface Submission {
   studentName: string;
   studentId?: string;
   answers: StudentAnswer[];
-  totalScore: number; // e.g. 8.5
+  totalScore: number; // e.g. 8.5 (hoặc điểm tạm tính nếu isProvisional = true)
   maxScore: number; // e.g. 10.0
+  isProvisional?: boolean; // Bài nộp đang ở trạng thái điểm tạm tính (có câu cần Giáo viên duyệt)
+  ungradedCount?: number; // Số câu hỏi chưa có điểm chính thức do chờ duyệt
   correctCount: number;
   wrongCount: number;
   unansweredCount: number;

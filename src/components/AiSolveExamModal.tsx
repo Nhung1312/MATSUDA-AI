@@ -17,7 +17,8 @@ import {
   Check, 
   ShieldCheck, 
   RotateCcw, 
-  Key 
+  Key,
+  Edit3 
 } from 'lucide-react';
 
 interface AiSolveExamModalProps {
@@ -508,7 +509,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
               }`}
             >
               <AlertTriangle className={`w-3 h-3 ${needsReviewCount > 0 ? 'text-rose-600 dark:text-rose-300' : 'text-slate-400'}`} />
-              <span>Nghi vấn ({needsReviewCount})</span>
+              <span>Chỉ hiện câu cần xem lại ({needsReviewCount})</span>
             </button>
             <button
               onClick={() => setFilterMode('changed')}
@@ -704,7 +705,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
                             </div>
                           )}
 
-                          {/* 3 NÚT DUYỆT CÂU NGHI NGỜ DÀNH CHO GIÁO VIÊN (Requirement E) */}
+                          {/* 3 NÚT DUYỆT CÂU NGHI NGỜ DÀNH CHO GIÁO VIÊN (Requirement 8) */}
                           <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex flex-wrap items-center justify-between gap-2">
                             <div className="flex flex-wrap items-center gap-2">
                               {/* [Giữ đáp án hiện tại] */}
@@ -736,6 +737,41 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
                                   <span>[Chấp nhận đáp án AI: {vInfo.proposedAnswer}]</span>
                                 </button>
                               )}
+
+                              {/* [Tự sửa] */}
+                              <div className="inline-flex items-center gap-1 bg-amber-50 dark:bg-amber-950/60 px-2 py-1 rounded-xl border border-amber-300 dark:border-amber-700">
+                                <span className="text-[11px] font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1">
+                                  <Edit3 className="w-3 h-3 text-amber-600" />
+                                  <span>[Tự sửa]:</span>
+                                </span>
+                                {!isEssay ? (
+                                  ['A', 'B', 'C', 'D'].map((letter) => (
+                                    <button
+                                      key={letter}
+                                      type="button"
+                                      onClick={() => handleCustomAnswer(q, letter)}
+                                      className={`w-6 h-6 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                                        manualDecisionMap[q.id] === 'custom' && selectedAnswer === letter
+                                          ? 'bg-amber-600 text-white shadow-xs'
+                                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-slate-200 dark:border-slate-700'
+                                      }`}
+                                    >
+                                      {letter}
+                                    </button>
+                                  ))
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const inputEl = document.querySelector(`input[value="${selectedAnswer}"]`) as HTMLInputElement;
+                                      if (inputEl) inputEl.focus();
+                                    }}
+                                    className="px-2 py-0.5 rounded-lg text-xs font-bold bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100"
+                                  >
+                                    Nhập kết quả bên phải
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
                             {/* Trạng thái xác nhận của GV */}
@@ -888,7 +924,19 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
         {/* FOOTER ACTIONS */}
         <div className="p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
           <div className="text-xs text-slate-500">
-            Đã duyệt/khớp <strong>{verifiedCount}</strong>/{questions.length} câu • {changedCount > 0 ? `Đã thay đổi ${changedCount} đáp án` : 'Chưa có thay đổi'}
+            {needsReviewCount === 0 && (verifiedCount > 0 || Object.keys(manualDecisionMap).length > 0) ? (
+              <span className="inline-flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-bold">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Không còn câu nghi ngờ • Đề thi đủ chuẩn chuyển thành <strong>ĐÃ THẨM ĐỊNH (verified)</strong></span>
+              </span>
+            ) : needsReviewCount > 0 ? (
+              <span className="inline-flex items-center gap-1.5 text-rose-700 dark:text-rose-400 font-bold">
+                <AlertTriangle className="w-4 h-4 text-rose-600" />
+                <span>Còn {needsReviewCount} câu nghi vấn • Cần Thầy/Cô duyệt trước khi chuyển sang Đã thẩm định</span>
+              </span>
+            ) : (
+              <span>Đã duyệt/khớp <strong>{verifiedCount}</strong>/{questions.length} câu • {changedCount > 0 ? `Đã thay đổi ${changedCount} đáp án` : 'Chưa có thay đổi'}</span>
+            )}
           </div>
 
           <div className="flex items-center space-x-2 w-full sm:w-auto">
@@ -903,17 +951,26 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
             <button
               onClick={handleConfirmApply}
               disabled={isSaving}
-              className="flex-1 sm:flex-none px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              className={`flex-1 sm:flex-none px-6 py-2.5 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 ${
+                needsReviewCount === 0 && (verifiedCount > 0 || Object.keys(manualDecisionMap).length > 0)
+                  ? 'bg-emerald-600 hover:bg-emerald-700 ring-2 ring-emerald-400/50'
+                  : 'bg-indigo-600 hover:bg-indigo-700'
+              }`}
             >
               {isSaving ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span>Đang lưu...</span>
                 </>
+              ) : needsReviewCount === 0 && (verifiedCount > 0 || Object.keys(manualDecisionMap).length > 0) ? (
+                <>
+                  <ShieldCheck className="w-4 h-4 text-emerald-200" />
+                  <span>Lưu & Chuyển sang ĐÃ THẨM ĐỊNH (verified)</span>
+                </>
               ) : (
                 <>
                   <Save className="w-4 h-4" />
-                  <span>Xác nhận & Cập nhật kết quả thẩm định</span>
+                  <span>Lưu kết quả thẩm định</span>
                 </>
               )}
             </button>

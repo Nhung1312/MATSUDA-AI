@@ -723,9 +723,15 @@ export class GradingService {
         });
       } catch (err: any) {
         console.error(`[GradingService] Lỗi chấm câu ${q.id}:`, err);
-        const fallbackScore = existingAns?.teacherScore ?? existingAns?.pointsEarned ?? 0;
+        const hasTeacherGraded = existingAns?.teacherScore !== undefined;
+        const fallbackScore = hasTeacherGraded ? existingAns.teacherScore! : (existingAns?.pointsEarned ?? 0);
         totalEarned += fallbackScore;
-        if (existingAns?.isCorrect) correctCnt++; else wrongCnt++;
+        // AI LỖI KHÔNG ĐƯỢC COI LÀ HỌC SINH SAI: chỉ tăng correctCnt nếu đã có điểm đúng, KHÔNG tự ý tăng wrongCnt
+        if (existingAns?.isCorrect) {
+          correctCnt++;
+        } else if (hasTeacherGraded && fallbackScore === 0) {
+          wrongCnt++;
+        }
         overallNeedsReview = true;
 
         updatedAnswers.push({
@@ -735,13 +741,17 @@ export class GradingService {
           pointsEarned: fallbackScore,
           maxPoints,
           needsTeacherReview: true,
-          aiFeedback: `Lỗi AI khi chấm câu này: ${err?.message || 'Không thể phản hồi'}. Giáo viên vui lòng chấm tay.`
+          isProvisional: !hasTeacherGraded,
+          aiGradingError: true,
+          aiFeedback: `AI chưa thể chấm câu này (${err?.message || 'Lỗi kết nối/ảnh không đọc được'}). Câu này CHƯA CÓ ĐIỂM chính thức và đang chờ Giáo viên duyệt.`
         });
       }
     }
 
     const rawScore = totalMax > 0 ? (totalEarned / totalMax) * 10 : 0;
     const finalScore = Math.round(rawScore * 10) / 10;
+
+    const hasAnyProvisional = updatedAnswers.some(a => a.isProvisional || (a.needsTeacherReview && a.teacherScore === undefined));
 
     const updatedSubmission: Submission = {
       ...submission,
@@ -752,6 +762,8 @@ export class GradingService {
       hasEssayQuestions: assignment.questions.some(q => isEssayQuestion(q)),
       gradingStatus: overallNeedsReview ? 'needs_review' : 'graded',
       needsTeacherReview: overallNeedsReview,
+      isProvisional: hasAnyProvisional,
+      ungradedCount: updatedAnswers.filter(a => a.needsTeacherReview && a.teacherScore === undefined).length,
       errorSummary: {
         totalErrors: totalErrorsCount,
         firstErrorStep: firstFoundError?.step || null,
