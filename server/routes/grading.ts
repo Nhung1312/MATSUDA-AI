@@ -12,7 +12,8 @@ import {
   VerifyCorrectionRequest,
   VerifyCorrectionResponse,
   StepErrorType,
-  StepStatus
+  StepStatus,
+  ScoreBreakdownItem
 } from '../types.js';
 
 export const gradingRouter = Router();
@@ -49,7 +50,19 @@ NGUYÊN TẮC CỐT LÕI (BẮT BUỘC):
 
 5. CÔNG THỨC TOÁN LATEX:
    - Dùng \\frac{a}{b} cho phân số, \\cdot cho phép nhân (TUYỆT ĐỐI KHÔNG dùng \\times để tránh lỗi escape JSON), lũy thừa bọc ngoặc {}.
-   - Mọi biểu thức toán học trong lời nhận xét PHẢI bọc trong cặp dấu $...$.`;
+   - Mọi biểu thức toán học trong lời nhận xét PHẢI bọc trong cặp dấu $...$.
+
+6. GEOMETRY VISION GUARD:
+   - Hình học THCS có thể không đúng tỉ lệ. TUYỆT ĐỐI không suy ra quan hệ chỉ vì hình "trông giống".
+   - Chỉ coi quan hệ là CONFIRMED nếu: đề bài nêu rõ, có ký hiệu hình học rõ ràng, học sinh đã chứng minh hợp lệ, hoặc đáp án/rubric xác nhận.
+   - Quan hệ chỉ nhìn hình suy đoán (vuông góc, song song, bằng nhau, trung điểm, phân giác, tiếp tuyến, thẳng hàng, đồng quy, nội tiếp...) phải coi là VISUAL INFERENCE / UNCONFIRMED và KHÔNG dùng để chốt điểm.
+   - Nếu đề cho quan hệ nhưng hình vẽ lệch, ưu tiên dữ kiện đề/chứng minh hợp lệ; không phạt học sinh vì hình không đúng tỉ lệ.
+
+7. CHẤM ĐIỂM THEO BAREM:
+   - Nếu có rubric, rubric là nguồn chính để phân điểm. Trả scoreBreakdown theo từng tiêu chí.
+   - KHÔNG chia đều điểm theo số dòng/bước khi đã có rubric.
+   - cascading_error không bị trừ điểm lặp vô lý cho cùng một lỗi gốc; independent_error có thể mất điểm ở tiêu chí tương ứng.
+   - Chỉ khi không có rubric mới dùng Step Analysis làm fallback để đề xuất điểm.`;
 
 /**
  * Endpoint: POST /api/grading/step-analysis
@@ -103,7 +116,9 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
       promptText += `ĐÁP ÁN CHUẨN THAM KHẢO / HƯỚNG DẪN CHẤM:\n${correctAnswer}\n\n`;
     }
     if (rubric) {
-      promptText += `THANG ĐIỂM (RUBRIC):\n${rubric}\n\n`;
+      promptText += `THANG ĐIỂM (RUBRIC):\n${rubric}\n\nQUY TẮC CHẤM: Bám đúng từng ý trong rubric, tạo scoreBreakdown tương ứng; không chia điểm đều theo số dòng. Không trừ điểm lặp cho cascading_error cùng một nguyên nhân.\n\n`;
+    } else {
+      promptText += `KHÔNG CÓ RUBRIC CHI TIẾT: Có thể đề xuất điểm theo Step Analysis như fallback, nhưng phải đặt scoringMethod="step_fallback".\n\n`;
     }
     if (studentSolutionText && studentSolutionText.trim().length > 0) {
       promptText += `BÀI LÀM TỰ LUẬN DO HỌC SINH GÕ/NHẬP:\n"${studentSolutionText}"\n\n`;
@@ -129,7 +144,10 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
 1. Trả về mảng \`analysis\` chứa mọi bước biến đổi của học sinh.
 2. Xác định chính xác \`firstErrorStep\` (bước đầu tiên sai) nếu có, \`firstErrorType\`, \`firstErrorExplanation\`.
 3. Đánh dấu đúng status: "correct", "first_error", "cascading_error", "independent_error", "uncertain".
-4. Cho điểm thành phần phản ánh chính xác các bước đúng (score / maxScore: ${maxPoints}).`;
+4. Cho điểm thành phần phản ánh chính xác bài làm (score / maxScore: ${maxPoints}).
+5. Nếu có RUBRIC: trả scoreBreakdown theo từng tiêu chí và scoringMethod="rubric".
+6. Nếu không có RUBRIC: scoringMethod="step_fallback"; không giả vờ đây là chấm theo barem chính thức.
+7. Với hình học, chỉ dùng quan hệ CONFIRMED làm căn cứ; quan hệ chỉ nhìn hình đoán phải coi là UNCONFIRMED.`;
 
     const parts: any[] = [{ text: promptText }];
 
@@ -199,6 +217,22 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
         firstErrorExplanation: { type: Type.STRING, description: 'Giải thích nguyên nhân bước sai đầu tiên' },
         isAllCorrect: { type: Type.BOOLEAN, description: 'True nếu học sinh làm đúng hoàn toàn' },
         score: { type: Type.NUMBER, description: 'Điểm số đạt được' },
+        scoreBreakdown: {
+          type: Type.ARRAY,
+          description: 'Bảng điểm theo từng ý của rubric; để trống nếu không có rubric',
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              criterion: { type: Type.STRING },
+              maxPoints: { type: Type.NUMBER },
+              earnedPoints: { type: Type.NUMBER },
+              reason: { type: Type.STRING },
+              status: { type: Type.STRING, description: 'met | partial | not_met | uncertain' }
+            },
+            required: ['criterion', 'maxPoints', 'earnedPoints', 'reason']
+          }
+        },
+        scoringMethod: { type: Type.STRING, description: 'rubric | step_fallback' },
         feedback: { type: Type.STRING, description: 'Nhận xét tổng quan toàn bài' },
         referenceSolution: {
           type: Type.OBJECT,
@@ -334,9 +368,62 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
     let needsTeacherReview = hasUncertainStep;
     let computedScore: number;
 
-    const aiProposedScore = typeof resultJson.score === 'number' ? Math.min(maxPoints, Math.max(0, resultJson.score)) : null;
+    const hasRubric = typeof rubric === 'string' && rubric.trim().length > 0;
+    const rawScoreBreakdown: any[] = Array.isArray(resultJson.scoreBreakdown) ? resultJson.scoreBreakdown : [];
+    const normalizedScoreBreakdown: ScoreBreakdownItem[] = rawScoreBreakdown
+      .map((item: any) => {
+        const max = typeof item?.maxPoints === 'number' ? Math.max(0, item.maxPoints) : 0;
+        const earned = typeof item?.earnedPoints === 'number'
+          ? Math.min(max, Math.max(0, item.earnedPoints))
+          : 0;
+        const rawBreakdownStatus = String(item?.status || '').toLowerCase();
+        const status: ScoreBreakdownItem['status'] =
+          rawBreakdownStatus === 'met' ||
+          rawBreakdownStatus === 'partial' ||
+          rawBreakdownStatus === 'not_met' ||
+          rawBreakdownStatus === 'uncertain'
+            ? rawBreakdownStatus as ScoreBreakdownItem['status']
+            : undefined;
 
-    if (isAllCorrect) {
+        return {
+          criterion: sanitizeMathData(item?.criterion || ''),
+          maxPoints: max,
+          earnedPoints: earned,
+          reason: sanitizeMathData(item?.reason || ''),
+          status
+        };
+      })
+      .filter((item: ScoreBreakdownItem) => item.criterion.length > 0 && item.maxPoints > 0);
+
+    const breakdownMax = normalizedScoreBreakdown.reduce((sum, item) => sum + item.maxPoints, 0);
+    const breakdownEarned = normalizedScoreBreakdown.reduce((sum, item) => sum + item.earnedPoints, 0);
+    const hasUsableRubricBreakdown = hasRubric && normalizedScoreBreakdown.length > 0 && breakdownMax > 0;
+    const scoringMethod: 'rubric' | 'step_fallback' = hasUsableRubricBreakdown ? 'rubric' : 'step_fallback';
+
+    if (normalizedScoreBreakdown.some(item => item.status === 'uncertain')) {
+      needsTeacherReview = true;
+    }
+    if (hasRubric && !hasUsableRubricBreakdown) {
+      // Có barem nhưng AI không trả được breakdown đáng tin cậy: fallback được phép nhưng bắt buộc GV rà soát.
+      needsTeacherReview = true;
+    }
+
+    const aiProposedScore = typeof resultJson.score === 'number'
+      ? Math.min(maxPoints, Math.max(0, resultJson.score))
+      : null;
+
+    if (hasUsableRubricBreakdown) {
+      // Rubric là nguồn điểm chính. Nếu tổng barem lệch maxPoints, scale theo tỉ lệ và gắn cờ GV rà soát.
+      const scale = breakdownMax > 0 ? maxPoints / breakdownMax : 1;
+      computedScore = Math.round(Math.min(maxPoints, Math.max(0, breakdownEarned * scale)) * 4) / 4;
+      if (Math.abs(breakdownMax - maxPoints) > 0.01) {
+        needsTeacherReview = true;
+      }
+      // Nếu chẩn đoán bước và barem mâu thuẫn, không tự sửa bằng heuristic.
+      if ((hasRealError && computedScore >= maxPoints) || (isAllCorrect && computedScore < maxPoints)) {
+        needsTeacherReview = true;
+      }
+    } else if (isAllCorrect) {
       computedScore = maxPoints;
     } else if (hasRealError) {
       if (aiProposedScore !== null) {
@@ -381,6 +468,8 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
       maxScore: maxPoints,
       feedback: feedbackText,
       needsTeacherReview,
+      scoreBreakdown: normalizedScoreBreakdown.length > 0 ? normalizedScoreBreakdown : undefined,
+      scoringMethod,
       referenceSolution: resultJson.referenceSolution ? {
         steps: Array.isArray(resultJson.referenceSolution.steps)
           ? resultJson.referenceSolution.steps.map((st: any) => ({
@@ -612,6 +701,7 @@ function generateRuleBasedGrading(req: StepGradingRequest): StepGradingResponse 
     maxScore: maxPoints,
     feedback: 'Bài làm đã được tiếp nhận an toàn. Do AI đang gián đoạn hoặc chưa đủ căn cứ phân tích tự động, câu hỏi này được chuyển sang chế độ Giáo viên thẩm định để chấm điểm trực tiếp.',
     needsTeacherReview: true,
+    scoringMethod: 'unavailable',
     analysisSource: 'rule',
   };
 }

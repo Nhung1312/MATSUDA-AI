@@ -76,6 +76,14 @@ export interface StepAnalysis {
   bbox?: StepBBox | null;
 }
 
+export interface ScoreBreakdownItem {
+  criterion: string;
+  maxPoints: number;
+  earnedPoints: number;
+  reason: string;
+  status?: 'met' | 'partial' | 'not_met' | 'uncertain';
+}
+
 export interface StepGradingRequest {
   questionId?: string;
   questionText: string;
@@ -100,6 +108,8 @@ export interface StepGradingResponse {
   score: number;
   maxScore: number;
   feedback: string;
+  scoreBreakdown?: ScoreBreakdownItem[];
+  scoringMethod?: 'rubric' | 'step_fallback' | 'unavailable';
   referenceSolution?: {
     steps: Array<{ stepNumber: number; solutionLatex: string; explanation: string }>;
     finalAnswerLatex: string;
