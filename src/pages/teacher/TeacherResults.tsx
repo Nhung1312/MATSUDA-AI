@@ -53,6 +53,7 @@ interface TeacherResultsProps {
   submissions: Submission[];
   initialAssignmentId?: string;
   onOpenShare: (assignment: Assignment) => void;
+  onNavigate?: (tab: string, params?: any) => void;
 }
 
 export const TeacherResults: React.FC<TeacherResultsProps> = ({
@@ -60,7 +61,8 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   classes = [],
   submissions = [],
   initialAssignmentId,
-  onOpenShare
+  onOpenShare,
+  onNavigate
 }) => {
   const safeAssignments = useMemo(() => Array.isArray(assignments) ? assignments.filter((a): a is Assignment => Boolean(a && typeof a === 'object')) : [], [assignments]);
   const safeClasses = useMemo(() => Array.isArray(classes) ? classes.filter((c): c is ClassRoom => Boolean(c && typeof c === 'object')) : [], [classes]);
@@ -453,22 +455,21 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     document.body.removeChild(link);
   };
 
-  if (!currentAssignment) {
-    return (
-      <div className="text-center py-12 text-slate-500">
-        Chưa có bài tập nào để xem kết quả.
-      </div>
-    );
-  }
-
   if (safeAssignments.length === 0 || !currentAssignment) {
     return (
-      <div className="bg-white rounded-3xl p-12 text-center border border-dashed border-slate-200 shadow-xs space-y-4">
-        <BarChart3 className="w-12 h-12 text-slate-300 mx-auto" />
-        <h3 className="font-bold text-slate-700 text-lg">Chưa có bài tập nào</h3>
-        <p className="text-sm text-slate-500 max-w-md mx-auto">
-          Thầy Cô hãy tạo bài tập mới hoặc giao đề mẫu cho học sinh để xem bảng xếp hạng và phân tích kết quả tại đây.
-        </p>
+      <div className="bg-white rounded-2xl p-8 text-center border border-dashed border-slate-200 shadow-xs">
+        <BarChart3 className="w-9 h-9 text-slate-300 mx-auto mb-2" />
+        <h3 className="font-bold text-slate-700 text-base">Chưa có kết quả</h3>
+        <p className="text-xs text-slate-400 mt-1">Tạo và giao một bài để bắt đầu nhận kết quả học sinh.</p>
+        {onNavigate && (
+          <button
+            type="button"
+            onClick={() => onNavigate('create')}
+            className="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl"
+          >
+            Tạo bài
+          </button>
+        )}
       </div>
     );
   }
@@ -1193,7 +1194,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
           {sortedSubmissions.length === 0 ? (
             <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
               <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm font-semibold text-slate-600">Chưa có học sinh nào nộp bài</p>
+              <p className="text-sm font-semibold text-slate-700">Chưa có bài nộp</p>
               <p className="text-xs text-slate-400 mt-0.5">
                 Chia sẻ mã bài tập <strong>{currentAssignment.assignmentCode}</strong> để học sinh làm bài.
               </p>
