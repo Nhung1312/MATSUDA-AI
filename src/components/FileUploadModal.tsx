@@ -441,7 +441,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     if (!parseResult) return;
     const selectedItems = parseResult.items.filter(i => i.selected);
     if (selectedItems.length === 0) {
-      alert('Vui lòng chọn ít nhất 1 câu hỏi để thêm vào đề kiểm tra.');
+      setErrorMsg('Hãy chọn ít nhất 1 câu hỏi trước khi thêm vào đề.');
       return;
     }
 
