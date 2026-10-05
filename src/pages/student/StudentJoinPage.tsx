@@ -415,10 +415,10 @@ export const StudentJoinPage: React.FC<StudentJoinPageProps> = ({ initialCode = 
             {/* Start Exam Button */}
             <button
               type="submit"
-              className="w-full py-4 px-6 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-lg rounded-2xl shadow-lg hover:shadow-xl transition-all transform active:scale-[0.99] flex items-center justify-center space-x-2 cursor-pointer"
+              className="w-full py-3 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-sm hover:shadow-md transition-all active:scale-[0.99] flex items-center justify-center space-x-2 cursor-pointer"
             >
               <span>Bắt đầu</span>
-              <ArrowRight className="w-5 h-5" />
+              <ArrowRight className="w-4 h-4" />
             </button>
           </form>
 
@@ -469,7 +469,7 @@ export const StudentJoinPage: React.FC<StudentJoinPageProps> = ({ initialCode = 
 
           {/* Exam List */}
           {filteredCatalog.length === 0 ? (
-            <div className="bg-white dark:bg-slate-900 rounded-3xl p-10 text-center border border-slate-200 dark:border-slate-800">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-8 text-center border border-slate-200 dark:border-slate-800">
               <BookOpen className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
               <p className="font-bold text-slate-700 dark:text-slate-300">Không có đề phù hợp</p>
               <p className="text-xs text-slate-400 mt-1">Thử đổi bộ lọc.</p>
