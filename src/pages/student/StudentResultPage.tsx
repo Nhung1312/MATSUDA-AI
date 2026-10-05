@@ -735,7 +735,6 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                   </h2>
 
                   {effectiveReviewMode === 'full' && (
-                    {/* Filter Tabs */}
                     <div className="flex bg-slate-100 p-1.5 rounded-xl shrink-0 gap-1">
                       <button
                         onClick={() => setFilterType('all')}
