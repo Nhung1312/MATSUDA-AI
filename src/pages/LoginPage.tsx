@@ -109,7 +109,7 @@ export const LoginPage: React.FC = () => {
               type="button"
               onClick={handleGoogleLogin}
               disabled={loading}
-              className="w-full py-3 px-4 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-800 dark:text-white font-bold text-sm rounded-2xl border border-slate-300 dark:border-slate-700 shadow-sm hover:shadow-md transition-all flex items-center justify-center space-x-3 cursor-pointer active:scale-[0.99] disabled:opacity-50"
+              className="w-full py-3 px-4 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-800 dark:text-white font-bold text-sm rounded-xl border border-slate-300 dark:border-slate-700 shadow-sm hover:shadow-md transition-all flex items-center justify-center space-x-3 cursor-pointer active:scale-[0.99] disabled:opacity-50"
             >
               {loading ? (
                 <>
@@ -156,7 +156,7 @@ export const LoginPage: React.FC = () => {
                 loginAsTeacher();
                 navigate(destination, { replace: true });
               }}
-              className="w-full py-3 px-4 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs sm:text-sm rounded-2xl border border-indigo-200/80 dark:border-indigo-800/80 shadow-2xs transition-all flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
+              className="w-full py-3 px-4 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs sm:text-sm rounded-xl border border-indigo-200/80 dark:border-indigo-800/80 shadow-2xs transition-all flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
             >
               <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
               <span>Vào chế độ xem trước</span>
