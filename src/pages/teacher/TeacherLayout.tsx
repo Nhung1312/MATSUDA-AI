@@ -85,7 +85,8 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
       return;
     }
     setActiveTab(tab);
-    if (params) setTabParams(params);
+    // Mỗi lần đổi tab dùng bộ tham số mới; tránh tham số demo/import cũ rò sang lần mở sau.
+    setTabParams(params || {});
   };
 
   const navItems = [
