@@ -422,7 +422,18 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       const max = q ? q.points : (a.maxPoints || 1);
       totalMax += max;
       totalEarned += (a.teacherScore !== undefined ? a.teacherScore : a.pointsEarned);
-      if (a.isCorrect) correctCnt++; else wrongCnt++;
+      const pendingForCounts =
+        a.teacherScore === undefined &&
+        Boolean(
+          a.needsTeacherReview ||
+          a.isProvisional ||
+          a.aiGradingError ||
+          (selectedSubmissionDetail.gradingStatus === 'pending_teacher_grading' && q && isEssayQuestion(q))
+        );
+      if (!pendingForCounts) {
+        if (a.isCorrect) correctCnt++;
+        else wrongCnt++;
+      }
     });
     const rawScore = totalMax > 0 ? (totalEarned / totalMax) * 10 : 0;
     const totalScore = Math.round(rawScore * 10) / 10;
@@ -438,6 +449,11 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     }).length;
     const stillNeedsReview = pendingReviewCount > 0;
 
+    const wasReviewWorkflow =
+      Boolean(selectedSubmissionDetail.isProvisional || selectedSubmissionDetail.needsTeacherReview) ||
+      selectedSubmissionDetail.gradingStatus === 'pending_teacher_grading' ||
+      selectedSubmissionDetail.gradingStatus === 'needs_review';
+
     const updatedSubmission: Submission = {
       ...selectedSubmissionDetail,
       answers: updatedAnswers,
@@ -445,10 +461,10 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       correctCount: correctCnt,
       wrongCount: wrongCnt,
       needsTeacherReview: stillNeedsReview,
-      isProvisional: stillNeedsReview,
+      isProvisional: stillNeedsReview || wasReviewWorkflow,
       gradingStatus: stillNeedsReview
         ? (selectedSubmissionDetail.gradingStatus === 'pending_teacher_grading' ? 'pending_teacher_grading' : 'needs_review')
-        : 'graded',
+        : (wasReviewWorkflow ? 'needs_review' : 'graded'),
       ungradedCount: pendingReviewCount
     };
 
@@ -1847,7 +1863,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
             </div>
 
             {/* Chốt kết quả chính thức */}
-            {(selectedSubmissionDetail.hasEssayQuestions || selectedSubmissionDetail.needsTeacherReview || selectedSubmissionDetail.isProvisional) && (
+            {(selectedSubmissionDetail.gradingStatus !== 'graded' || selectedSubmissionDetail.needsTeacherReview || selectedSubmissionDetail.isProvisional) && (
               <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 ${
                 selectedPendingReviewCount > 0
                   ? 'bg-amber-50 border-amber-200'
