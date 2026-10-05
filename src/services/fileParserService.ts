@@ -121,8 +121,12 @@ export class FileParserService {
    */
   static async parseLatexFile(file: File): Promise<ParseResult> {
     const raw = await file.text();
+    return this.parseLatexText(raw, file.name);
+  }
+
+  static parseLatexText(raw: string, fileName: string = 'de-thi.tex'): ParseResult {
     const normalized = this.normalizeLatexExamText(raw);
-    return this.parseRawText(normalized, file.name, 'text');
+    return this.normalizeParseResult(this.parseRawText(normalized, fileName, 'text'));
   }
 
   private static normalizeLatexExamText(raw: string): string {
