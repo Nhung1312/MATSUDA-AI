@@ -42,6 +42,7 @@ interface TeacherCreateAssignmentProps {
   initialTitle?: string;
   initialGrade?: GradeLevel;
   initialMode?: 'text' | 'pdf'; // MỚI: Thêm prop nhận diện chế độ
+  autoOpenImport?: boolean; // 8I: từ luồng demo mở thẳng cửa sổ tách đề đa định dạng
   initialFilter?: 'all' | 'missing_image' | 'has_image' | 'mcq' | 'essay'; // MỚI: Lọc sẵn câu thiếu hình
   editingAssignment?: Assignment; // MỚI: Cho phép sửa bài tập và câu hỏi đã có
   onSaveSuccess: (savedAssignment: Assignment) => void;
@@ -61,6 +62,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
   initialTitle,
   initialGrade,
   initialMode, // MỚI: Nhận prop từ TeacherLayout
+  autoOpenImport = false,
   initialFilter,
   editingAssignment,
   onSaveSuccess,
@@ -151,6 +153,13 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [aiGenCount, setAiGenCount] = useState(5);
   const [importSuccessAlert, setImportSuccessAlert] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (autoOpenImport && !editingAssignment) {
+      setFileUploadInitialTab('pdf');
+      setShowFileUploadModal(true);
+    }
+  }, [autoOpenImport, editingAssignment]);
 
   // Lắng nghe phím Ctrl+V ảnh chụp đề thi trên trang để tự động mở bộ bóc tách ảnh AI
   useEffect(() => {

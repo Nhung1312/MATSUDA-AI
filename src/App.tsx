@@ -495,7 +495,7 @@ function AppContent() {
                   onGoHome={() => {
                     const shouldReturnToTeacher = !!examSession.previewFromTeacher;
                     updateExamSession({});
-                    navigate(shouldReturnToTeacher ? '/teacher' : '/');
+                    navigate(shouldReturnToTeacher ? '/teacher#judge-demo' : '/');
                   }}
                 />
               ) : (

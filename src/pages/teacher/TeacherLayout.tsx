@@ -85,7 +85,8 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
       return;
     }
     setActiveTab(tab);
-    if (params) setTabParams(params);
+    // Mỗi lần đổi tab dùng bộ tham số mới; tránh tham số demo/import cũ rò sang lần mở sau.
+    setTabParams(params || {});
   };
 
   const navItems = [
@@ -316,6 +317,7 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
             initialTitle={tabParams.initialTitle}
             initialGrade={tabParams.initialGrade}
             initialMode={tabParams.initialMode} // MỚI: Truyền mode PDF hoặc Text sang từ Kho Đề
+            autoOpenImport={!!tabParams.autoOpenImport}
             initialFilter={tabParams.initialFilter} // MỚI: Lọc sẵn câu thiếu hình nếu bấm từ ngoài danh sách đề
             onSaveSuccess={(savedAssignment) => {
               onRefreshData();
