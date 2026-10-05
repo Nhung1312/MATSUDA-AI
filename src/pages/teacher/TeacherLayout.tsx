@@ -291,6 +291,7 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
           <TeacherClasses
             classes={safeClasses}
             assignments={safeAssignments}
+            submissions={safeSubmissions}
             onRefresh={onRefreshData}
             onNavigate={handleNavigate}
           />
