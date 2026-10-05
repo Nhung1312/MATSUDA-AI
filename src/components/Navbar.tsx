@@ -36,6 +36,14 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
   const isTeacher = location.pathname.startsWith('/teacher');
   const isStudent = location.pathname.startsWith('/join') || location.pathname.startsWith('/exam');
   const isHomePage = location.pathname === '/';
+  const isStudentEntryPage =
+    location.pathname === '/join' ||
+    location.pathname.startsWith('/join/') ||
+    location.pathname === '/practice' ||
+    location.pathname === '/ai-practice' ||
+    location.pathname.startsWith('/assignment/') ||
+    location.pathname.startsWith('/test/') ||
+    (location.pathname.startsWith('/exam/') && location.pathname !== '/exam');
 
   const handleLogout = async () => {
     try {
@@ -74,7 +82,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
               <span className="font-extrabold text-lg text-slate-900 dark:text-white tracking-tight">
                 Matsuda AI
               </span>
-              {!isHomePage && (
+              {!isHomePage && !isStudentEntryPage && (
                 <p className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block font-medium">
                   Số hóa đề • Chấm từng bước
                 </p>
@@ -83,7 +91,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
           </Link>
 
           {/* Trang chủ đã có đầy đủ lối vào Lớp/Thi/AI; ẩn menu giữa để giảm rối mắt. */}
-          {!isHomePage && (
+          {!isHomePage && !isStudentEntryPage && (
           <div className="hidden sm:flex items-center space-x-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
             <span className="px-2 text-[10px] font-black uppercase tracking-wider text-slate-400">Lớp</span>
             {(['6', '7', '8', '9'] as GradeLevel[]).map((g) => {
@@ -135,6 +143,11 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
 
           {/* Actions & Role switchers */}
           <div className="flex items-center space-x-2 sm:space-x-3">
+            {isStudentEntryPage && (
+              <span className="hidden sm:inline text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1.5 rounded-lg">
+                Học sinh
+              </span>
+            )}
             {/* Dark Mode Toggle */}
             <button
               onClick={toggleTheme}
@@ -150,7 +163,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
             </button>
 
             {/* Sổ tay câu sai (Mistake Vault) */}
-            {!isHomePage && <button
+            {!isHomePage && !isStudentEntryPage && <button
               onClick={() => setShowMistakeVault(true)}
               title="Mở Sổ tay câu sai (Luyện lại các câu làm chưa đúng)"
               className={`inline-flex items-center space-x-1 sm:space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
@@ -169,7 +182,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
             </button>}
 
             {/* Desktop Role switchers */}
-            {!isHomePage && <div className="hidden md:flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+            {!isHomePage && !isStudentEntryPage && <div className="hidden md:flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
               <Link
                 to="/teacher"
                 className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
