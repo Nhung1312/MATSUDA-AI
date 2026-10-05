@@ -32,7 +32,6 @@ import {
   FileBadge,
   AlertTriangle,
   Image as ImageIcon,
-  Camera,
   Filter
 } from 'lucide-react';
 
