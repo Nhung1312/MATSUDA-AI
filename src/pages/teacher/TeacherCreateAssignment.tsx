@@ -699,12 +699,12 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
             {isSaving ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>ĐANG LƯU...</span>
+                <span>Đang lưu...</span>
               </>
             ) : (
               <>
                 <Save className="w-4 h-4" />
-                <span>{isEditing ? 'LƯU CẬP NHẬT CÂU HỎI' : 'LƯU BÀI TẬP'}</span>
+                <span>{isEditing ? 'Lưu thay đổi' : 'Lưu bài tập'}</span>
               </>
             )}
           </button>
@@ -714,7 +714,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
       <form onSubmit={handleSave} className="space-y-6">
         
         {/* Section 1: General Assignment Info */}
-        <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 space-y-4">
+        <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-200 space-y-4">
           <h2 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">
             <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-black">
               1
@@ -1413,7 +1413,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
           </div>
         ) : (
           /* SECTION 2: CHẾ ĐỘ PDF */
-          <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 space-y-6">
+          <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm border border-slate-200 space-y-6">
             <h2 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2 mb-6">
               <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-black">
                 2
@@ -1598,12 +1598,12 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
             {isSaving ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>ĐANG LƯU BÀI TẬP...</span>
+                <span>Đang lưu...</span>
               </>
             ) : (
               <>
                 <Save className="w-4 h-4" />
-                <span>LƯU & TẠO MÃ BÀI TẬP</span>
+                <span>Lưu & tạo mã</span>
               </>
             )}
           </button>

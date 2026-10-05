@@ -429,7 +429,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
             {hasPendingTeacherGrading ? <FileCheck2 className="w-7 h-7 text-purple-600" /> : <Trophy className="w-7 h-7" />}
           </div>
 
-          <span className="inline-block bg-slate-100 text-slate-700 text-xs font-black uppercase px-3 py-1 rounded-full tracking-wider mb-2">
+          <span className="inline-block bg-slate-100 text-slate-700 text-xs font-black px-3 py-1 rounded-full mb-2">
             Kết quả • Lớp {submission.className}
           </span>
 
@@ -443,41 +443,37 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
           {/* Big Score Display */}
           <div className="my-4">
             {isAwaitingReview ? (
-              <div className="inline-flex flex-col items-center space-y-2 bg-gradient-to-br from-amber-50 to-indigo-50 dark:from-amber-950/40 dark:to-indigo-950/40 px-4 sm:px-8 py-5 rounded-3xl border-2 border-amber-200 dark:border-amber-800 shadow-sm max-w-md mx-auto">
-                <span className="px-3 py-1 rounded-full bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 font-black text-xs uppercase tracking-wider flex items-center gap-1">
+              <div className="inline-flex flex-col items-center space-y-2 bg-gradient-to-br from-amber-50 to-indigo-50 dark:from-amber-950/40 dark:to-indigo-950/40 px-4 sm:px-8 py-5 rounded-2xl border border-amber-200 dark:border-amber-800 shadow-sm max-w-md mx-auto">
+                <span className="px-3 py-1 rounded-full bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 font-black text-xs flex items-center gap-1">
                   <Clock className="w-3.5 h-3.5 text-amber-700" />
-                  <span>Điểm tạm tính • Đang chờ Thầy/Cô duyệt</span>
+                  <span>Đang chờ GV duyệt</span>
                 </span>
                 <div className="flex items-baseline space-x-1.5 pt-1">
-                  <span className="text-xs font-bold text-slate-500">Điểm tạm tính:</span>
+                  <span className="text-xs font-bold text-slate-500">Tạm tính</span>
                   <span className="text-3xl sm:text-4xl font-black text-amber-700 dark:text-amber-300">
                     {submission.mcqScore !== undefined ? submission.mcqScore.toFixed(1) : score.toFixed(1)}
                   </span>
                   <span className="text-sm font-bold text-slate-400">/ 10</span>
                 </div>
-                <p className="text-[11px] text-amber-800 dark:text-amber-300 italic">
-                  * Điểm chính thức sẽ được cập nhật sau khi Thầy/Cô hoàn tất xem xét và duyệt bài.
-                </p>
+
               </div>
             ) : hasPendingTeacherGrading ? (
-              <div className="inline-flex flex-col items-center space-y-2 bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-950/40 dark:to-indigo-950/40 px-4 sm:px-8 py-5 rounded-3xl border-2 border-purple-200 dark:border-purple-800 shadow-sm max-w-md mx-auto">
-                <span className="px-3 py-1 rounded-full bg-purple-200/80 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 font-black text-xs uppercase tracking-wider">
-                  ⏳ Đang chờ Giáo viên chấm tự luận
+              <div className="inline-flex flex-col items-center space-y-2 bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-950/40 dark:to-indigo-950/40 px-4 sm:px-8 py-5 rounded-2xl border border-purple-200 dark:border-purple-800 shadow-sm max-w-md mx-auto">
+                <span className="px-3 py-1 rounded-full bg-purple-200/80 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 font-black text-xs">
+                  Chờ chấm tự luận
                 </span>
                 <div className="flex items-baseline space-x-1.5 pt-1">
-                  <span className="text-xs font-bold text-slate-500">Điểm Trắc nghiệm (tạm tính):</span>
+                  <span className="text-xs font-bold text-slate-500">Tạm tính</span>
                   <span className="text-3xl sm:text-4xl font-black text-purple-700 dark:text-purple-300">
                     {submission.mcqScore !== undefined ? submission.mcqScore.toFixed(1) : score.toFixed(1)}
                   </span>
                   <span className="text-sm font-bold text-slate-400">/ 10</span>
                 </div>
-                <p className="text-[11px] text-purple-700 dark:text-purple-300 italic">
-                  (Điểm chính thức cả bài sẽ được hiển thị sau khi Thầy/Cô chấm điểm phần tự luận)
-                </p>
+
               </div>
             ) : (
               <>
-                <div className="inline-flex items-baseline space-x-2 bg-gradient-to-br from-indigo-50 to-purple-50 px-4 sm:px-8 py-4 rounded-3xl border-2 border-indigo-100 shadow-sm">
+                <div className="inline-flex items-baseline space-x-2 bg-gradient-to-br from-indigo-50 to-purple-50 px-4 sm:px-8 py-4 rounded-2xl border border-indigo-100 shadow-sm">
                   <span className="text-5xl sm:text-6xl font-black text-indigo-600 tracking-tight">
                     {score.toFixed(1)}
                   </span>
@@ -492,7 +488,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
           {/* 4 Stat Badges Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-2xl mx-auto pt-2">
             <div className="bg-emerald-50/90 border border-emerald-200/90 rounded-2xl p-3 shadow-xs">
-              <div className="flex items-center space-x-1.5 text-emerald-700 text-xs font-black uppercase mb-1">
+              <div className="flex items-center space-x-1.5 text-emerald-700 text-xs font-black mb-1">
                 <CheckCircle2 className="w-4 h-4" />
                 <span>Đúng</span>
               </div>
@@ -503,7 +499,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
             </div>
 
             <div className="bg-rose-50/90 border border-rose-200/90 rounded-2xl p-3 shadow-xs">
-              <div className="flex items-center space-x-1.5 text-rose-700 text-xs font-black uppercase mb-1">
+              <div className="flex items-center space-x-1.5 text-rose-700 text-xs font-black mb-1">
                 <XCircle className="w-4 h-4" />
                 <span>Sai</span>
               </div>
@@ -514,7 +510,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
             </div>
 
             <div className="bg-blue-50/90 border border-blue-200/90 rounded-2xl p-3 shadow-xs">
-              <div className="flex items-center space-x-1.5 text-blue-700 text-xs font-black uppercase mb-1">
+              <div className="flex items-center space-x-1.5 text-blue-700 text-xs font-black mb-1">
                 <Clock className="w-4 h-4" />
                 <span>Thời gian</span>
               </div>
@@ -524,7 +520,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
             </div>
 
             <div className="bg-indigo-50/90 border border-indigo-200/90 rounded-2xl p-3 shadow-xs">
-              <div className="flex items-center space-x-1.5 text-indigo-700 text-xs font-black uppercase mb-1">
+              <div className="flex items-center space-x-1.5 text-indigo-700 text-xs font-black mb-1">
                 <FileCheck2 className="w-4 h-4" />
                 <span>Chính xác</span>
               </div>
@@ -1008,7 +1004,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                       <div className="space-y-3 pt-2">
                         {question.explanation && (
                           <div className="p-4 bg-indigo-50/80 border border-indigo-200/80 rounded-2xl text-xs sm:text-sm text-indigo-950 shadow-xs">
-                            <div className="font-extrabold text-indigo-900 mb-1.5 flex items-center gap-1.5 text-xs sm:text-sm uppercase tracking-wider">
+                            <div className="font-extrabold text-indigo-900 mb-1.5 flex items-center gap-1.5 text-xs sm:text-sm">
                               <BookOpen className="w-4 h-4 text-indigo-600 shrink-0" />
                               <span>Lời giải</span>
                             </div>
