@@ -1017,7 +1017,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                       Kéo thả Word, LaTeX (.tex), Excel, JSON, TXT hoặc PDF vào đây
                     </h3>
                     <p className="text-xs text-slate-500 max-w-md mx-auto mb-4">
-                      Đọc và chuyển đổi trực tiếp trên máy. LaTeX hỗ trợ các cấu trúc phổ biến như \\begin{ex}, \\choice, \\True và \\loigiai.
+                      Đọc và chuyển đổi trực tiếp trên máy. LaTeX hỗ trợ các cấu trúc phổ biến như \begin&#123;ex&#125;, \choice, \True và \loigiai.
                     </p>
 
                     <div className="inline-flex items-center space-x-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all active:scale-95">
