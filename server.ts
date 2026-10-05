@@ -78,8 +78,10 @@ app.use((err: any, _req: Request, res: Response, _next: any) => {
   });
 });
 
-app.listen(PORT, HOST, () => {
-  console.log(`[TOÁN THCS] Server running at http://${HOST}:${PORT}`);
-});
+if (process.env.VERCEL !== '1') {
+  app.listen(PORT, HOST, () => {
+    console.log(`[TOÁN THCS] Server running at http://${HOST}:${PORT}`);
+  });
+}
 
 export default app;
