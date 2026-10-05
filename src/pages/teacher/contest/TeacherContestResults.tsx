@@ -201,9 +201,15 @@ export const TeacherContestResults: React.FC<TeacherContestResultsProps> = ({
         grade: contest?.grade
       });
 
-      setTeacherScoreInput(result.score);
-      setTeacherFeedbackInput(result.feedback);
-      setAiBreakdown(result);
+      if (result.needsTeacherReview || result.isProvisional || result.aiGradingError) {
+        setTeacherFeedbackInput(result.feedback);
+        setAiBreakdown(result);
+        alert('AI chưa thể chốt điểm câu này. Kết quả đang ở trạng thái chờ Giáo viên duyệt.');
+      } else {
+        setTeacherScoreInput(result.score);
+        setTeacherFeedbackInput(result.feedback);
+        setAiBreakdown(result);
+      }
     } catch (e: any) {
       alert('AI chấm điểm gặp sự cố: ' + (e?.message || String(e)));
     } finally {
@@ -263,6 +269,7 @@ export const TeacherContestResults: React.FC<TeacherContestResultsProps> = ({
         let newMcqScore = 0;
         let newEarnedPointsTotal = 0;
         let maxPointsTotal = 0;
+        let submissionNeedsReview = false;
 
         for (let qIdx = 0; qIdx < contest.questions.length; qIdx++) {
           const q = contest.questions[qIdx];
@@ -282,27 +289,57 @@ export const TeacherContestResults: React.FC<TeacherContestResultsProps> = ({
                 grade: contest.grade
               });
 
-              const teacherScore = res.score;
+              const needsReview = !!(res.needsTeacherReview || res.isProvisional || res.aiGradingError);
               const teacherFeedback = `[Gemini AI]: ${res.feedback}`;
-              const pointsEarned = res.score;
-              const isCorrect = res.score >= (q.points || 2.0);
 
-              updatedAnswers[ansIndex] = {
-                ...ans,
-                teacherScore,
-                teacherFeedback,
-                pointsEarned,
-                isCorrect,
-                aiScore: res.score,
-                aiFeedback: res.feedback,
-                aiGraded: true
-              };
+              if (needsReview) {
+                submissionNeedsReview = true;
+                const preservedPoints = ans.teacherScore ?? ans.pointsEarned ?? 0;
+                updatedAnswers[ansIndex] = {
+                  ...ans,
+                  teacherFeedback,
+                  aiScore: res.score,
+                  aiFeedback: res.feedback,
+                  aiGraded: true,
+                  needsTeacherReview: true,
+                  isProvisional: true,
+                  aiGradingError: !!res.aiGradingError
+                };
+                newEssayScore += preservedPoints;
+                newEarnedPointsTotal += preservedPoints;
+              } else {
+                const teacherScore = res.score;
+                const pointsEarned = res.score;
+                const isCorrect = res.score >= (q.points || 2.0);
 
-              newEssayScore += pointsEarned;
-              newEarnedPointsTotal += pointsEarned;
+                updatedAnswers[ansIndex] = {
+                  ...ans,
+                  teacherScore,
+                  teacherFeedback,
+                  pointsEarned,
+                  isCorrect,
+                  aiScore: res.score,
+                  aiFeedback: res.feedback,
+                  aiGraded: true,
+                  needsTeacherReview: false,
+                  isProvisional: false,
+                  aiGradingError: false
+                };
+
+                newEssayScore += pointsEarned;
+                newEarnedPointsTotal += pointsEarned;
+              }
             } catch (err) {
               console.warn(`Lỗi chấm AI câu ${q.id} cho ${sub.studentName}:`, err);
+              submissionNeedsReview = true;
               const pts = ans.teacherScore ?? ans.pointsEarned ?? 0;
+              updatedAnswers[ansIndex] = {
+                ...ans,
+                needsTeacherReview: true,
+                isProvisional: true,
+                aiGradingError: true,
+                aiFeedback: 'AI chưa thể chấm câu này. Câu đang chờ Giáo viên duyệt.'
+              };
               newEssayScore += pts;
               newEarnedPointsTotal += pts;
             }
@@ -324,7 +361,7 @@ export const TeacherContestResults: React.FC<TeacherContestResultsProps> = ({
           essayScore: newEssayScore,
           mcqScore: newMcqScore,
           totalScore: newTotalScore,
-          isEssayGraded: true
+          isEssayGraded: !submissionNeedsReview
         };
 
         StorageService.saveContestSubmission(updatedSub);
@@ -333,7 +370,7 @@ export const TeacherContestResults: React.FC<TeacherContestResultsProps> = ({
           essayScore: newEssayScore,
           mcqScore: newMcqScore,
           totalScore: newTotalScore,
-          isEssayGraded: true
+          isEssayGraded: !submissionNeedsReview
         });
 
         updatedSubmissionsList = updatedSubmissionsList.map(s => s.id === updatedSub.id ? updatedSub : s);
