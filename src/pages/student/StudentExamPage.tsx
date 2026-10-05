@@ -18,7 +18,6 @@ import {
   Flag, 
   AlertTriangle, 
   CheckCircle, 
-  HelpCircle,
   X,
   Maximize2,
   Minimize2,
@@ -35,20 +34,15 @@ import {
   EyeOff,
   Info,
   LayoutGrid,
-  ListOrdered,
   Camera,
   Upload,
-  Image as ImageIcon,
   Trash2,
   Eye,
   ExternalLink,
-  SplitSquareVertical,
   FileText,
   Loader2,
   Volume2,
   VolumeX,
-  Zap,
-  CheckCircle2,
   Calculator as CalculatorIcon,
   Edit3,
   ZoomIn
@@ -894,13 +888,10 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
             <div className="w-14 h-14 rounded-2xl bg-indigo-600/30 text-indigo-400 flex items-center justify-center mx-auto border border-indigo-500/40 animate-pulse">
               <Sparkles className="w-8 h-8" />
             </div>
-            <h3 className="text-lg font-black">AI Đang Tổng Hợp &amp; Chấm Bài...</h3>
-            <p className="text-xs text-slate-300">
-              Hệ thống đang phân tích đáp án, nhận diện hình ảnh bài làm tự luận và lưu trữ kết quả an toàn.
-            </p>
-            <div className="flex items-center justify-center space-x-2 text-indigo-400 text-xs font-bold pt-2">
+            <h3 className="text-lg font-black">Đang chấm bài...</h3>
+            <div className="flex items-center justify-center space-x-2 text-indigo-400 text-xs font-bold pt-1">
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Vui lòng chờ trong giây lát...</span>
+              <span>Vui lòng chờ</span>
             </div>
           </div>
         </div>
@@ -908,7 +899,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
 
       {/* TOP HEADER BAR */}
       <header
-        className={`w-full border-b sticky top-0 z-30 px-3 sm:px-6 py-2.5 sm:py-3 transition-colors ${
+        className={`w-full border-b sticky top-0 z-30 px-3 sm:px-5 py-2 transition-colors ${
           isFocusMode
             ? 'bg-slate-950/95 border-slate-800 backdrop-blur-md'
             : 'bg-white/95 dark:bg-slate-900/95 border-slate-200 dark:border-slate-800 backdrop-blur-md shadow-xs'
@@ -917,15 +908,12 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
           {/* Left: Info */}
           <div className="flex items-center space-x-2 sm:space-x-3 overflow-hidden">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
-              ∑
-            </div>
             <div className="min-w-0">
               <h1 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white truncate">
                 {assignment.title}
               </h1>
               <div className="flex items-center space-x-2 text-[11px] text-slate-500 dark:text-slate-400">
-                <span className="font-bold text-indigo-600 dark:text-indigo-400">Lớp {className}</span>
+                <span className="font-bold text-indigo-600 dark:text-indigo-400">{className}</span>
                 
                 {/* Anti-cheat audit badge */}
                 <button
@@ -940,19 +928,19 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                   {tabSwitchCount === 0 ? (
                     <>
                       <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                      <span>Giám sát thi: 0 vi phạm</span>
+                      <span>Giám sát: 0</span>
                     </>
                   ) : (
                     <>
                       <ShieldAlert className="w-3 h-3 text-rose-600" />
-                      <span>⚠️ {tabSwitchCount} vi phạm</span>
+                      <span>{tabSwitchCount} sự kiện</span>
                     </>
                   )}
                 </button>
 
                 <span className="hidden sm:inline text-slate-400">•</span>
                 <span className="hidden sm:inline truncate text-slate-500 dark:text-slate-400">
-                  Thí sinh: <strong>{studentName}</strong>
+                  <strong>{studentName}</strong>
                 </span>
               </div>
             </div>
@@ -968,21 +956,21 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                   title="Chia đôi màn hình"
                   className={`hidden sm:inline-flex px-2 py-1 rounded-lg ${pdfViewMode === 'split' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-xs' : 'text-slate-600 dark:text-slate-300'}`}
                 >
-                  Chia 2 cột
+                  Chia đôi
                 </button>
                 <button
                   onClick={() => setPdfViewMode('pdf')}
                   title="Chỉ xem đề PDF"
                   className={`px-2 py-1 rounded-lg ${pdfViewMode === 'pdf' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-xs' : 'text-slate-600 dark:text-slate-300'}`}
                 >
-                  Đề PDF
+                  PDF
                 </button>
                 <button
                   onClick={() => setPdfViewMode('sheet')}
                   title="Chỉ xem Phiếu đáp án"
                   className={`px-2 py-1 rounded-lg ${pdfViewMode === 'sheet' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-xs' : 'text-slate-600 dark:text-slate-300'}`}
                 >
-                  Phiếu làm bài
+                  Trả lời
                 </button>
               </div>
             )}
@@ -1016,7 +1004,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
               }`}
             >
               <CalculatorIcon className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Máy tính</span>
+              <span className="hidden xl:inline">Máy tính</span>
             </button>
 
             {/* Bảng Vẽ Nháp Trực Tiếp (Digital Scratchpad) Toggle */}
@@ -1034,7 +1022,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
               }`}
             >
               <Edit3 className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Bảng nháp</span>
+              <span className="hidden xl:inline">Nháp</span>
             </button>
 
             {/* Dark Mode Toggle */}
@@ -1070,7 +1058,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
               ) : (
                 <>
                   <Maximize2 className="w-3.5 h-3.5 text-indigo-600" />
-                  <span className="hidden sm:inline">Tập trung</span>
+                  <span className="hidden xl:inline">Tập trung</span>
                 </>
               )}
             </button>
@@ -1111,7 +1099,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
         </div>
 
         {/* Global Progress Bar */}
-        <div className="w-full bg-slate-200/60 dark:bg-slate-800 h-1.5 mt-2 rounded-full overflow-hidden">
+        <div className="w-full bg-slate-200/60 dark:bg-slate-800 h-1 mt-1.5 rounded-full overflow-hidden">
           <div
             className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all duration-300"
             style={{ width: `${progressPercent}%` }}
@@ -1136,7 +1124,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
               <div className="p-2 bg-slate-800 text-slate-200 text-xs flex items-center justify-between shrink-0">
                 <span className="font-bold truncate max-w-[200px] sm:max-w-none flex items-center gap-1.5">
                   <FileText className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Đề bài PDF chính thức</span>
+                  <span>Đề PDF</span>
                 </span>
                 {assignment.pdfUrl && (
                   <a
@@ -1145,7 +1133,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-semibold text-[11px] transition-colors"
                   >
-                    <span>Mở PDF tab mới</span>
+                    <span>Mở riêng</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 )}
@@ -1169,11 +1157,9 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
               <div className="p-3.5 sm:p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex justify-between items-center shrink-0">
                 <div>
                   <h2 className="font-extrabold text-sm sm:text-base text-slate-800 dark:text-slate-100">
-                    Phiếu Trả Lời Trực Tuyến
+                    Phiếu trả lời
                   </h2>
-                  <p className="text-[11px] text-slate-500">
-                    Chọn phương án tương ứng với từng câu trong đề PDF
-                  </p>
+
                 </div>
                 <div className="flex items-center gap-2">
                   {currentQ && (
@@ -1184,7 +1170,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                       title="Mở Gia sư Socratic AI nhận gợi mở tư duy"
                     >
                       <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
-                      <span>Gia sư AI (Câu {currentIndex + 1})</span>
+                      <span>Gia sư AI</span>
                     </button>
                   )}
                   <div className="flex items-center gap-1.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 px-3 py-1 rounded-full text-xs font-bold border border-emerald-200 dark:border-emerald-800">
@@ -1246,7 +1232,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                               }`}
                             >
                               <FileText className="w-3.5 h-3.5" />
-                              <span>{hasEssayAnswer ? 'Đã làm tự luận ✓' : 'Làm bài tự luận'}</span>
+                              <span>{hasEssayAnswer ? 'Đã làm ✓' : 'Tự luận'}</span>
                             </button>
                           </div>
                         ) : (
@@ -1306,12 +1292,12 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2 text-purple-900 dark:text-purple-200 font-bold text-xs">
                       <Camera className="w-4 h-4 text-purple-600" />
-                      <span>Đính kèm ảnh bài làm tự luận / nháp ({generalPdfImages.length})</span>
+                      <span>Ảnh bài làm ({generalPdfImages.length})</span>
                     </div>
                     
                     <label className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer transition-colors">
                       <Upload className="w-3.5 h-3.5" />
-                      <span>{uploadingImage ? 'Đang nén...' : 'Tải ảnh'}</span>
+                      <span>{uploadingImage ? 'Đang xử lý...' : 'Thêm ảnh'}</span>
                       <input
                         ref={pdfUploadInputRef}
                         type="file"
@@ -1351,7 +1337,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
               {/* Anti-cheat status banner */}
               <div className="p-3 bg-slate-50 dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 text-[11px] text-slate-500 flex items-center justify-between shrink-0">
                 <span className="flex items-center gap-1">
-                  <Lock className="w-3 h-3 text-indigo-500" /> Giám sát phòng thi đang kích hoạt
+                  <Lock className="w-3 h-3 text-indigo-500" /> Giám sát đang bật
                 </span>
               </div>
             </div>
@@ -1361,14 +1347,14 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
       ) : (
 
         // --- 2. GIAO DIỆN ĐỀ TEXT (HỖ TRỢ CẢ TRẮC NGHIỆM VÀ TỰ LUẬN + UPLOAD ẢNH) ---
-        <main className="max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 flex-1 min-h-0">
+        <main className="max-w-7xl w-full mx-auto px-3 sm:px-5 py-3 sm:py-4 flex-1 min-h-0">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
             
             {/* LEFT COLUMN: MAIN QUESTION CARD (lg:col-span-8 xl:col-span-9) */}
-            <div className="lg:col-span-8 xl:col-span-9 space-y-4">
+            <div className="lg:col-span-8 xl:col-span-9 space-y-3">
               {currentQ && (
                 <div
-                  className={`rounded-3xl p-5 sm:p-8 shadow-xl border transition-all ${
+                  className={`rounded-2xl p-4 sm:p-6 shadow-md border transition-all ${
                     isFocusMode
                       ? 'bg-slate-950 border-slate-800 text-slate-100 shadow-indigo-950/20'
                       : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 shadow-slate-200/60 dark:shadow-none text-slate-900 dark:text-white'
@@ -1376,7 +1362,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                 >
                   {/* Question Card Header */}
                   <div
-                    className={`flex items-center justify-between pb-4 border-b mb-6 ${
+                    className={`flex items-center justify-between pb-3 border-b mb-4 ${
                       isFocusMode ? 'border-slate-800' : 'border-slate-100 dark:border-slate-800'
                     }`}
                   >
@@ -1386,7 +1372,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                       </span>
                       <div>
                         <span className="text-xs font-black uppercase tracking-wider text-slate-400">
-                          Câu {currentIndex + 1} / {questions.length} • {getQuestionTypeLabel(currentQ)}
+                          Câu {currentIndex + 1}/{questions.length} • {getQuestionTypeLabel(currentQ)}
                         </span>
                         <span className="text-xs text-indigo-500 font-semibold block">
                           {currentQ.points} điểm {currentQ.topicHint ? `• ${currentQ.topicHint}` : ''}
@@ -1424,7 +1410,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                         }`}
                       >
                         <Bookmark className={`w-3.5 h-3.5 ${isCurrentFlagged ? 'fill-white' : ''}`} />
-                        <span>{isCurrentFlagged ? 'Đã gắn cờ' : 'Gắn cờ câu này'}</span>
+                        <span className="hidden sm:inline">{isCurrentFlagged ? 'Đã gắn' : 'Gắn cờ'}</span>
                       </button>
                     </div>
                   </div>
@@ -1453,13 +1439,11 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                         <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-xl pointer-events-none">
                           <span className="px-3 py-1 bg-black/80 text-white text-xs font-semibold rounded-full flex items-center gap-1.5 backdrop-blur-xs">
                             <ZoomIn className="w-3.5 h-3.5" />
-                            <span>Bấm để phóng to hình vẽ</span>
+                            <span>Phóng to</span>
                           </span>
                         </div>
                       </div>
-                      <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
-                        (Nhấp vào hình vẽ để xem phóng to chi tiết)
-                      </span>
+
                     </div>
                   )}
 
@@ -1468,16 +1452,13 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                     <div className="space-y-4 mb-6">
                       <div className="p-4 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 space-y-3">
                         <label className="block text-xs font-extrabold text-indigo-900 dark:text-indigo-200 flex items-center justify-between">
-                          <span>✍️ Lời giải chi tiết / Các bước lập luận:</span>
-                          <span className="text-[11px] font-normal text-slate-500">
-                            (Có thể gõ văn bản hoặc chụp ảnh bài làm bên dưới)
-                          </span>
+                          <span>Bài làm tự luận</span>
                         </label>
                         <textarea
                           rows={4}
                           value={currentQSolution}
                           onChange={(e) => handleSolutionTextChange(currentQ.id, e.target.value)}
-                          placeholder="Nhập các bước giải toán, biến đổi đại số hoặc kết luận tại đây..."
+                          placeholder="Nhập các bước giải..."
                           className="w-full p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-sm font-mono text-slate-800 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                         />
                       </div>
@@ -1488,16 +1469,14 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                           <div>
                             <div className="font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                               <Camera className="w-4 h-4 text-indigo-600" />
-                              <span>Ảnh chụp bài làm tự luận ({currentQImages.length} ảnh)</span>
+                              <span>Ảnh bài làm ({currentQImages.length})</span>
                             </div>
-                            <p className="text-[11px] text-slate-500">
-                              Chụp trang vở làm bài hoặc bản vẽ hình học để AI và Giáo viên chấm điểm
-                            </p>
+
                           </div>
 
                           <label className="inline-flex items-center space-x-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer transition-all active:scale-95">
                             <Upload className="w-3.5 h-3.5" />
-                            <span>{uploadingImage ? 'Đang nén ảnh...' : 'Chụp / Tải ảnh'}</span>
+                            <span>{uploadingImage ? 'Đang xử lý...' : 'Thêm ảnh'}</span>
                             <input
                               type="file"
                               accept="image/*"
@@ -1605,11 +1584,11 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                               key={opt.id}
                               type="button"
                               onClick={() => handleSelectOption(currentQ.id, opt.id)}
-                              className={`flex items-center p-3.5 sm:p-5 rounded-2xl border-2 text-left transition-all relative cursor-pointer active:scale-[0.98] select-none group ${cardStyle}`}
+                              className={`flex items-center p-3 sm:p-4 rounded-xl border-2 text-left transition-all relative cursor-pointer active:scale-[0.98] select-none group ${cardStyle}`}
                               style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
                             >
                               <div
-                                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-black text-sm mr-3.5 shrink-0 transition-transform group-hover:scale-105 ${badgeStyle}`}
+                                className={`w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center font-black text-sm mr-3.5 shrink-0 transition-transform group-hover:scale-105 ${badgeStyle}`}
                               >
                                 {opt.id}
                               </div>
@@ -1617,11 +1596,6 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                               <div className="flex-1 font-medium text-sm sm:text-base select-none leading-relaxed">
                                 <MathDisplay text={opt.text} />
                               </div>
-
-                              {/* Shortcut key indicator on desktop */}
-                              <span className="hidden sm:inline-block text-[10px] font-mono px-1.5 py-0.5 rounded-md border border-slate-300 dark:border-slate-700 text-slate-400 opacity-60 group-hover:opacity-100 transition-opacity ml-2 shrink-0">
-                                [{opt.id}]
-                              </span>
 
                               {isSelected && (
                                 <div className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center ml-2 shrink-0 shadow-sm animate-in zoom-in-50 duration-150">
@@ -1638,12 +1612,12 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                         <details className="text-xs text-slate-500 group">
                           <summary className="font-semibold cursor-pointer text-indigo-600 hover:text-indigo-800 flex items-center gap-1.5">
                             <Camera className="w-3.5 h-3.5" />
-                            <span>Đính kèm ảnh nháp / lời giải chi tiết cho câu này (Tùy chọn)</span>
+                            <span>Ảnh nháp (tùy chọn)</span>
                           </summary>
                           <div className="mt-3 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
                             <label className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold cursor-pointer">
                               <Upload className="w-3 h-3" />
-                              <span>Chọn ảnh nháp...</span>
+                              <span>Thêm ảnh</span>
                               <input
                                 type="file"
                                 accept="image/*"
@@ -1682,7 +1656,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                   {/* Mobile Quick-Jump Question Strip */}
                   <div className="lg:hidden pt-4 border-t border-slate-100 dark:border-slate-800">
                     <div className="flex items-center justify-between text-xs text-slate-400 mb-1.5">
-                      <span>Bảng chuyển câu nhanh:</span>
+                      <span>Chuyển câu</span>
                       <span className="font-bold text-indigo-500">{answeredCount}/{questions.length}</span>
                     </div>
                     <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-thin">
@@ -1734,14 +1708,11 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                       }`}
                     >
                       <ChevronLeft className="w-4 h-4" />
-                      <span>CÂU TRƯỚC</span>
+                      <span>Trước</span>
                     </button>
 
                     <div className="text-xs font-bold text-slate-400 hidden sm:block">
-                      Tiến độ: <strong className="text-indigo-500 font-extrabold">{answeredCount}</strong>/{questions.length} câu ({progressPercent}%)
-                      <span className="ml-2 text-[11px] text-slate-400 font-normal">
-                        (Phím tắt: <kbd className="px-1 py-0.5 bg-slate-100 dark:bg-slate-800 rounded">←</kbd> <kbd className="px-1 py-0.5 bg-slate-100 dark:bg-slate-800 rounded">→</kbd> <kbd className="px-1 py-0.5 bg-slate-100 dark:bg-slate-800 rounded">F</kbd>)
-                      </span>
+                      <strong className="text-indigo-500 font-extrabold">{answeredCount}</strong>/{questions.length} câu
                     </div>
 
                     {currentIndex < questions.length - 1 ? (
@@ -1749,7 +1720,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                         onClick={handleNext}
                         className="flex items-center space-x-1.5 px-5 sm:px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg transition-all active:scale-95 cursor-pointer"
                       >
-                        <span>CÂU TIẾP THEO</span>
+                        <span>Tiếp</span>
                         <ChevronRight className="w-4 h-4" />
                       </button>
                     ) : (
@@ -1758,7 +1729,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                         className="flex items-center space-x-1.5 px-5 sm:px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm bg-rose-600 hover:bg-rose-700 text-white shadow-lg transition-all active:scale-95 cursor-pointer"
                       >
                         <Flag className="w-4 h-4" />
-                        <span>NỘP BÀI THI</span>
+                        <span>Nộp bài</span>
                       </button>
                     )}
                   </div>
@@ -1773,14 +1744,14 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
               }`}>
                 <span className="flex items-center gap-1.5">
                   <Lock className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>Phòng thi bảo mật: Đã khóa copy &amp; chuột phải. Lịch sử rời màn hình được ghi nhận.</span>
+                  <span>Giám sát thi đang bật</span>
                 </span>
                 <button
                   type="button"
                   onClick={() => setShowResetConfirmModal(true)}
                   className="text-rose-500 hover:text-rose-600 hover:underline font-bold shrink-0 cursor-pointer"
                 >
-                  Làm lại từ đầu
+                  Làm lại
                 </button>
               </div>
             </div>
@@ -1801,11 +1772,9 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                     </div>
                     <div>
                       <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-900 dark:text-white">
-                        Bảng câu hỏi
+                        Câu hỏi
                       </h3>
-                      <p className="text-[10px] text-slate-400">
-                        Nhấp để chuyển câu nhanh
-                      </p>
+
                     </div>
                   </div>
 
@@ -1825,7 +1794,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                         : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'
                     }`}
                   >
-                    Tất cả ({questions.length})
+                    Tất cả
                   </button>
                   <button
                     type="button"
@@ -1836,7 +1805,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                         : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'
                     }`}
                   >
-                    Chưa làm ({unansweredCount})
+                    Chưa làm
                   </button>
                   <button
                     type="button"
@@ -1847,24 +1816,8 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                         : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'
                     }`}
                   >
-                    Gắn cờ ({flaggedQuestions.length})
+                    Gắn cờ
                   </button>
-                </div>
-
-                {/* Status Color Legend */}
-                <div className="grid grid-cols-2 gap-1.5 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-3.5">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-sm bg-indigo-600"></span> Đã làm
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-sm bg-amber-500"></span> Gắn cờ
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-sm bg-slate-200 dark:bg-slate-700 border border-slate-300 dark:border-slate-600"></span> Chưa làm
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-sm border-2 border-indigo-500 ring-1 ring-indigo-400"></span> Đang xem
-                  </span>
                 </div>
 
                 {/* Question Number Grid */}
@@ -1995,7 +1948,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                   <ShieldAlert className="w-5 h-5" />
                 </div>
                 <h3 className="font-black text-sm uppercase tracking-wider">
-                  CẢNH BÁO GIÁM SÁT THI CỬ
+                  CẢNH BÁO GIÁM SÁT
                 </h3>
               </div>
               <span className="text-xs bg-white/25 px-2.5 py-1 rounded-full font-bold">
@@ -2010,10 +1963,10 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                   <AlertTriangle className="w-8 h-8" />
                 </div>
                 <h4 className="text-lg font-black text-slate-900 dark:text-white">
-                  Phát hiện rời màn hình làm bài!
+                  Phát hiện rời màn hình
                 </h4>
                 <div className="inline-block px-3 py-1 bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 rounded-full font-extrabold text-xs border border-rose-200 dark:border-rose-800">
-                  Số lần vi phạm đã ghi nhận: Lần {latestViolation?.count ?? tabSwitchCount}
+                  Lần {latestViolation?.count ?? tabSwitchCount}
                 </div>
               </div>
 
@@ -2037,7 +1990,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
               <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 rounded-2xl border border-amber-200 dark:border-amber-800/60 flex items-start space-x-2.5 text-xs text-amber-900 dark:text-amber-200">
                 <Info className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                 <div className="leading-relaxed text-[11px]">
-                  <strong>Quy định phòng thi trực tuyến:</strong> Hệ thống tự động ghi nhật ký mọi thao tác chuyển tab, mở ứng dụng khác hoặc copy text. Toàn bộ lịch sử vi phạm sẽ được gửi trực tiếp đến giáo viên trong bảng kết quả chấm thi.
+                  Hệ thống ghi nhận các lần rời màn hình và thao tác bị khóa.
                 </div>
               </div>
 
@@ -2048,7 +2001,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                 className="w-full py-3.5 px-4 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs sm:text-sm rounded-2xl shadow-lg hover:shadow-xl transition-all flex items-center justify-center space-x-2 active:scale-[0.99] cursor-pointer"
               >
                 <CheckCircle className="w-4 h-4" />
-                <span>Tôi cam kết tiếp tục làm bài nghiêm túc</span>
+                <span>Tiếp tục làm bài</span>
               </button>
             </div>
           </div>
