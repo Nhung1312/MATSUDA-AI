@@ -23,8 +23,6 @@ import {
   Lightbulb, 
   GraduationCap,
   ShieldCheck,
-  ShieldAlert,
-  Shuffle,
   Camera,
   Image as ImageIcon,
   Eye,
@@ -372,109 +370,78 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   const hasPendingTeacherGrading = (submission.hasEssayQuestions && submission.gradingStatus === 'pending_teacher_grading') || isAwaitingReview;
   const score = submission.totalScore;
   let ratingColor = isAwaitingReview ? 'from-amber-500 to-indigo-600' : hasPendingTeacherGrading ? 'from-purple-600 to-indigo-600' : 'from-indigo-600 to-purple-600';
-  let ratingTitle = 'Làm bài khá tốt!';
-  let ratingMessage = 'Hãy xem kỹ các câu sai để rút kinh nghiệm cho lần thi tiếp theo nhé.';
+  let ratingTitle = 'Kết quả bài làm';
+  let ratingMessage = 'Xem lại câu cần củng cố bên dưới.';
 
   if (isAwaitingReview) {
-    ratingTitle = 'Bài thi đang chờ Thầy/Cô duyệt điểm ⏳';
-    ratingMessage = 'Hệ thống ghi nhận có câu hỏi cần Thầy/Cô đối chiếu và xác nhận điểm. Điểm hiển thị là điểm tạm tính và chưa phải điểm chính thức.';
+    ratingTitle = 'Đang chờ Thầy/Cô duyệt';
+    ratingMessage = 'Điểm hiện tại là tạm tính.';
   } else if (score >= 9.0) {
     ratingColor = 'from-emerald-500 to-teal-600';
-    ratingTitle = 'Xuất sắc! Điểm số rất cao 🎉';
-    ratingMessage = 'Bạn nắm kiến thức toán học rất vững chắc. Tiếp tục phát huy nhé!';
+    ratingTitle = 'Hoàn thành rất tốt';
+    ratingMessage = 'Tiếp tục phát huy.';
   } else if (score >= 7.0) {
     ratingColor = 'from-blue-600 to-indigo-600';
-    ratingTitle = 'Khá giỏi! Đạt yêu cầu tốt 👏';
-    ratingMessage = 'Chỉ còn vài điểm cần cải thiện, bạn đọc thêm phần giải thích chi tiết bên dưới nhé.';
+    ratingTitle = 'Hoàn thành tốt';
+    ratingMessage = 'Xem lại vài điểm cần củng cố.';
   } else if (score < 5.0) {
     ratingColor = 'from-rose-500 to-amber-600';
-    ratingTitle = 'Cần nỗ lực thêm nhé! 💪';
-    ratingMessage = 'Đừng nản lòng! Hãy đọc kỹ lời giải từng bước của AI và luyện tập lại đề này.';
+    ratingTitle = 'Cần củng cố thêm';
+    ratingMessage = 'Ưu tiên xem lỗi gốc và luyện lại.';
   }
 
   // Đợt 8A: Hiển thị rõ chu trình AI khép kín để học sinh và người xem hiểu ngay.
   const currentAssignmentMistakes = mistakeRecords.filter(m => m.assignmentId === assignment.id);
-  const displayMistakeCount = isDemoPreview ? submission.wrongCount : currentAssignmentMistakes.length;
-  const analyzedEssayCount = submission.answers.filter(a =>
-    (a.stepAnalysis && a.stepAnalysis.length > 0) || !!a.stepGradingResponse
-  ).length;
-  const firstErrorCount = submission.answers.filter(a =>
-    a.firstErrorStep !== undefined && a.firstErrorStep !== null
-  ).length;
-  const remedialCount = currentAssignmentMistakes.filter(m => !!m.remedialExercise).length;
-  const practicedCount = currentAssignmentMistakes.filter(m => (m.practiceCount || 0) > 0).length;
-  const improvingCount = currentAssignmentMistakes.filter(m => m.masteryStatus === 'improving').length;
-  const masteredCount = currentAssignmentMistakes.filter(m => m.mastered || m.masteryStatus === 'mastered').length;
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-16">
       <div className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-8 space-y-4 sm:space-y-6">
         
         {isTeacherPreview && !isDemoPreview && (
-          <div className="print:hidden bg-sky-50 border-2 border-sky-200 rounded-3xl p-4 text-left flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-sky-600 text-white flex items-center justify-center shrink-0">
-              <Eye className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-black text-sm text-sky-900">Đang xem hồ sơ học sinh từ Dashboard giáo viên</h3>
-              <p className="text-xs text-sky-800 mt-1 leading-relaxed">
-                Đây là chế độ xem an toàn phục vụ đối chiếu/demo. Các thao tác phân tích thử trên màn hình này không ghi ngược vào kết quả thật hay hồ sơ luyện tập của học sinh.
-              </p>
-            </div>
+          <div className="print:hidden bg-sky-50 border border-sky-200 rounded-2xl px-4 py-2.5 text-left flex items-center gap-2">
+            <Eye className="w-4 h-4 text-sky-600 shrink-0" />
+            <span className="text-xs font-bold text-sky-900">Chế độ xem giáo viên • không ghi thay đổi vào dữ liệu học sinh</span>
           </div>
         )}
 
         {isDemoPreview && (
-          <div className="print:hidden bg-amber-50 border-2 border-amber-200 rounded-3xl p-4 text-left flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-black text-sm text-amber-900">Chế độ minh họa an toàn</h3>
-              <p className="text-xs text-amber-800 mt-1 leading-relaxed">
-                Đây là hồ sơ AI được tính sẵn để trình diễn ổn định. Mọi thao tác trên màn hình này không ghi vào Firestore, không thêm câu sai vào hồ sơ thật và không ảnh hưởng dữ liệu học sinh.
-              </p>
-            </div>
+          <div className="print:hidden bg-amber-50 border border-amber-200 rounded-2xl px-4 py-2.5 text-left flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="text-xs font-bold text-amber-900">Dữ liệu minh họa an toàn • không ghi vào dữ liệu thật</span>
           </div>
         )}
 
         {/* BANNER THÔNG BÁO CHỜ GIÁO VIÊN CHẤM TỰ LUẬN NẾU CÓ */}
         {hasPendingTeacherGrading && (
-          <div className="print:hidden bg-gradient-to-r from-purple-50 via-indigo-50 to-amber-50 dark:from-purple-950/40 dark:via-indigo-950/40 dark:to-amber-950/30 border-2 border-purple-200 dark:border-purple-800 rounded-3xl p-5 shadow-xs flex items-start gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-purple-100 dark:bg-purple-950 text-purple-600 dark:text-purple-300 flex items-center justify-center shrink-0">
-              <Clock className="w-6 h-6 animate-pulse" />
-            </div>
-            <div className="space-y-1">
-              <h3 className="font-black text-base text-purple-900 dark:text-purple-200">
-                Bài thi đã nộp thành công! Phần Tự luận đang chờ Giáo viên kiểm tra & chấm điểm
-              </h3>
-              <p className="text-xs text-purple-800 dark:text-purple-300 leading-relaxed">
-                Hệ thống đã lưu lại toàn bộ câu trả lời, lời giải và ảnh bài làm của bạn. Điểm tổng kết chính thức và nhận xét của Thầy/Cô sẽ được công bố sau khi Thầy/Cô hoàn tất chấm phần tự luận.
-              </p>
+          <div className="print:hidden bg-purple-50 border border-purple-200 rounded-2xl px-4 py-3 flex items-center gap-3">
+            <Clock className="w-5 h-5 text-purple-600 shrink-0" />
+            <div>
+              <div className="font-black text-sm text-purple-900">Có câu đang chờ giáo viên duyệt</div>
+              <div className="text-xs text-purple-700">Điểm hiển thị hiện là tạm tính.</div>
             </div>
           </div>
         )}
 
         {/* HERO SCORE SUMMARY CARD */}
-        <div className={`${resultViewMode === 'sheet' ? 'print:hidden' : ''} bg-white rounded-3xl p-4 sm:p-10 shadow-xl border border-slate-200/80 text-center relative overflow-hidden`}>
+        <div className={`${resultViewMode === 'sheet' ? 'print:hidden' : ''} bg-white rounded-3xl p-4 sm:p-6 shadow-lg border border-slate-200/80 text-center relative overflow-hidden`}>
           <div className={`absolute top-0 left-0 right-0 h-3 bg-gradient-to-r ${ratingColor}`} />
 
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-indigo-50 text-indigo-600 font-black mb-4 shadow-inner border border-indigo-100">
-            {hasPendingTeacherGrading ? <FileCheck2 className="w-10 h-10 text-purple-600" /> : <Trophy className="w-10 h-10" />}
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 font-black mb-4 shadow-inner border border-indigo-100">
+            {hasPendingTeacherGrading ? <FileCheck2 className="w-7 h-7 text-purple-600" /> : <Trophy className="w-7 h-7" />}
           </div>
 
           <span className="inline-block bg-slate-100 text-slate-700 text-xs font-black uppercase px-3 py-1 rounded-full tracking-wider mb-2">
-            Kết Quả Bài Làm • Lớp {submission.className}
+            Kết quả • Lớp {submission.className}
           </span>
 
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900">
             {submission.studentName}
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-md mx-auto">
-            Bài kiểm tra: <strong>{submission.assignmentTitle}</strong>
+            <strong>{submission.assignmentTitle}</strong>
           </p>
 
           {/* Big Score Display */}
-          <div className="my-6">
+          <div className="my-4">
             {isAwaitingReview ? (
               <div className="inline-flex flex-col items-center space-y-2 bg-gradient-to-br from-amber-50 to-indigo-50 dark:from-amber-950/40 dark:to-indigo-950/40 px-4 sm:px-8 py-5 rounded-3xl border-2 border-amber-200 dark:border-amber-800 shadow-sm max-w-md mx-auto">
                 <span className="px-3 py-1 rounded-full bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 font-black text-xs uppercase tracking-wider flex items-center gap-1">
@@ -524,10 +491,10 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
           {/* 4 Stat Badges Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-2xl mx-auto pt-2">
-            <div className="bg-emerald-50/90 border border-emerald-200/90 rounded-2xl p-4 shadow-xs">
+            <div className="bg-emerald-50/90 border border-emerald-200/90 rounded-2xl p-3 shadow-xs">
               <div className="flex items-center space-x-1.5 text-emerald-700 text-xs font-black uppercase mb-1">
                 <CheckCircle2 className="w-4 h-4" />
-                <span>Số câu đúng</span>
+                <span>Đúng</span>
               </div>
               <div className="text-2xl font-black text-emerald-900">
                 {submission.correctCount}{' '}
@@ -535,10 +502,10 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
               </div>
             </div>
 
-            <div className="bg-rose-50/90 border border-rose-200/90 rounded-2xl p-4 shadow-xs">
+            <div className="bg-rose-50/90 border border-rose-200/90 rounded-2xl p-3 shadow-xs">
               <div className="flex items-center space-x-1.5 text-rose-700 text-xs font-black uppercase mb-1">
                 <XCircle className="w-4 h-4" />
-                <span>Số câu sai</span>
+                <span>Sai</span>
               </div>
               <div className="text-2xl font-black text-rose-900">
                 {submission.wrongCount}{' '}
@@ -546,7 +513,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
               </div>
             </div>
 
-            <div className="bg-blue-50/90 border border-blue-200/90 rounded-2xl p-4 shadow-xs">
+            <div className="bg-blue-50/90 border border-blue-200/90 rounded-2xl p-3 shadow-xs">
               <div className="flex items-center space-x-1.5 text-blue-700 text-xs font-black uppercase mb-1">
                 <Clock className="w-4 h-4" />
                 <span>Thời gian</span>
@@ -556,10 +523,10 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
               </div>
             </div>
 
-            <div className="bg-indigo-50/90 border border-indigo-200/90 rounded-2xl p-4 shadow-xs">
+            <div className="bg-indigo-50/90 border border-indigo-200/90 rounded-2xl p-3 shadow-xs">
               <div className="flex items-center space-x-1.5 text-indigo-700 text-xs font-black uppercase mb-1">
                 <FileCheck2 className="w-4 h-4" />
-                <span>Độ chính xác</span>
+                <span>Chính xác</span>
               </div>
               <div className="text-2xl font-black text-indigo-900">
                 {Math.round((submission.correctCount / submission.totalQuestions) * 100)}%
@@ -567,56 +534,23 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
             </div>
           </div>
 
-          {/* Anti-Cheat & Monitoring Verification Card */}
-          <div className="mt-6 max-w-2xl mx-auto text-left">
-            {(submission.tabSwitchCount ?? 0) === 0 ? (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0">
-                    <ShieldCheck className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h4 className="font-black text-sm text-emerald-900 flex items-center gap-1.5">
-                      <span>Giám sát thi cử: Không ghi nhận rời màn hình</span>
-                      <span className="text-[10px] bg-emerald-200/70 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
-                        0 lần rời màn hình
-                      </span>
-                    </h4>
-                    <p className="text-xs text-emerald-700 mt-0.5">
-                      Không phát hiện hành vi chuyển tab hay rời màn hình trong suốt quá trình làm bài.
-                    </p>
-                  </div>
-                </div>
-                {submission.isShuffled && (
-                  <span className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[11px] font-bold shrink-0">
-                    <Shuffle className="w-3 h-3" />
-                    <span>Đề đã trộn</span>
-                  </span>
-                )}
-              </div>
-            ) : (
-              <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 text-left">
-                <div className="flex items-start space-x-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shrink-0">
-                    <ShieldAlert className="w-6 h-6" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-black text-sm text-amber-900">
-                        Biên bản giám sát: Đã ghi nhận {submission.tabSwitchCount} lần rời màn hình
-                      </h4>
-                      <span className="text-xs bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded-full font-extrabold">
-                        {submission.tabSwitchCount} sự kiện
-                      </span>
-                    </div>
-                    <p className="text-xs text-amber-800 mt-1">
-                      Hệ thống đã lưu lại nhật ký chuyển tab và gửi báo cáo chi tiết đến giáo viên.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Giám sát thi - thu gọn để ưu tiên nội dung học tập */}
+          <details className="mt-4 max-w-2xl mx-auto text-left print:hidden">
+            <summary className="cursor-pointer text-xs font-bold text-slate-500 hover:text-slate-700 flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4" />
+              <span>
+                Giám sát thi: {(submission.tabSwitchCount ?? 0) === 0
+                  ? 'không ghi nhận rời màn hình'
+                  : `${submission.tabSwitchCount} sự kiện`}
+              </span>
+            </summary>
+            <div className="mt-2 rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-600">
+              {(submission.tabSwitchCount ?? 0) === 0
+                ? 'Không ghi nhận chuyển tab/rời màn hình trong quá trình làm bài.'
+                : `Đã ghi nhận ${submission.tabSwitchCount} lần rời màn hình.`}
+              {submission.isShuffled ? ' • Đề đã trộn.' : ''}
+            </div>
+          </details>
 
           {/* SỔ TAY CÂU SAI BANNER (MISTAKE VAULT) */}
           {submission.wrongCount > 0 ? (
@@ -629,18 +563,11 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                   <div className="flex items-center space-x-2">
                     <h4 className="font-black text-sm text-slate-900 dark:text-white">
                       {isDemoPreview
-                        ? `Minh họa: ${submission.wrongCount} câu cần khắc phục đã được AI nhận diện`
-                        : `Đã lưu ${submission.wrongCount} câu sai vào Sổ tay câu sai!`}
+                        ? `${submission.wrongCount} câu cần khắc phục`
+                        : `${submission.wrongCount} câu cần luyện lại`}
                     </h4>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-700">
-                      {isDemoPreview ? 'Không ghi dữ liệu thật' : 'Tự động gom nhặt'}
-                    </span>
                   </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                    {isDemoPreview
-                      ? 'Trong bài thật, lỗi này sẽ được đưa vào Hồ sơ câu sai để tạo bài tương tự và theo dõi quá trình khắc phục.'
-                      : 'Hệ thống đã lưu lại các câu chưa đúng. Bạn có thể luyện lại ngay kèm hướng dẫn gợi ý bước giải từ AI.'}
-                  </p>
+
                 </div>
               </div>
               {!isDemoPreview && !isTeacherPreview && (
@@ -649,7 +576,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                   className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-700 hover:to-pink-700 text-white font-black text-xs shadow-lg hover:shadow-xl transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center space-x-1.5 shrink-0"
                 >
                   <Sparkles className="w-4 h-4 text-rose-200" />
-                  <span>Luyện lại câu sai & Gợi ý AI</span>
+                  <span>Luyện lại</span>
                 </button>
               )}
             </div>
@@ -660,11 +587,9 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
               </div>
               <div>
                 <h4 className="font-black text-sm text-emerald-900">
-                  Điểm tuyệt đối! Không có câu nào làm sai 🎉
+                  Không có câu cần luyện lại
                 </h4>
-                <p className="text-xs text-emerald-700 mt-0.5">
-                  Kiến thức bài này của bạn rất vững chắc. Bạn có thể mở Sổ tay câu sai bất cứ lúc nào để ôn lại các câu từ bài thi trước.
-                </p>
+
               </div>
             </div>
           )}
@@ -677,7 +602,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-5 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
               >
                 <BookOpen className="w-4 h-4" />
-                <span>Sổ tay câu sai {submission.wrongCount > 0 ? `(${submission.wrongCount})` : ''}</span>
+                <span>Câu cần luyện {submission.wrongCount > 0 ? `(${submission.wrongCount})` : ''}</span>
               </button>
             )}
             {!isDemoPreview && !isTeacherPreview && (
@@ -686,7 +611,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-5 py-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-sm transition-colors border border-indigo-200 shadow-xs cursor-pointer"
               >
                 <RotateCcw className="w-4 h-4" />
-                <span>Luyện tập lại đề này</span>
+                <span>Làm lại</span>
               </button>
             )}
             <button
@@ -694,7 +619,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
               className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-5 py-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-sm transition-colors border border-slate-300 shadow-xs cursor-pointer"
             >
               <Printer className="w-4 h-4 text-slate-500" />
-              <span>In phiếu điểm</span>
+              <span>In</span>
             </button>
             <button
               onClick={onGoHome}
@@ -706,89 +631,39 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
           </div>
         </div>
 
-        {/* ĐỢT 8A: AI LEARNING LOOP - làm rõ chu trình học tập khép kín */}
-        <section className="print:hidden bg-white rounded-3xl border border-indigo-100 shadow-sm p-5 sm:p-6 overflow-hidden">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-            <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-black uppercase tracking-wider mb-2">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Chu trình AI học từ lỗi sai</span>
-              </div>
-              <h2 className="text-lg sm:text-xl font-black text-slate-900">
-                Không chỉ chấm điểm — hệ thống dẫn bạn từ lỗi sai đến tiến bộ
-              </h2>
-              <p className="text-xs sm:text-sm text-slate-500 mt-1">
-                Mỗi lỗi được giữ lại thành dữ liệu học tập để tạo bài luyện phù hợp và theo dõi mức độ khắc phục.
-              </p>
+        {/* Chu trình học từ lỗi sai - bản gọn */}
+        <section className="print:hidden bg-white rounded-2xl border border-indigo-100 shadow-sm p-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-indigo-600" />
+              <h2 className="text-sm font-black text-slate-900">Học từ lỗi sai</h2>
             </div>
             {!isDemoPreview && !isTeacherPreview && currentAssignmentMistakes.length > 0 && (
               <button
                 onClick={() => setShowMistakeVault(true)}
-                className="shrink-0 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-sm transition-colors"
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black"
               >
-                Mở lộ trình khắc phục
+                Mở lộ trình
               </button>
             )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
-            <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-3">
-              <div className="w-7 h-7 rounded-full bg-blue-600 text-white text-xs font-black flex items-center justify-center mb-2">1</div>
-              <div className="font-black text-xs text-blue-950">AI chấm từng bước</div>
-              <div className="text-[11px] text-blue-700 mt-1">
-                {analyzedEssayCount > 0 ? `${analyzedEssayCount} câu đã phân tích` : 'Sẵn sàng phân tích bài làm'}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            {[
+              ['1', 'Chấm từng bước'],
+              ['2', 'Tìm lỗi gốc'],
+              ['3', 'Lưu câu cần luyện'],
+              ['4', 'Luyện cá nhân'],
+              ['5', 'Theo dõi tiến bộ']
+            ].map(([n, label]) => (
+              <div key={n} className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-black flex items-center justify-center shrink-0">{n}</span>
+                <span className="text-[11px] font-bold text-slate-700 leading-tight">{label}</span>
               </div>
-            </div>
-
-            <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
-              <div className="w-7 h-7 rounded-full bg-amber-500 text-white text-xs font-black flex items-center justify-center mb-2">2</div>
-              <div className="font-black text-xs text-amber-950">Tìm lỗi gốc</div>
-              <div className="text-[11px] text-amber-700 mt-1">
-                {firstErrorCount > 0 ? `${firstErrorCount} lỗi gốc đã xác định` : (submission.wrongCount > 0 ? 'Đã xác định câu cần củng cố' : 'Không phát hiện lỗi cần sửa')}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-3">
-              <div className="w-7 h-7 rounded-full bg-rose-600 text-white text-xs font-black flex items-center justify-center mb-2">3</div>
-              <div className="font-black text-xs text-rose-950">Hồ sơ câu sai</div>
-              <div className="text-[11px] text-rose-700 mt-1">
-                {displayMistakeCount > 0 ? (isDemoPreview ? `${displayMistakeCount} câu sẽ được lưu khi dùng thật` : `${displayMistakeCount} câu đã lưu`) : 'Chưa có câu cần lưu'}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-violet-200 bg-violet-50/70 p-3">
-              <div className="w-7 h-7 rounded-full bg-violet-600 text-white text-xs font-black flex items-center justify-center mb-2">4</div>
-              <div className="font-black text-xs text-violet-950">Luyện cá nhân</div>
-              <div className="text-[11px] text-violet-700 mt-1">
-                {practicedCount > 0 || remedialCount > 0 ? `${Math.max(practicedCount, remedialCount)} câu đang luyện` : 'Bài tương tự + Gia sư Socratic'}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3">
-              <div className="w-7 h-7 rounded-full bg-emerald-600 text-white text-xs font-black flex items-center justify-center mb-2">5</div>
-              <div className="font-black text-xs text-emerald-950">Theo dõi tiến bộ</div>
-              <div className="text-[11px] text-emerald-700 mt-1">
-                {masteredCount > 0 ? `${masteredCount} lỗi đã khắc phục` : improvingCount > 0 ? `${improvingCount} lỗi đang tiến bộ` : 'Theo dõi qua từng lần luyện'}
-              </div>
-            </div>
+            ))}
           </div>
-
-          {currentAssignmentMistakes.length > 0 && (
-            <div className="mt-4 rounded-2xl bg-slate-50 border border-slate-200 px-4 py-3 text-xs text-slate-600 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <span>
-                <strong className="text-slate-900">Trạng thái hiện tại:</strong>{' '}
-                {masteredCount > 0
-                  ? `${masteredCount} lỗi đã làm chủ; ${Math.max(0, currentAssignmentMistakes.length - masteredCount)} lỗi còn tiếp tục luyện.`
-                  : practicedCount > 0
-                    ? 'Bạn đã bắt đầu luyện lại. Hệ thống sẽ cập nhật khi bạn làm đúng ổn định.'
-                    : 'Các lỗi đã được lưu. Bước tiếp theo là luyện câu tương tự hoặc dùng Gia sư Socratic.'}
-              </span>
-              <span className="font-bold text-indigo-700 whitespace-nowrap">
-                Phát hiện → Luyện lại → Kiểm tra → Làm chủ
-              </span>
-            </div>
-          )}
         </section>
+
         {/* DETAILED ANSWER REVIEW & RESULT SHEET */}
         {assignment.allowViewResult ? (
           <div className="space-y-6">
@@ -803,7 +678,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 }`}
               >
                 <FileSpreadsheet className="w-4 h-4 text-indigo-600" />
-                <span>Phiếu kết quả thi</span>
+                <span>Phiếu điểm</span>
               </button>
               <button
                 onClick={() => setResultViewMode('detailed')}
@@ -814,7 +689,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 }`}
               >
                 <BookOpen className="w-4 h-4 text-indigo-600" />
-                <span>Xem chi tiết câu hỏi</span>
+                <span>Chi tiết</span>
               </button>
             </div>
 
@@ -831,16 +706,11 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
             {/* 2. DETAILED ANSWER REVIEW */}
             {resultViewMode === 'detailed' && (
               <div className="space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-                  <div>
-                    <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                      <BookOpen className="w-5 h-5 text-indigo-600" />
-                      <span>Xem lại bài làm & Lời giải chi tiết</span>
-                    </h2>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Kiểm tra đối chiếu đáp án, bài làm tự luận và hướng dẫn giải từng bước.
-                    </p>
-                  </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
+                  <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
+                    <BookOpen className="w-4 h-4 text-indigo-600" />
+                    <span>Chi tiết từng câu</span>
+                  </h2>
 
                   {/* Filter Tabs */}
                   <div className="flex bg-slate-100 p-1.5 rounded-xl shrink-0 gap-1">
@@ -862,7 +732,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                           : 'text-slate-600 hover:text-rose-700'
                       }`}
                     >
-                      🔴 Câu sai ({submission.wrongCount})
+                      Sai ({submission.wrongCount})
                     </button>
                     <button
                       onClick={() => setFilterType('correct')}
@@ -872,7 +742,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                           : 'text-slate-600 hover:text-emerald-700'
                       }`}
                     >
-                      🟢 Câu đúng ({submission.correctCount})
+                      Đúng ({submission.correctCount})
                     </button>
                   </div>
                 </div>
@@ -889,7 +759,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 const isCorrect = ans.isCorrect;
                 const hasAiExp = !!aiExplanations[question.id];
                 const isLoadingAi = !!loadingAi[question.id];
-                const isExpanded = expandedCards[question.id] !== false; // expanded by default
+                const isExpanded = expandedCards[question.id] ?? !isCorrect; // câu sai mở, câu đúng thu gọn
 
                 const currentAiGrading = aiGradingFeedback[question.id] || (ans.aiGraded ? { score: ans.aiScore || 0, feedback: ans.aiFeedback || '' } : null);
                 const isLoadingGrading = !!loadingAiGrading[question.id];
@@ -900,7 +770,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 return (
                   <div
                     key={question.id}
-                    className={`bg-white rounded-3xl p-6 sm:p-7 shadow-sm border-2 transition-all ${
+                    className={`bg-white rounded-2xl p-4 sm:p-5 shadow-sm border transition-all ${
                       isCorrect
                         ? 'border-emerald-200 bg-white'
                         : isAwaitingAnsReview
@@ -909,7 +779,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                     }`}
                   >
                     {/* Top Question Status Header */}
-                    <div className="flex items-start justify-between gap-3 mb-4">
+                    <div className="flex items-start justify-between gap-3 mb-3">
                       <div className="flex items-center space-x-2.5">
                         <span
                           className={`flex items-center justify-center w-8 h-8 rounded-xl text-xs font-black shadow-xs ${
@@ -936,41 +806,25 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                             }`}
                           >
                             {isCorrect
-                              ? `Đúng (+${ans.pointsEarned} điểm)`
+                              ? `Đúng • ${ans.pointsEarned}đ`
                               : isAwaitingAnsReview
-                              ? `Chưa có điểm chính thức • Chờ Thầy/Cô duyệt`
-                              : `Chưa đúng (+${ans.pointsEarned}/${ans.maxPoints} điểm)`}
+                              ? `Chờ GV duyệt`
+                              : `Cần xem lại • ${ans.pointsEarned}/${ans.maxPoints}đ`}
                           </span>
                         </div>
                       </div>
 
-                      <div className="flex items-center space-x-2">
-                        {isCorrect ? (
-                          <span className="inline-flex items-center gap-1 text-emerald-800 bg-emerald-100 text-xs font-extrabold px-3 py-1 rounded-full">
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Làm đúng
-                          </span>
-                        ) : isAwaitingAnsReview ? (
-                          <span className="inline-flex items-center gap-1 text-amber-800 bg-amber-100 text-xs font-extrabold px-3 py-1 rounded-full">
-                            <Clock className="w-3.5 h-3.5 text-amber-600" /> Chờ GV duyệt
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-rose-800 bg-rose-100 text-xs font-extrabold px-3 py-1 rounded-full">
-                            <XCircle className="w-3.5 h-3.5" /> Cần ôn lại
-                          </span>
-                        )}
-
-                        <button
-                          onClick={() => toggleExpand(question.id)}
-                          className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
-                          title={isExpanded ? 'Thu gọn' : 'Mở rộng lời giải'}
-                        >
-                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => toggleExpand(question.id)}
+                        className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+                        title={isExpanded ? 'Thu gọn' : 'Mở rộng'}
+                      >
+                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
                     </div>
 
                     {/* Question Prompt */}
-                    <div className="text-base sm:text-lg font-bold text-slate-900 mb-4 leading-relaxed">
+                    <div className="text-sm sm:text-base font-bold text-slate-900 mb-3 leading-relaxed">
                       <MathDisplay text={question.question} />
                     </div>
 
@@ -994,15 +848,13 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                             </span>
                           </div>
                         </div>
-                        <span className="text-[11px] text-slate-500 mt-1.5">
-                          (Nhấp vào hình vẽ để xem phóng to chi tiết)
-                        </span>
+
                       </div>
                     )}
 
                     {/* 1. If multiple choice: display options */}
                     {!isEssayQuestion(question) && question.options && question.options.length > 0 && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
                         {question.options.map((opt) => {
                           const isStudentChoice = ans.selectedAnswer === opt.id || 
                             (ans.originalSelectedLabel && ans.originalSelectedLabel === opt.id) ||
@@ -1024,7 +876,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                           return (
                             <div
                               key={opt.id}
-                              className={`flex items-center p-3.5 rounded-2xl border-2 text-xs sm:text-sm transition-all ${optContainerClass}`}
+                              className={`flex items-center p-2.5 rounded-xl border-2 text-xs sm:text-sm transition-all ${optContainerClass}`}
                             >
                               <span
                                 className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs mr-3 shrink-0 ${badgeClass}`}
@@ -1064,7 +916,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                     {/* 2. If student typed solution: display it */}
                     {ans.studentSolutionText && (
                       <div className="mb-4 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-1">
-                        <div className="font-bold text-slate-700">📝 Lời giải của học sinh:</div>
+                        <div className="font-bold text-slate-700">Bài làm</div>
                         <div className="font-mono text-slate-800 whitespace-pre-line pl-1">{ans.studentSolutionText}</div>
                       </div>
                     )}
@@ -1074,7 +926,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                       <div className="mb-4 p-3.5 bg-purple-50/60 border border-purple-200 rounded-2xl space-y-2">
                         <div className="font-bold text-xs text-purple-900 flex items-center gap-1.5">
                           <Camera className="w-3.5 h-3.5 text-purple-600" />
-                          <span>Ảnh chụp bài làm tự luận ({images.length} ảnh):</span>
+                          <span>Ảnh bài làm ({images.length})</span>
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                           {images.map((img, iIdx) => (
@@ -1102,7 +954,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                         <div className="flex items-center justify-between font-extrabold text-indigo-900 border-b border-indigo-200/60 pb-2">
                           <span className="flex items-center gap-1.5">
                             <Sparkles className="w-4 h-4 text-indigo-600" />
-                            <span>Matsuda AI phân tích bài tự luận:</span>
+                            <span>AI nhận xét</span>
                           </span>
                           <span className="bg-indigo-600 text-white px-2.5 py-0.5 rounded-full text-xs">
                             Đạt {currentAiGrading.score}/{question.points} điểm
@@ -1126,7 +978,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                               className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:to-indigo-800 text-white rounded-xl text-xs font-black shadow-md hover:shadow-lg cursor-pointer disabled:opacity-50 transition-all active:scale-95"
                             >
                               <Sparkles className={`w-4 h-4 text-amber-300 ${loadingStepGrading[question.id] ? 'animate-spin' : 'animate-pulse'}`} />
-                              <span>{loadingStepGrading[question.id] ? 'AI đang phân tích chi tiết từng dòng...' : '🔍 Chẩn đoán từng bước & Phát hiện lỗi gốc (AI)'}</span>
+                              <span>{loadingStepGrading[question.id] ? 'Đang phân tích...' : 'Phân tích từng bước'}</span>
                             </button>
                             {!currentAiGrading && (
                               <button
@@ -1134,7 +986,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                                 disabled={isLoadingGrading}
                                 className="inline-flex items-center space-x-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold border border-slate-300 cursor-pointer disabled:opacity-50"
                               >
-                                <span>{isLoadingGrading ? 'Đang chấm...' : 'Chấm điểm nhanh'}</span>
+                                <span>{isLoadingGrading ? 'Đang chấm...' : 'Chấm nhanh'}</span>
                               </button>
                             )}
                           </div>
@@ -1158,7 +1010,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                           <div className="p-4 bg-indigo-50/80 border border-indigo-200/80 rounded-2xl text-xs sm:text-sm text-indigo-950 shadow-xs">
                             <div className="font-extrabold text-indigo-900 mb-1.5 flex items-center gap-1.5 text-xs sm:text-sm uppercase tracking-wider">
                               <BookOpen className="w-4 h-4 text-indigo-600 shrink-0" />
-                              <span>Lời giải chi tiết từng bước:</span>
+                              <span>Lời giải</span>
                             </div>
                             <div className="leading-relaxed whitespace-pre-line pl-1">
                               <MathDisplay text={question.explanation} />
@@ -1176,7 +1028,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                               title="Mở Gia sư Socratic AI để hiểu sâu và tự khắc phục lỗi sai"
                             >
                               <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
-                              <span>🤖 Gia sư AI – Sửa lỗi này</span>
+                              <span>Gia sư AI</span>
                             </button>
 
                             {!hasAiExp ? (
@@ -1186,13 +1038,13 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                                 className="inline-flex items-center space-x-2 px-4 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs transition-colors border border-purple-200 cursor-pointer disabled:opacity-50"
                               >
                                 <Sparkles className={`w-3.5 h-3.5 ${isLoadingAi ? 'animate-spin' : ''}`} />
-                                <span>{isLoadingAi ? 'AI đang phân tích bẫy sai...' : '✨ Phân tích bẫy sai nhanh'}</span>
+                                <span>{isLoadingAi ? 'Đang phân tích...' : 'Phân tích thêm'}</span>
                               </button>
                             ) : (
                               <div className="w-full mt-2 p-4 rounded-2xl bg-purple-50/90 border border-purple-200 text-xs sm:text-sm text-purple-950 space-y-2 animate-in fade-in">
                                 <div className="flex items-center space-x-2 text-purple-900 font-extrabold">
                                   <GraduationCap className="w-4 h-4 text-purple-600" />
-                                  <span>Lời khuyên từ Trợ lý AI:</span>
+                                  <span>Gợi ý thêm</span>
                                 </div>
                                 <div className="leading-relaxed whitespace-pre-line pl-1 text-purple-900">
                                   {aiExplanations[question.id]}
