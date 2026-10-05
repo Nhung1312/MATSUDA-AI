@@ -837,9 +837,6 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                 <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
                   Câu cần luyện
                 </h2>
-                <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full bg-white/20 text-white text-[11px] font-black uppercase tracking-wider">
-                  
-                </span>
               </div>
               <p className="text-xs sm:text-sm text-rose-100 mt-0.5">
                 Sai → luyện lại → tiến bộ
