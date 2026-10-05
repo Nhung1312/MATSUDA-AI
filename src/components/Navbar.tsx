@@ -35,6 +35,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
 
   const isTeacher = location.pathname.startsWith('/teacher');
   const isStudent = location.pathname.startsWith('/join') || location.pathname.startsWith('/exam');
+  const isHomePage = location.pathname === '/';
 
   const handleLogout = async () => {
     try {
@@ -73,13 +74,16 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
               <span className="font-extrabold text-lg text-slate-900 dark:text-white tracking-tight">
                 Matsuda AI
               </span>
-              <p className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block font-medium">
-                Số hóa đề • Chấm từng bước
-              </p>
+              {!isHomePage && (
+                <p className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block font-medium">
+                  Số hóa đề • Chấm từng bước
+                </p>
+              )}
             </div>
           </Link>
 
-          {/* Grade Quick Navigation Buttons in Navbar */}
+          {/* Trang chủ đã có đầy đủ lối vào Lớp/Thi/AI; ẩn menu giữa để giảm rối mắt. */}
+          {!isHomePage && (
           <div className="hidden sm:flex items-center space-x-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
             <span className="px-2 text-[10px] font-black uppercase tracking-wider text-slate-400">Lớp</span>
             {(['6', '7', '8', '9'] as GradeLevel[]).map((g) => {
@@ -127,6 +131,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
               <span>AI Ôn Tập</span>
             </Link>
           </div>
+          )}
 
           {/* Actions & Role switchers */}
           <div className="flex items-center space-x-2 sm:space-x-3">
@@ -145,7 +150,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
             </button>
 
             {/* Sổ tay câu sai (Mistake Vault) */}
-            <button
+            {!isHomePage && <button
               onClick={() => setShowMistakeVault(true)}
               title="Mở Sổ tay câu sai (Luyện lại các câu làm chưa đúng)"
               className={`inline-flex items-center space-x-1 sm:space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
@@ -161,11 +166,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
                   {unmasteredCount}
                 </span>
               )}
-            </button>
-
+            </button>}
 
             {/* Desktop Role switchers */}
-            <div className="hidden md:flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+            {!isHomePage && <div className="hidden md:flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
               <Link
                 to="/teacher"
                 className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
@@ -189,7 +193,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
                 <GraduationCap className="w-4 h-4 text-emerald-600 dark:text-emerald-200" />
                 <span>Học sinh</span>
               </Link>
-            </div>
+            </div>}
 
             {/* User Auth Section (Avatar / Logout / Login) */}
             {isAuthenticated && user ? (
