@@ -1,5 +1,6 @@
 import React from 'react';
 import { Assignment, ClassRoom, Submission } from '../../types';
+import { SHOWCASE_DEMO_ASSIGNMENT, SHOWCASE_DEMO_SUBMISSION } from '../../data/showcaseDemo';
 import { 
   Users, 
   BookOpen, 
@@ -85,8 +86,12 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
     };
   }).sort((a, b) => b.quality - a.quality);
   const demoTarget = demoCandidates[0];
-  const demoAssignment = demoTarget?.assignment;
-  const demoSubmission = demoTarget?.submission;
+  const liveDemoAssignment = demoTarget?.assignment;
+  const richRealTarget = demoCandidates.find(item => item.quality === 3);
+  const analysisDemoAssignment = richRealTarget?.assignment || SHOWCASE_DEMO_ASSIGNMENT;
+  const analysisDemoSubmission = richRealTarget?.submission || SHOWCASE_DEMO_SUBMISSION;
+  const isUsingShowcaseFallback = !richRealTarget;
+
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
       {/* Welcome Banner - Modern Minimalist Clean UI */}
@@ -229,26 +234,34 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
               Hệ thống tự chọn bài có dữ liệu phù hợp nhất để giảm thao tác và tránh phải chờ AI xử lý lại trong lúc thuyết trình.
             </p>
 
-            {demoAssignment ? (
-              <div className="mt-4 rounded-2xl bg-white/90 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-3">
-                <div className="text-[10px] font-black uppercase text-slate-400">Bài demo đang chọn</div>
-                <div className="font-black text-sm text-slate-900 dark:text-white mt-0.5">{demoAssignment.title}</div>
-                <div className="text-xs text-slate-500 mt-1">
-                  Lớp {demoAssignment.grade} • {demoAssignment.topic || 'Toán THCS'}
-                  {demoSubmission ? ` • Có bài nộp của ${demoSubmission.studentName}` : ' • Chưa có bài nộp sẵn'}
+            <div className="mt-4 rounded-2xl bg-white/90 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-[10px] font-black uppercase text-slate-400">Hồ sơ AI dùng cho bước 3</div>
+                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${isUsingShowcaseFallback ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                  {isUsingShowcaseFallback ? 'DỮ LIỆU MINH HỌA DỰ PHÒNG' : 'DỮ LIỆU THẬT ĐÃ CÓ'}
+                </span>
+              </div>
+              <div className="font-black text-sm text-slate-900 dark:text-white mt-1">{analysisDemoAssignment.title}</div>
+              <div className="text-xs text-slate-500 mt-1">
+                Lớp {analysisDemoAssignment.grade} • {analysisDemoAssignment.topic || 'Toán THCS'} • {analysisDemoSubmission.studentName}
+              </div>
+              {isUsingShowcaseFallback && (
+                <div className="text-[10px] text-amber-700 mt-2">
+                  Hồ sơ này được tính sẵn để demo ổn định, không ghi vào Firestore và không thay đổi dữ liệu học sinh thật.
                 </div>
-              </div>
-            ) : (
-              <div className="mt-4 rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-800">
-                Chưa có đề để demo. Hãy tạo hoặc lấy một đề từ Kho đề mẫu trước.
-              </div>
-            )}
+              )}
+              {liveDemoAssignment && liveDemoAssignment.id !== analysisDemoAssignment.id && (
+                <div className="text-[10px] text-slate-500 mt-2">
+                  Bước 1, 2 và 4 vẫn dùng đề thật hiện có: <strong>{liveDemoAssignment.title}</strong>.
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 flex-1">
             <button
-              disabled={!demoAssignment}
-              onClick={() => demoAssignment && onOpenShare(demoAssignment)}
+              disabled={!liveDemoAssignment}
+              onClick={() => liveDemoAssignment && onOpenShare(liveDemoAssignment)}
               className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-900 p-3.5 hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               <div className="flex items-center justify-between">
@@ -260,8 +273,8 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
             </button>
 
             <button
-              disabled={!demoAssignment}
-              onClick={() => demoAssignment && onTestAssignment(demoAssignment)}
+              disabled={!liveDemoAssignment}
+              onClick={() => liveDemoAssignment && onTestAssignment(liveDemoAssignment)}
               className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-900 p-3.5 hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               <div className="flex items-center justify-between">
@@ -273,8 +286,8 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
             </button>
 
             <button
-              disabled={!demoAssignment || !demoSubmission}
-              onClick={() => demoAssignment && demoSubmission && onPreviewSubmission(demoAssignment, demoSubmission)}
+              disabled={!analysisDemoAssignment || !analysisDemoSubmission}
+              onClick={() => onPreviewSubmission(analysisDemoAssignment, analysisDemoSubmission)}
               className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-fuchsia-200 dark:border-fuchsia-900 p-3.5 hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               <div className="flex items-center justify-between">
@@ -286,8 +299,8 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
             </button>
 
             <button
-              disabled={!demoAssignment}
-              onClick={() => demoAssignment && onNavigate('results', { assignmentId: demoAssignment.id })}
+              disabled={!liveDemoAssignment}
+              onClick={() => liveDemoAssignment && onNavigate('results', { assignmentId: liveDemoAssignment.id })}
               className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900 p-3.5 hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               <div className="flex items-center justify-between">

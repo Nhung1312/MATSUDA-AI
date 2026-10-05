@@ -48,13 +48,15 @@ interface StudentResultPageProps {
   assignment: Assignment;
   onRetake: () => void;
   onGoHome: () => void;
+  isDemoPreview?: boolean;
 }
 
 export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   submission: initialSubmission,
   assignment,
   onRetake,
-  onGoHome
+  onGoHome,
+  isDemoPreview = false
 }) => {
   const [submission, setSubmission] = useState<Submission>(initialSubmission);
   const [resultViewMode, setResultViewMode] = useState<'sheet' | 'detailed'>('sheet');
@@ -130,11 +132,13 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
       // 1. Cập nhật state hiển thị UI
       setStepGradingResults(prev => ({ ...prev, [question.id]: res }));
-      useLearningProgressStore.getState().recordStepAnalysisCompleted(
-        question.id,
-        res.firstErrorStep,
-        res.firstErrorType || undefined
-      );
+      if (!isDemoPreview) {
+        useLearningProgressStore.getState().recordStepAnalysisCompleted(
+          question.id,
+          res.firstErrorStep,
+          res.firstErrorType || undefined
+        );
+      }
 
       // 2. LƯU BỀN VỮNG VÀO SUBMISSION (Tái sử dụng vĩnh viễn, không mất khi reload)
       const updatedAnswers: StudentAnswer[] = submission.answers.map(a => {
@@ -183,10 +187,12 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
       };
 
       setSubmission(updatedSub);
-      StorageService.saveSubmission(updatedSub);
-      FirestoreService.saveResult(updatedSub).catch(() => {});
-      if (updatedSub.wrongCount > 0) {
-        useMistakeVaultStore.getState().addMistakesFromSubmission(updatedSub, assignment);
+      if (!isDemoPreview) {
+        StorageService.saveSubmission(updatedSub);
+        FirestoreService.saveResult(updatedSub).catch(() => {});
+        if (updatedSub.wrongCount > 0) {
+          useMistakeVaultStore.getState().addMistakesFromSubmission(updatedSub, assignment);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -264,6 +270,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
   // Tự động đồng bộ câu sai vào Mistake Vault khi vào trang kết quả
   useEffect(() => {
+    if (isDemoPreview) return;
     if (submission && submission.wrongCount > 0) {
       try {
         useMistakeVaultStore.getState().addMistakesFromSubmission(submission, assignment);
@@ -271,7 +278,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         console.warn('Lỗi lưu câu sai vào Sổ tay câu sai:', e);
       }
     }
-  }, [submission, assignment]);
+  }, [submission, assignment, isDemoPreview]);
 
   const toggleExpand = (questionId: string) => {
     setExpandedCards(prev => ({
@@ -361,6 +368,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
   // Đợt 8A: Hiển thị rõ chu trình AI khép kín để học sinh và người xem hiểu ngay.
   const currentAssignmentMistakes = mistakeRecords.filter(m => m.assignmentId === assignment.id);
+  const displayMistakeCount = isDemoPreview ? submission.wrongCount : currentAssignmentMistakes.length;
   const analyzedEssayCount = submission.answers.filter(a =>
     (a.stepAnalysis && a.stepAnalysis.length > 0) || !!a.stepGradingResponse
   ).length;
@@ -375,6 +383,20 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-16">
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
         
+        {isDemoPreview && (
+          <div className="print:hidden bg-amber-50 border-2 border-amber-200 rounded-3xl p-4 text-left flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-black text-sm text-amber-900">Chế độ minh họa an toàn</h3>
+              <p className="text-xs text-amber-800 mt-1 leading-relaxed">
+                Đây là hồ sơ AI được tính sẵn để trình diễn ổn định. Mọi thao tác trên màn hình này không ghi vào Firestore, không thêm câu sai vào hồ sơ thật và không ảnh hưởng dữ liệu học sinh.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* BANNER THÔNG BÁO CHỜ GIÁO VIÊN CHẤM TỰ LUẬN NẾU CÓ */}
         {hasPendingTeacherGrading && (
           <div className="print:hidden bg-gradient-to-r from-purple-50 via-indigo-50 to-amber-50 dark:from-purple-950/40 dark:via-indigo-950/40 dark:to-amber-950/30 border-2 border-purple-200 dark:border-purple-800 rounded-3xl p-5 shadow-xs flex items-start gap-4">
@@ -566,24 +588,30 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 <div>
                   <div className="flex items-center space-x-2">
                     <h4 className="font-black text-sm text-slate-900 dark:text-white">
-                      Đã lưu {submission.wrongCount} câu sai vào Sổ tay câu sai!
+                      {isDemoPreview
+                        ? `Minh họa: ${submission.wrongCount} câu cần khắc phục đã được AI nhận diện`
+                        : `Đã lưu ${submission.wrongCount} câu sai vào Sổ tay câu sai!`}
                     </h4>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-700">
-                      Tự động gom nhặt
+                      {isDemoPreview ? 'Không ghi dữ liệu thật' : 'Tự động gom nhặt'}
                     </span>
                   </div>
                   <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                    Hệ thống đã lưu lại các câu chưa đúng. Bạn có thể luyện lại ngay kèm hướng dẫn gợi ý bước giải từ AI.
+                    {isDemoPreview
+                      ? 'Trong bài thật, lỗi này sẽ được đưa vào Hồ sơ câu sai để tạo bài tương tự và theo dõi quá trình khắc phục.'
+                      : 'Hệ thống đã lưu lại các câu chưa đúng. Bạn có thể luyện lại ngay kèm hướng dẫn gợi ý bước giải từ AI.'}
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setShowMistakeVault(true)}
-                className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-700 hover:to-pink-700 text-white font-black text-xs shadow-lg hover:shadow-xl transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center space-x-1.5 shrink-0"
-              >
-                <Sparkles className="w-4 h-4 text-rose-200" />
-                <span>Luyện lại câu sai & Gợi ý AI</span>
-              </button>
+              {!isDemoPreview && (
+                <button
+                  onClick={() => setShowMistakeVault(true)}
+                  className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-700 hover:to-pink-700 text-white font-black text-xs shadow-lg hover:shadow-xl transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center space-x-1.5 shrink-0"
+                >
+                  <Sparkles className="w-4 h-4 text-rose-200" />
+                  <span>Luyện lại câu sai & Gợi ý AI</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="mt-6 max-w-2xl mx-auto bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-left flex items-center space-x-3">
@@ -603,20 +631,24 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
           {/* Quick Actions */}
           <div className="flex flex-wrap items-center justify-center gap-3 mt-8">
-            <button
-              onClick={() => setShowMistakeVault(true)}
-              className="inline-flex items-center space-x-2 px-5 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
-            >
-              <BookOpen className="w-4 h-4" />
-              <span>Sổ tay câu sai {submission.wrongCount > 0 ? `(${submission.wrongCount})` : ''}</span>
-            </button>
-            <button
-              onClick={onRetake}
-              className="inline-flex items-center space-x-2 px-5 py-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-sm transition-colors border border-indigo-200 shadow-xs cursor-pointer"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Luyện tập lại đề này</span>
-            </button>
+            {!isDemoPreview && (
+              <button
+                onClick={() => setShowMistakeVault(true)}
+                className="inline-flex items-center space-x-2 px-5 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              >
+                <BookOpen className="w-4 h-4" />
+                <span>Sổ tay câu sai {submission.wrongCount > 0 ? `(${submission.wrongCount})` : ''}</span>
+              </button>
+            )}
+            {!isDemoPreview && (
+              <button
+                onClick={onRetake}
+                className="inline-flex items-center space-x-2 px-5 py-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-sm transition-colors border border-indigo-200 shadow-xs cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Luyện tập lại đề này</span>
+              </button>
+            )}
             <button
               onClick={handlePrint}
               className="inline-flex items-center space-x-2 px-5 py-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-sm transition-colors border border-slate-300 shadow-xs cursor-pointer"
@@ -629,7 +661,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
               className="inline-flex items-center space-x-2 px-6 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm shadow-md transition-colors cursor-pointer"
             >
               <Home className="w-4 h-4" />
-              <span>Về trang chủ</span>
+              <span>{isDemoPreview ? 'Quay lại Dashboard' : 'Về trang chủ'}</span>
             </button>
           </div>
         </div>
@@ -649,7 +681,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 Mỗi lỗi được giữ lại thành dữ liệu học tập để tạo bài luyện phù hợp và theo dõi mức độ khắc phục.
               </p>
             </div>
-            {currentAssignmentMistakes.length > 0 && (
+            {!isDemoPreview && currentAssignmentMistakes.length > 0 && (
               <button
                 onClick={() => setShowMistakeVault(true)}
                 className="shrink-0 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-sm transition-colors"
@@ -680,7 +712,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
               <div className="w-7 h-7 rounded-full bg-rose-600 text-white text-xs font-black flex items-center justify-center mb-2">3</div>
               <div className="font-black text-xs text-rose-950">Hồ sơ câu sai</div>
               <div className="text-[11px] text-rose-700 mt-1">
-                {currentAssignmentMistakes.length > 0 ? `${currentAssignmentMistakes.length} câu đã lưu` : 'Chưa có câu cần lưu'}
+                {displayMistakeCount > 0 ? (isDemoPreview ? `${displayMistakeCount} câu sẽ được lưu khi dùng thật` : `${displayMistakeCount} câu đã lưu`) : 'Chưa có câu cần lưu'}
               </div>
             </div>
 
