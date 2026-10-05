@@ -541,13 +541,13 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
               <span>
                 Giám sát thi: {(submission.tabSwitchCount ?? 0) === 0
                   ? 'không ghi nhận rời màn hình'
-                  : \`\${submission.tabSwitchCount} sự kiện\`}
+                  : `${submission.tabSwitchCount} sự kiện`}
               </span>
             </summary>
             <div className="mt-2 rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-600">
               {(submission.tabSwitchCount ?? 0) === 0
                 ? 'Không ghi nhận chuyển tab/rời màn hình trong quá trình làm bài.'
-                : \`Đã ghi nhận \${submission.tabSwitchCount} lần rời màn hình.\`}
+                : `Đã ghi nhận ${submission.tabSwitchCount} lần rời màn hình.`}
               {submission.isShuffled ? ' • Đề đã trộn.' : ''}
             </div>
           </details>
