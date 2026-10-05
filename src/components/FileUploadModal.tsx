@@ -973,29 +973,29 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                       className="hidden"
                     />
 
-                    <div className="flex justify-center space-x-3 mb-4">
-                      <span className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shadow-xs" title="PDF">
-                        <FileText className="w-6 h-6" />
+                    <div className="flex justify-center space-x-2 mb-3">
+                      <span className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shadow-xs" title="PDF">
+                        <FileText className="w-5 h-5" />
                       </span>
-                      <span className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center shadow-xs" title="Word">
-                        <FileType className="w-6 h-6" />
+                      <span className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shadow-xs" title="Word">
+                        <FileType className="w-5 h-5" />
                       </span>
-                      <span className="w-12 h-12 rounded-2xl bg-violet-100 text-violet-700 flex items-center justify-center shadow-xs" title="LaTeX .tex">
-                        <FileText className="w-6 h-6" />
+                      <span className="w-10 h-10 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center shadow-xs" title="LaTeX .tex">
+                        <FileText className="w-5 h-5" />
                       </span>
-                      <span className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shadow-xs" title="Excel">
-                        <FileSpreadsheet className="w-6 h-6" />
+                      <span className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shadow-xs" title="Excel">
+                        <FileSpreadsheet className="w-5 h-5" />
                       </span>
-                      <span className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center shadow-xs" title="JSON">
-                        <FileCheck className="w-6 h-6" />
+                      <span className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shadow-xs" title="JSON">
+                        <FileCheck className="w-5 h-5" />
                       </span>
                     </div>
 
-                    <h3 className="text-base sm:text-lg font-black text-slate-800 mb-1">
-                      Kéo thả Word, LaTeX (.tex), Excel, JSON, TXT hoặc PDF vào đây
+                    <h3 className="text-sm sm:text-base font-black text-slate-800 mb-1">
+                      Kéo thả tệp vào đây
                     </h3>
-                    <p className="text-xs text-slate-500 max-w-md mx-auto mb-4">
-                      Đọc và chuyển đổi trực tiếp trên máy. LaTeX hỗ trợ các cấu trúc phổ biến như \begin&#123;ex&#125;, \choice, \True và \loigiai.
+                    <p className="text-xs text-slate-500 mb-4">
+                      Word • LaTeX • Excel • JSON • TXT • PDF
                     </p>
 
                     <div className="inline-flex items-center space-x-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all active:scale-95">
@@ -1004,22 +1004,20 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Sample Templates */}
-                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                    <div>
-                      <div className="font-bold text-slate-800">Tải file mẫu để nhập liệu chuẩn:</div>
-                      <div className="text-slate-500">File Excel có sẵn các cột Câu hỏi, A, B, C, D, Đáp án đúng.</div>
-                    </div>
-                    <div className="flex items-center space-x-2">
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-slate-500 hover:text-slate-700 font-bold">
+                      File mẫu Excel / JSON
+                    </summary>
+                    <div className="mt-2 flex gap-2">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           FileParserService.downloadSampleExcelTemplate();
                         }}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                        className="px-3 py-1.5 bg-emerald-600 text-white font-bold rounded-xl"
                       >
-                        📥 File Excel Mẫu
+                        Excel mẫu
                       </button>
                       <button
                         type="button"
@@ -1027,12 +1025,12 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                           e.stopPropagation();
                           FileParserService.downloadSampleJsonTemplate();
                         }}
-                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                        className="px-3 py-1.5 bg-indigo-600 text-white font-bold rounded-xl"
                       >
-                        📥 File JSON Mẫu
+                        JSON mẫu
                       </button>
                     </div>
-                  </div>
+                  </details>
                 </div>
               )}
             </>
@@ -1070,7 +1068,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                   onClick={() => setParseResult(null)}
                   className="text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-200 px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
                 >
-                  Bóc tách tệp / ảnh khác
+                  Tệp khác
                 </button>
               </div>
 
@@ -1084,11 +1082,9 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                   <div className="font-black">
                     {reviewCount > 0
                       ? `Có ${reviewCount} câu cần kiểm tra lại trước khi giao bài`
-                      : 'Cấu trúc câu hỏi đã qua lớp kiểm tra sơ bộ'}
+                      : 'Cấu trúc câu hỏi ổn'}
                   </div>
-                  <div className="mt-0.5 opacity-80">
-                    Giáo viên vẫn là bước duyệt cuối: kiểm tra công thức, hình vẽ, thứ tự câu và đáp án trước khi xuất bản.
-                  </div>
+                  <div className="mt-0.5 opacity-80">Giáo viên duyệt trước khi giao.</div>
                 </div>
               </div>
 
@@ -1116,7 +1112,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    🔘 Trắc nghiệm ({parseResult.multipleChoiceCount})
+                    Trắc nghiệm ({parseResult.multipleChoiceCount})
                   </button>
                   <button
                     type="button"
@@ -1127,7 +1123,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    ✍️ Tự luận ({parseResult.essayCount})
+                    Tự luận ({parseResult.essayCount})
                   </button>
                 </div>
 
@@ -1146,7 +1142,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                     onClick={() => handleToggleOnlyCategory('trac_nghiem')}
                     className="text-emerald-600 hover:underline font-bold cursor-pointer"
                   >
-                    Chỉ chọn Trắc nghiệm
+                    Chọn TN
                   </button>
                   <span className="text-slate-300">|</span>
                   <button
@@ -1260,7 +1256,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                 disabled={selectedCount === 0}
                 className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-4 sm:px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-black text-xs sm:text-sm rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
               >
-                <span>THÊM {selectedCount} CÂU HỎI VÀO ĐỀ THI</span>
+                <span>THÊM {selectedCount} CÂU VÀO ĐỀ</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
