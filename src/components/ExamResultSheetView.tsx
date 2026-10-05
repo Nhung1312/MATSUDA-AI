@@ -21,13 +21,15 @@ interface ExamResultSheetViewProps {
   assignment: Assignment;
   onBackToDetailedView?: () => void;
   onRetake?: () => void;
+  reviewMode?: 'wrong_only' | 'full';
 }
 
 export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
   submission,
   assignment,
   onBackToDetailedView,
-  onRetake
+  onRetake,
+  reviewMode = 'full'
 }) => {
   const questionPool: Question[] =
     submission.shuffledQuestions && submission.shuffledQuestions.length > 0
@@ -40,6 +42,10 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
 
   const pendingAnswers = submission.answers.filter(isAnswerPending);
   const pendingCount = pendingAnswers.length;
+  const visibleAnswers =
+    reviewMode === 'wrong_only'
+      ? submission.answers.filter(ans => !ans.isCorrect && !isAnswerPending(ans))
+      : submission.answers;
   const hasPendingReview =
     Boolean(
       submission.isProvisional ||
@@ -277,7 +283,9 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
         </div>
 
         <div className="mb-4">
-          <h2 className="text-sm font-black mb-2">Kết quả từng câu</h2>
+          <h2 className="text-sm font-black mb-2">
+            {reviewMode === 'wrong_only' ? 'Các câu cần xem lại' : 'Kết quả từng câu'}
+          </h2>
           <div className="overflow-hidden rounded-xl border border-slate-200">
             <table className="w-full text-xs border-collapse table-fixed">
               <thead>
@@ -290,7 +298,7 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {submission.answers.map((ans, idx) => {
+                {visibleAnswers.map((ans, idx) => {
                   const question = getQuestion(ans, idx);
                   const pending = isAnswerPending(ans);
                   const unanswered =
@@ -342,6 +350,11 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
               </tbody>
             </table>
           </div>
+          {reviewMode === 'wrong_only' && visibleAnswers.length === 0 && (
+            <div className="mt-2 text-center text-[11px] text-emerald-700 font-bold">
+              Không có câu sai để xem lại.
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-200 pt-4 avoid-break">
