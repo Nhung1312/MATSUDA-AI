@@ -156,7 +156,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
     }
 
     setIsGenerating(true);
-    setGenerationStep('Khởi động Hệ sinh thái Tự luyện 3 Tầng...');
+    setGenerationStep('Đang tạo bài luyện...');
 
     try {
       // Step 1: Lắp ráp đề 3 Tầng (Kho Thầy/Cô + Hoán vị A-B-C-D + AI Bù đắp)
@@ -233,7 +233,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
         // ignore
       }
 
-      setGenerationStep('Đã hoàn tất đề thi! Đang chuyển vào phòng thi...');
+      setGenerationStep('Đã tạo xong. Đang mở bài...');
       await new Promise(r => setTimeout(r, 600));
 
       // Bắt đầu làm bài
@@ -249,82 +249,22 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 shadow-xl border border-slate-100 dark:border-slate-800 space-y-6">
-      {/* Title Header */}
-      <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-6 shadow-md border border-slate-200 dark:border-slate-800 space-y-5">
+      <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
         <div>
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-violet-50 dark:bg-violet-950/80 text-violet-700 dark:text-violet-300 text-xs font-black border border-violet-200 dark:border-violet-800">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
-              <span>HỆ SINH THÁI TỰ LUYỆN 3 TẦNG</span>
-            </div>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 text-[11px] font-extrabold border border-indigo-200 dark:border-indigo-800">
-              SGK Kết nối tri thức với cuộc sống
-            </span>
-          </div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-            Góc Tự Luyện &amp; Ôn Tập Thông Minh Cho Học Sinh
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Đề thi được lắp ráp thông minh từ <strong>Kho đề của Thầy/Cô</strong> kết hợp <strong>Trợ lý AI</strong> biên soạn bổ sung.
+          <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">AI ôn tập</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Chọn lớp, nội dung và số câu.
           </p>
         </div>
-
-        <div className="hidden sm:flex flex-col items-end text-right shrink-0">
-          <span className="text-[11px] font-bold text-slate-400">Kho đề Toán {selectedGrade}:</span>
-          <span className="inline-flex items-center gap-1 text-xs font-black text-indigo-600 dark:text-indigo-400">
-            <Database className="w-3.5 h-3.5" /> {availableBankExamCount > 0 ? `${availableBankExamCount} đề sẵn có` : 'Sẵn sàng tích hợp'}
-          </span>
-        </div>
-      </div>
-
-      {/* 3-LAYER VISUAL BADGE BANNER */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 rounded-2xl bg-gradient-to-r from-slate-50 via-indigo-50/40 to-violet-50/50 dark:from-slate-800/40 dark:via-indigo-950/30 dark:to-violet-950/30 border border-slate-200/80 dark:border-slate-800 text-xs">
-        <div className="flex items-center space-x-2">
-          <div className="w-7 h-7 rounded-xl bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 flex items-center justify-center font-black shrink-0">
-            1
-          </div>
-          <div>
-            <div className="font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-1">
-              <Database className="w-3 h-3 text-indigo-600" />
-              <span>Kho đề Thầy/Cô</span>
-            </div>
-            <div className="text-[10px] text-slate-500">Ưu tiên câu hỏi thực tế của trường</div>
-          </div>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <div className="w-7 h-7 rounded-xl bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 flex items-center justify-center font-black shrink-0">
-            2
-          </div>
-          <div>
-            <div className="font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-1">
-              <Shuffle className="w-3 h-3 text-purple-600" />
-              <span>Biến hóa A-B-C-D</span>
-            </div>
-            <div className="text-[10px] text-slate-500">Đảo ngẫu nhiên, chống học vẹt</div>
-          </div>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <div className="w-7 h-7 rounded-xl bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 flex items-center justify-center font-black shrink-0">
-            3
-          </div>
-          <div>
-            <div className="font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-violet-600" />
-              <span>AI Bù đắp chuẩn SGK</span>
-            </div>
-            <div className="text-[10px] text-slate-500">Bổ sung đủ câu khi kho thiếu</div>
-          </div>
-        </div>
+        <Sparkles className="w-5 h-5 text-violet-600" />
       </div>
 
       {/* Step 1: Chọn Khối lớp */}
       <div>
         <label className="block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 mb-2.5 flex items-center gap-1.5">
           <GraduationCap className="w-4 h-4 text-violet-600" />
-          <span>1. Chọn khối lớp của em:</span>
+          <span>1. Lớp</span>
         </label>
         <div className="grid grid-cols-4 gap-2.5">
           {(['6', '7', '8', '9'] as GradeLevel[]).map((g) => (
@@ -332,19 +272,13 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
               key={g}
               type="button"
               onClick={() => handleSelectGrade(g)}
-              className={`py-3 px-2 rounded-2xl font-black text-sm transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
+              className={`py-2.5 px-2 rounded-xl font-black text-sm transition-all cursor-pointer flex items-center justify-center ${
                 selectedGrade === g
                   ? 'bg-gradient-to-tr from-violet-600 to-indigo-600 text-white shadow-md scale-102 ring-2 ring-violet-400'
                   : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/80 border border-slate-200 dark:border-slate-700'
               }`}
             >
               <span className="text-base sm:text-lg">Lớp {g}</span>
-              <span className="text-[10px] font-medium opacity-80">
-                {g === '6' && 'Số tự nhiên, hình phẳng'}
-                {g === '7' && 'Số hữu tỉ, tam giác'}
-                {g === '8' && 'Đa thức, định lý Thalès'}
-                {g === '9' && 'Hệ PT, đường tròn, ôn thi'}
-              </span>
             </button>
           ))}
         </div>
@@ -354,7 +288,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
       <div>
         <label className="block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-1.5">
           <Target className="w-4 h-4 text-violet-600" />
-          <span>2. Chọn mục tiêu tự luyện:</span>
+          <span>2. Nội dung</span>
         </label>
 
         {/* Scope Tabs */}
@@ -369,7 +303,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
             }`}
           >
             <BookOpen className="w-3.5 h-3.5" />
-            <span>Theo Chuyên đề</span>
+            <span>Chuyên đề</span>
           </button>
 
           <button
@@ -382,7 +316,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
             }`}
           >
             <Trophy className="w-3.5 h-3.5 text-amber-300" />
-            <span>Thi Giữa kỳ 1</span>
+            <span>GK1</span>
           </button>
 
           <button
@@ -395,7 +329,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
             }`}
           >
             <Award className="w-3.5 h-3.5 text-amber-300" />
-            <span>Thi Cuối kỳ 1</span>
+            <span>HK1</span>
           </button>
 
           <button
@@ -408,7 +342,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
             }`}
           >
             <Trophy className="w-3.5 h-3.5 text-amber-300" />
-            <span>Thi Giữa kỳ 2</span>
+            <span>GK2</span>
           </button>
 
           <button
@@ -421,7 +355,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
             }`}
           >
             <Award className="w-3.5 h-3.5 text-amber-300" />
-            <span>Thi Cuối kỳ 2</span>
+            <span>HK2</span>
           </button>
         </div>
 
@@ -440,7 +374,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
                 }`}
               >
                 <BookOpen className="w-4 h-4" />
-                <span>Chủ đề có sẵn (SGK Toán {selectedGrade})</span>
+                <span>Chủ đề SGK</span>
               </button>
               <button
                 type="button"
@@ -452,7 +386,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
                 }`}
               >
                 <Sparkles className="w-4 h-4 text-amber-500" />
-                <span>Chủ đề học sinh yêu cầu (Tự gõ)</span>
+                <span>Tự nhập</span>
               </button>
             </div>
 
@@ -464,7 +398,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
                       type="text"
                       value={topicSearch}
                       onChange={(e) => setTopicSearch(e.target.value)}
-                      placeholder="Tìm chuyên đề nhanh..."
+                      placeholder="Tìm chuyên đề..."
                       className="w-full pl-3 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
                     />
                   </div>
@@ -566,14 +500,14 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
                 <div>
                   <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1.5 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-violet-600" />
-                    <span>Em muốn luyện dạng toán nào? Hãy gõ chính xác vào ô dưới:</span>
+                    <span>Nhập chuyên đề</span>
                   </label>
                   <div className="relative">
                     <input
                       type="text"
                       value={customTopic}
                       onChange={(e) => setCustomTopic(e.target.value)}
-                      placeholder="Ví dụ: Phân tích đa thức thành nhân tử, Rút gọn phân thức, Định lý Thalès, Tìm x nguyên..."
+                      placeholder="Ví dụ: Phân tích đa thức thành nhân tử"
                       className="w-full pl-3.5 pr-16 py-2.5 bg-white dark:bg-slate-800 border-2 border-violet-300 dark:border-violet-700 rounded-xl text-xs sm:text-sm font-bold text-slate-900 dark:text-white placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500 shadow-2xs"
                     />
                     {customTopic && (
@@ -591,7 +525,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
                 {/* Quick Suggestion Chips */}
                 <div>
                   <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1.5">
-                    💡 Hoặc bấm chọn nhanh các chuyên đề thường gặp môn Toán lớp {selectedGrade}:
+                    Gợi ý nhanh
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     {POPULAR_STUDENT_REQUESTS[selectedGrade]?.map((popTopic, idx) => {
@@ -616,37 +550,6 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
               </div>
             )}
 
-            {/* Confirmation Banner */}
-            <div className="p-3 bg-violet-50/80 dark:bg-violet-950/40 rounded-2xl border border-violet-200 dark:border-violet-800 flex items-center justify-between text-xs">
-              <div className="flex items-center space-x-2 text-violet-950 dark:text-violet-200">
-                <CheckCircle2 className="w-4 h-4 text-violet-600 shrink-0" />
-                <span>Chủ đề được chọn ôn tập: <strong className="text-violet-700 dark:text-violet-300">{activeTopicName}</strong></span>
-              </div>
-              <span className="text-[11px] text-violet-600 dark:text-violet-400 font-extrabold uppercase tracking-wider">
-                {topicMode === 'preset' ? 'Chủ đề SGK' : 'Chủ đề yêu cầu'}
-              </span>
-            </div>
-
-            {/* Quick Socratic Hint for this practice topic */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-indigo-50/80 dark:bg-indigo-950/40 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 text-xs">
-              <span className="text-indigo-950 dark:text-indigo-200 font-medium">
-                💡 Muốn xem trước phương pháp và công thức cốt lõi của dạng toán này?
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setSocraticPracticeContext({
-                    questionText: `Chuyên đề: ${activeTopicName}. Hãy nhắc lại các định nghĩa, công thức cốt lõi và các lỗi sai thường gặp khi giải dạng toán này.`,
-                    grade: String(selectedGrade),
-                    topic: activeTopicName,
-                  });
-                }}
-                className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-xs"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
-                <span>Gia sư AI gợi mở</span>
-              </button>
-            </div>
           </div>
         ) : (
           /* Midterm / Final Exam Scope Summary Banner */
@@ -654,15 +557,12 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
             <div className="font-bold text-sm mb-1 flex items-center gap-1.5 text-indigo-700 dark:text-indigo-300">
               <Award className="w-4 h-4 text-amber-500" />
               <span>
-                {practiceScope === 'gk1' && `Ma trận đề Giữa học kỳ 1 (Toán ${selectedGrade})`}
-                {practiceScope === 'hk1' && `Ma trận đề Cuối học kỳ 1 (Toán ${selectedGrade})`}
-                {practiceScope === 'gk2' && `Ma trận đề Giữa học kỳ 2 (Toán ${selectedGrade})`}
-                {practiceScope === 'hk2' && `Ma trận đề Cuối học kỳ 2 (Toán ${selectedGrade})`}
+                {practiceScope === 'gk1' && `Giữa kỳ 1 • Toán ${selectedGrade}`}
+                {practiceScope === 'hk1' && `Cuối kỳ 1 • Toán ${selectedGrade}`}
+                {practiceScope === 'gk2' && `Giữa kỳ 2 • Toán ${selectedGrade}`}
+                {practiceScope === 'hk2' && `Cuối kỳ 2 • Toán ${selectedGrade}`}
               </span>
             </div>
-            <p className="text-slate-600 dark:text-slate-400 leading-relaxed text-[11px]">
-              Hệ thống sẽ tự động quét toàn bộ kho đề thi của Thầy/Cô, chọn lọc các câu hỏi thuộc khung chương trình {practiceScope.toUpperCase()} (kết hợp cả Đại số và Hình học SGK Kết nối tri thức) để tạo thành một đề thi thử toàn diện như thi thật!
-            </p>
           </div>
         )}
       </div>
@@ -673,7 +573,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
         <div>
           <label className="block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-1.5">
             <Target className="w-4 h-4 text-violet-600" />
-            <span>3. Mức độ thử thách:</span>
+            <span>3. Mức độ</span>
           </label>
           <div className="grid grid-cols-2 gap-2 text-xs">
             <button
@@ -685,7 +585,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
                   : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800'
               }`}
             >
-              🔵 Toàn diện (Ma trận chuẩn)
+              Hỗn hợp
             </button>
             <button
               type="button"
@@ -696,7 +596,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
                   : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800'
               }`}
             >
-              🟢 Cơ bản (Củng cố kiến thức)
+              Cơ bản
             </button>
             <button
               type="button"
@@ -707,7 +607,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
                   : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800'
               }`}
             >
-              🟡 Vận dụng (Rèn giải bài khó)
+              Vận dụng
             </button>
             <button
               type="button"
@@ -718,7 +618,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
                   : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800'
               }`}
             >
-              🔴 Nâng cao (Điểm 9 - 10)
+              Nâng cao
             </button>
           </div>
         </div>
@@ -727,7 +627,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
         <div>
           <label className="block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-1.5">
             <Clock className="w-4 h-4 text-violet-600" />
-            <span>4. Quy mô đề &amp; Thời gian:</span>
+            <span>4. Số câu</span>
           </label>
           <div className="grid grid-cols-3 gap-2 text-xs">
             <button
@@ -740,7 +640,6 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
               }`}
             >
               <div>5 câu</div>
-              <div className="text-[10px] opacity-75 font-normal">10 phút (Nhanh)</div>
             </button>
             <button
               type="button"
@@ -752,7 +651,6 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
               }`}
             >
               <div>10 câu</div>
-              <div className="text-[10px] opacity-75 font-normal">20 phút (Tiêu chuẩn)</div>
             </button>
             <button
               type="button"
@@ -764,7 +662,6 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
               }`}
             >
               <div>20 câu</div>
-              <div className="text-[10px] opacity-75 font-normal">40 phút (Thi thật)</div>
             </button>
           </div>
         </div>
@@ -774,13 +671,13 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2 border-t border-slate-100 dark:border-slate-800">
         <div>
           <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-            Họ và tên học sinh <span className="text-rose-500">*</span>
+            Họ và tên <span className="text-rose-500">*</span>
           </label>
           <input
             type="text"
             value={studentName}
             onChange={(e) => setStudentName(e.target.value)}
-            placeholder="Ví dụ: Trần Minh Hoàng"
+            placeholder="Họ và tên"
             className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500"
             required
           />
@@ -788,13 +685,13 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
 
         <div>
           <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-            Lớp học
+            Lớp
           </label>
           <input
             type="text"
             value={customClassName}
             onChange={(e) => setCustomClassName(e.target.value)}
-            placeholder={`Ví dụ: ${selectedGrade}A1, ${selectedGrade}B...`}
+            placeholder={`Ví dụ: ${selectedGrade}A1`}
             className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500"
           />
         </div>
@@ -806,10 +703,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
           <Loader2 className="w-5 h-5 text-violet-600 animate-spin shrink-0" />
           <div className="min-w-0 flex-1">
             <p className="text-xs font-bold text-violet-900 dark:text-violet-200">
-              {generationStep || 'Hệ thống 3 Tầng đang lắp ráp đề thi...'}
-            </p>
-            <p className="text-[11px] text-violet-700/80 dark:text-violet-300/80 mt-0.5">
-              Đang tối ưu câu hỏi từ Kho đề Thầy/Cô và AI theo chuẩn SGK Kết nối tri thức...
+              {generationStep || 'Đang tạo bài luyện...'}
             </p>
           </div>
         </div>
@@ -825,22 +719,16 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
         {isGenerating ? (
           <>
             <Loader2 className="w-5 h-5 animate-spin" />
-            <span>Đang lắp ráp đề thi 3 tầng...</span>
+            <span>Đang tạo...</span>
           </>
         ) : (
           <>
             <Sparkles className="w-5 h-5 text-amber-300" />
-            <span>BẮT ĐẦU TỰ LUYỆN NGAY (HỆ THỐNG 3 TẦNG)</span>
+            <span>Tạo bài luyện</span>
             <ArrowRight className="w-5 h-5 ml-1" />
           </>
         )}
       </button>
-
-      <div className="text-center">
-        <p className="text-[11px] text-slate-500 dark:text-slate-400">
-          ✓ Tích hợp Kho đề Thầy/Cô • ✓ Đổi số ngẫu nhiên chống chép bài • ✓ AI chấm điểm tức thì kèm lời giải chi tiết
-        </p>
-      </div>
 
       {/* Socratic Tutor Modal for Practice */}
       {socraticPracticeContext && (
