@@ -140,12 +140,12 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
 
   const handleStartPractice = async () => {
     if (!studentName.trim()) {
-      alert('Vui lòng nhập họ và tên của em trước khi bắt đầu.');
+      setGenerationError('Hãy nhập họ và tên trước khi bắt đầu.');
       return;
     }
 
     if (!activeTopicName.trim()) {
-      alert('Vui lòng chọn hoặc nhập chuyên đề Toán muốn ôn tập.');
+      setGenerationError('Hãy chọn hoặc nhập chuyên đề muốn ôn tập.');
       return;
     }
 

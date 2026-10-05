@@ -356,7 +356,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
       }
       setNewPaperImages((prev) => [...prev, ...base64List]);
     } catch (err: any) {
-      alert('Lỗi nén ảnh bài làm: ' + (err?.message || err));
+      showToast('Không xử lý được ảnh bài làm. Hãy thử ảnh khác.', 'error');
     } finally {
       setIsProcessingPaperImages(false);
       e.target.value = '';
@@ -369,11 +369,11 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
   const handleSaveNewPaperSubmission = () => {
     const studentName = newPaperStudentName.trim();
     if (!studentName) {
-      alert('Vui lòng nhập hoặc chọn tên học sinh.');
+      showToast('Hãy nhập hoặc chọn tên học sinh.', 'warning');
       return;
     }
     if (newPaperImages.length === 0) {
-      alert('Vui lòng tải lên ít nhất 1 ảnh chụp bài làm giấy.');
+      showToast('Hãy thêm ít nhất 1 ảnh bài làm giấy.', 'warning');
       return;
     }
 
@@ -971,7 +971,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
         {/* Footer Bar */}
         <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
           <div className="text-xs text-slate-500 font-medium">
-            Lõi chấm: <strong>Google Gemini Vision + Matsuda Step Diagnostic</strong> (Chuẩn GDPT 2018)
+            Lõi chấm: <strong>Matsuda AI • Vision + Step Diagnostic</strong> (Chuẩn GDPT 2018)
           </div>
 
           <div className="flex items-center space-x-2">
