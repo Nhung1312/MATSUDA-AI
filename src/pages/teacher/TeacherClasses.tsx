@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ClassRoom, Student, GradeLevel, Assignment } from '../../types';
+import React, { useMemo, useState } from 'react';
+import { ClassRoom, Student, GradeLevel, Assignment, Submission } from '../../types';
 import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
 import { useAuth } from '../../context/AuthContext';
@@ -25,13 +25,15 @@ import {
 interface TeacherClassesProps {
   classes: ClassRoom[];
   assignments?: Assignment[];
+  submissions?: Submission[];
   onRefresh: () => void;
   onNavigate?: (tab: string, params?: any) => void;
 }
 
-export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], assignments = [], onRefresh, onNavigate }) => {
+export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], assignments = [], submissions = [], onRefresh, onNavigate }) => {
   const safeClasses = Array.isArray(classes) ? classes.filter((c): c is ClassRoom => Boolean(c && typeof c === 'object')) : [];
   const safeAssignments = Array.isArray(assignments) ? assignments.filter((a): a is Assignment => Boolean(a && typeof a === 'object')) : [];
+  const safeSubmissions = Array.isArray(submissions) ? submissions.filter((s): s is Submission => Boolean(s && typeof s === 'object')) : [];
   const { user } = useAuth();
   const [selectedClassId, setSelectedClassId] = useState<string>(safeClasses[0]?.id || '');
   const [showAddClassModal, setShowAddClassModal] = useState(false);
@@ -61,6 +63,10 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
   const [excelPasteText, setExcelPasteText] = useState('');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [classSubTab, setClassSubTab] = useState<'students' | 'assignments'>('students');
+  const [classFormError, setClassFormError] = useState('');
+  const [studentFormError, setStudentFormError] = useState('');
+
+  const normalizeKey = (value?: string) => (value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi-VN');
 
   const currentClass = safeClasses.find(c => c.id === selectedClassId) || safeClasses[0];
 
@@ -77,6 +83,12 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
   const handleCreateClass = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClassName.trim()) return;
+    const duplicated = safeClasses.some(cls => normalizeKey(cls.name) === normalizeKey(newClassName) && normalizeKey(cls.academicYear) === normalizeKey(newAcademicYear));
+    if (duplicated) {
+      setClassFormError(`Lớp ${newClassName.trim().toUpperCase()} đã tồn tại trong năm học ${newAcademicYear}.`);
+      return;
+    }
+    setClassFormError('');
 
     const newClass: ClassRoom = {
       id: `class_${Date.now()}`,
@@ -96,7 +108,12 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
   };
 
   const handleDeleteClass = (classId: string, className: string) => {
-    if (window.confirm(`Bạn có chắc muốn xóa lớp ${className}? Tất cả danh sách học sinh thuộc lớp này sẽ bị xóa.`)) {
+    const cls = safeClasses.find(c => c.id === classId);
+    const linkedAssignments = safeAssignments.filter(a => a.classId === classId || a.classId === className || a.className === className);
+    const assignmentKeys = new Set(linkedAssignments.flatMap(a => [a.id, a.assignmentCode].filter(Boolean)));
+    const linkedSubmissions = safeSubmissions.filter(sub => sub.classId === classId || sub.className === className || assignmentKeys.has(sub.assignmentId));
+    const warning = `Bạn có chắc muốn xóa lớp ${className}?\n\n• ${cls?.students?.length || 0} học sinh\n• ${linkedAssignments.length} bài đã giao liên quan\n• ${linkedSubmissions.length} bài nộp liên quan\n\nChỉ hồ sơ lớp và danh sách học sinh bị xóa; bài đã giao và bài nộp không bị xóa tự động.`;
+    if (window.confirm(warning)) {
       StorageService.deleteClass(classId);
       syncToCloud(StorageService.getClasses());
       onRefresh();
@@ -110,6 +127,14 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
   const handleAddSingleStudent = (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentClass || !studentName.trim()) return;
+    const students = currentClass.students || [];
+    const duplicateCode = studentCode.trim() && students.some(st => normalizeKey(st.code) === normalizeKey(studentCode));
+    const duplicateName = students.some(st => normalizeKey(st.name) === normalizeKey(studentName));
+    if (duplicateCode || duplicateName) {
+      setStudentFormError(duplicateCode ? 'Mã học sinh này đã tồn tại trong lớp.' : 'Học sinh có cùng họ tên đã tồn tại trong lớp. Hãy kiểm tra trước khi thêm.');
+      return;
+    }
+    setStudentFormError('');
 
     const newStudent: Student = {
       id: `st_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
@@ -144,59 +169,58 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
     onRefresh();
   };
 
-  const handleImportExcel = () => {
-    if (!currentClass || !excelPasteText.trim()) return;
+  const importPreview = useMemo(() => {
+    if (!currentClass || !excelPasteText.trim()) return { valid: [] as Student[], skipped: [] as string[] };
+    const existingNames = new Set((currentClass.students || []).map(st => normalizeKey(st.name)));
+    const existingCodes = new Set((currentClass.students || []).map(st => normalizeKey(st.code)).filter(Boolean));
+    const batchNames = new Set<string>();
+    const batchCodes = new Set<string>();
+    const valid: Student[] = [];
+    const skipped: string[] = [];
 
-    const lines = excelPasteText.split('\n').map(l => l.trim()).filter(Boolean);
-    const newStudents: Student[] = [];
-
-    lines.forEach((line, index) => {
-      // Tách tab hoặc dấu phẩy nếu copy từ bảng tính Excel
+    excelPasteText.split('\n').map(l => l.trim()).filter(Boolean).forEach((line, index) => {
       const columns = line.split(/[\t,;]/).map(c => c.trim()).filter(Boolean);
-      
+      const lower = columns.map(c => normalizeKey(c));
+      if (index === 0 && lower.some(c => ['stt', 'họ và tên', 'họ tên', 'tên học sinh', 'mã học sinh', 'mã hs', 'giới tính'].includes(c))) {
+        skipped.push(`Dòng ${index + 1}: bỏ qua tiêu đề`);
+        return;
+      }
       let name = '';
-      let code = `HS${(currentClass.students?.length || 0) + index + 1}`;
+      let code = '';
       let gender: 'Nam' | 'Nữ' = 'Nam';
-
       if (columns.length >= 2) {
-        // Có thể cột 0 là STT/Mã và cột 1 là Tên
-        if (/^\d+$/.test(columns[0]) || columns[0].toLowerCase().startsWith('hs')) {
-          code = columns[0];
-          name = columns[1];
-          if (columns[2]) {
-            gender = columns[2].toLowerCase().includes('nữ') ? 'Nữ' : 'Nam';
-          }
+        if (/^\d+$/.test(columns[0])) {
+          name = columns[1] || '';
+          const genderCell = columns.find(c => /^(nam|nữ|nu)$/i.test(c));
+          if (genderCell) gender = normalizeKey(genderCell).includes('nữ') || normalizeKey(genderCell) === 'nu' ? 'Nữ' : 'Nam';
+        } else if (columns[0].toLowerCase().startsWith('hs')) {
+          code = columns[0]; name = columns[1] || '';
+          if (columns[2]) gender = normalizeKey(columns[2]).includes('nữ') || normalizeKey(columns[2]) === 'nu' ? 'Nữ' : 'Nam';
         } else {
-          name = columns[0];
-          code = columns[1];
+          name = columns[0]; code = columns[1] || '';
+          if (columns[2]) gender = normalizeKey(columns[2]).includes('nữ') || normalizeKey(columns[2]) === 'nu' ? 'Nữ' : 'Nam';
         }
       } else {
-        // Chỉ có 1 cột họ tên (có thể kèm STT ví dụ: "1. Nguyễn Văn An")
         name = line.replace(/^\d+[\.\-\)]\s*/, '').trim();
       }
-
-      if (name) {
-        newStudents.push({
-          id: `st_${Date.now()}_${index}`,
-          name,
-          classId: currentClass.id,
-          code,
-          gender
-        });
-      }
+      if (!name) { skipped.push(`Dòng ${index + 1}: thiếu họ tên`); return; }
+      const nameKey = normalizeKey(name), codeKey = normalizeKey(code);
+      if (existingNames.has(nameKey) || batchNames.has(nameKey)) { skipped.push(`Dòng ${index + 1}: trùng họ tên “${name}”`); return; }
+      if (codeKey && (existingCodes.has(codeKey) || batchCodes.has(codeKey))) { skipped.push(`Dòng ${index + 1}: trùng mã “${code}”`); return; }
+      const fallbackCode = `HS${(currentClass.students?.length || 0) + valid.length + 1}`;
+      valid.push({ id: `st_${Date.now()}_${index}`, name, classId: currentClass.id, code: code || fallbackCode, gender });
+      batchNames.add(nameKey); batchCodes.add(normalizeKey(code || fallbackCode));
     });
+    return { valid, skipped };
+  }, [currentClass, excelPasteText]);
 
-    if (newStudents.length > 0) {
-      const updatedClass: ClassRoom = {
-        ...currentClass,
-        students: [...(currentClass.students || []), ...newStudents]
-      };
-      StorageService.saveClass(updatedClass);
-      syncToCloud(StorageService.getClasses());
-      onRefresh();
-      setExcelPasteText('');
-      setShowImportExcelModal(false);
-    }
+  const handleImportExcel = () => {
+    if (!currentClass || importPreview.valid.length === 0) return;
+    StorageService.saveClass({ ...currentClass, students: [...(currentClass.students || []), ...importPreview.valid] });
+    syncToCloud(StorageService.getClasses());
+    onRefresh();
+    setExcelPasteText('');
+    setShowImportExcelModal(false);
   };
 
   const filteredStudents = (currentClass?.students || []).filter(s =>
@@ -594,7 +618,7 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
                 <input
                   type="text"
                   value={newClassName}
-                  onChange={(e) => setNewClassName(e.target.value)}
+                  onChange={(e) => { setNewClassName(e.target.value); setClassFormError(''); }}
                   placeholder="Ví dụ: 6A2, 7A1..."
                   className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-bold uppercase"
                   required
@@ -611,6 +635,7 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
                 />
               </div>
 
+              {classFormError && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl">{classFormError}</div>}
               <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
@@ -647,7 +672,7 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
                 <input
                   type="text"
                   value={studentName}
-                  onChange={(e) => setStudentName(e.target.value)}
+                  onChange={(e) => { setStudentName(e.target.value); setStudentFormError(''); }}
                   placeholder="Ví dụ: Nguyễn Văn Hùng"
                   className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm"
                   required
@@ -660,7 +685,7 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
                   <input
                     type="text"
                     value={studentCode}
-                    onChange={(e) => setStudentCode(e.target.value)}
+                    onChange={(e) => { setStudentCode(e.target.value); setStudentFormError(''); }}
                     placeholder="HS..."
                     className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono"
                   />
@@ -678,6 +703,7 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
                 </div>
               </div>
 
+              {studentFormError && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl">{studentFormError}</div>}
               <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
@@ -728,9 +754,15 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
               <div className="p-3 bg-emerald-50 text-emerald-800 text-xs rounded-xl flex items-start space-x-2">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>
-                  Hệ thống tự động lọc bỏ số thứ tự đầu dòng và phân tách tên học sinh một cách chính xác.
+                  Xem trước: <strong>{importPreview.valid.length}</strong> học sinh hợp lệ sẽ được thêm; <strong>{importPreview.skipped.length}</strong> dòng được bỏ qua/cần kiểm tra.
                 </span>
               </div>
+              {importPreview.skipped.length > 0 && (
+                <div className="max-h-28 overflow-y-auto p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 space-y-1">
+                  {importPreview.skipped.slice(0, 12).map((item, index) => <div key={index}>• {item}</div>)}
+                  {importPreview.skipped.length > 12 && <div>… và {importPreview.skipped.length - 12} dòng khác</div>}
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end space-x-2 pt-4 border-t border-slate-100 mt-4">
@@ -744,10 +776,10 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
               <button
                 type="button"
                 onClick={handleImportExcel}
-                disabled={!excelPasteText.trim()}
+                disabled={!excelPasteText.trim() || importPreview.valid.length === 0}
                 className="px-5 py-2 text-sm font-bold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl shadow-sm"
               >
-                Nhập danh sách học sinh
+                Nhập {importPreview.valid.length} học sinh
               </button>
             </div>
           </div>
