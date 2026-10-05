@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Assignment, ClassRoom, Submission, QuestionAnalysis, StudentAnswer, StepAnalysis, StepErrorType, StepGradingResponse } from '../../types';
 import { GradingService } from '../../services/gradingService';
 import { aiService } from '../../services/aiService';
@@ -139,6 +139,37 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   const currentSubmissions = useMemo(() => {
     return safeSubmissions.filter(s => s.assignmentId === currentAssignment?.id);
   }, [safeSubmissions, currentAssignment]);
+
+  const pendingReviewSubmissions = useMemo(
+    () => currentSubmissions.filter(s => getPendingReviewCount(s) > 0),
+    [currentSubmissions, currentAssignment]
+  );
+
+  const nextPendingSubmission = selectedSubmissionDetail
+    ? pendingReviewSubmissions.find(s => s.id !== selectedSubmissionDetail.id) || null
+    : pendingReviewSubmissions[0] || null;
+
+  const selectedPendingQueuePosition = selectedSubmissionDetail
+    ? pendingReviewSubmissions.findIndex(s => s.id === selectedSubmissionDetail.id)
+    : -1;
+
+  useEffect(() => {
+    if (!selectedSubmissionDetail) {
+      setTeacherScoreInput({});
+      setTeacherFeedbackInput({});
+      return;
+    }
+
+    const scoreMap: Record<string, number> = {};
+    const feedbackMap: Record<string, string> = {};
+    selectedSubmissionDetail.answers.forEach(ans => {
+      if (ans.teacherScore !== undefined) scoreMap[ans.questionId] = ans.teacherScore;
+      if (ans.teacherFeedback) feedbackMap[ans.questionId] = ans.teacherFeedback;
+    });
+    setTeacherScoreInput(scoreMap);
+    setTeacherFeedbackInput(feedbackMap);
+    setSavedGradeSuccess({});
+  }, [selectedSubmissionDetail?.id]);
 
   // Compute full stats
   const stats = useMemo(() => {
@@ -482,6 +513,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     setSelectedSubmissionDetail(updatedSubmission);
     StorageService.saveSubmission(updatedSubmission);
     FirestoreService.saveResult(updatedSubmission).catch(() => {});
+    window.dispatchEvent(new CustomEvent('submissions-updated'));
 
     setSavedGradeSuccess(prev => ({ ...prev, [ans.questionId]: true }));
     setTimeout(() => {
@@ -489,11 +521,13 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     }, 2500);
   };
 
-  const handleFinalizeSubmission = () => {
+  const finalizeSubmission = (openNext: boolean) => {
     if (!selectedSubmissionDetail) return;
     const pending = getPendingReviewCount(selectedSubmissionDetail);
     if (pending > 0) return;
 
+    const currentId = selectedSubmissionDetail.id;
+    const next = pendingReviewSubmissions.find(s => s.id !== currentId) || null;
     const finalized: Submission = {
       ...selectedSubmissionDetail,
       needsTeacherReview: false,
@@ -501,9 +535,17 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       ungradedCount: 0,
       gradingStatus: 'graded'
     };
-    setSelectedSubmissionDetail(finalized);
+
     StorageService.saveSubmission(finalized);
     FirestoreService.saveResult(finalized).catch(() => {});
+    window.dispatchEvent(new CustomEvent('submissions-updated'));
+
+    if (openNext && next) {
+      setSelectedSubmissionDetail(next);
+      setSubmissionReviewFilter('pending');
+    } else {
+      setSelectedSubmissionDetail(finalized);
+    }
   };
 
   // Export CSV
@@ -1555,6 +1597,11 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                   Bài làm của {selectedSubmissionDetail.studentName}
                 </h3>
                 <p className="text-xs text-slate-500">
+                  {selectedPendingQueuePosition >= 0 && (
+                    <span className="font-bold text-amber-700">
+                      Bài cần duyệt {selectedPendingQueuePosition + 1}/{pendingReviewSubmissions.length} •{' '}
+                    </span>
+                  )}
                   Thời gian: {GradingService.formatDuration(selectedSubmissionDetail.timeSpentSeconds)} •{' '}
                   <strong className={selectedPendingReviewCount > 0 ? 'text-amber-700 text-sm' : 'text-indigo-600 text-sm'}>
                     {selectedSubmissionDetail.totalScore}/10
@@ -1572,6 +1619,20 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                   <Sparkles className="w-3.5 h-3.5 text-amber-300" />
                   <span>{gradingSingleInProgress ? 'Đang chấm AI...' : 'AI chấm toàn bài'}</span>
                 </button>
+                {nextPendingSubmission && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedSubmissionDetail(nextPendingSubmission);
+                      setSubmissionReviewFilter('pending');
+                    }}
+                    className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold text-xs rounded-xl"
+                    title="Mở bài tiếp theo đang chờ duyệt"
+                  >
+                    <span>Bài tiếp theo</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 <button
                   onClick={() => setSelectedSubmissionDetail(null)}
                   className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
@@ -1959,15 +2020,28 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                       : 'Sau khi chốt, phiếu học sinh sẽ chuyển sang KẾT QUẢ CHÍNH THỨC.'}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleFinalizeSubmission}
-                  disabled={selectedPendingReviewCount > 0}
-                  className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Chốt kết quả</span>
-                </button>
+                <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={() => finalizeSubmission(false)}
+                    disabled={selectedPendingReviewCount > 0}
+                    className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Chốt kết quả</span>
+                  </button>
+                  {nextPendingSubmission && (
+                    <button
+                      type="button"
+                      onClick={() => finalizeSubmission(true)}
+                      disabled={selectedPendingReviewCount > 0}
+                      className="w-full sm:w-auto px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <span>Chốt & bài tiếp theo</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
