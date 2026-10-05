@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { BookOpen, User as UserIcon, GraduationCap, RotateCcw, Sparkles, Moon, Sun, LogOut, LogIn, Trash2, BookmarkCheck, Trophy } from 'lucide-react';
+import { BookOpen, User as UserIcon, GraduationCap, Sparkles, Moon, Sun, LogOut, LogIn, BookmarkCheck, Trophy } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { GradeLevel } from '../types';
@@ -81,6 +81,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
 
           {/* Grade Quick Navigation Buttons in Navbar */}
           <div className="hidden sm:flex items-center space-x-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+            <span className="px-2 text-[10px] font-black uppercase tracking-wider text-slate-400">Lớp</span>
             {(['6', '7', '8', '9'] as GradeLevel[]).map((g) => {
               const active = location.pathname === `/grade/${g}`;
               return (
@@ -93,7 +94,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
                       : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  Lớp {g}
+                  {g}
                 </Link>
               );
             })}
@@ -162,27 +163,6 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
               )}
             </button>
 
-            {/* Quick Demo Reset (Desktop only to save space on mobile) */}
-            <button
-              onClick={onResetData}
-              title="Khôi phục dữ liệu mẫu chuẩn (Lớp 6, 7, 8, 9)"
-              className="hidden sm:inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-              <span>Dữ liệu mẫu</span>
-            </button>
-
-            {/* Quick Clear Demo Data */}
-            {onClearDemoData && (
-              <button
-                onClick={onClearDemoData}
-                title="Xóa toàn bộ các đề thi, lớp học và kết quả mẫu có sẵn"
-                className="hidden sm:inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200/80 dark:border-rose-800/80 transition-colors cursor-pointer active:scale-95"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400" />
-                <span>Xóa dữ liệu mẫu</span>
-              </button>
-            )}
 
             {/* Desktop Role switchers */}
             <div className="hidden md:flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">

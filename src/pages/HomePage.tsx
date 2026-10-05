@@ -55,27 +55,12 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
           </div>
 
           {/* Main Heading */}
-          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-600 to-teal-600 dark:from-blue-400 dark:via-indigo-400 dark:to-teal-300 tracking-tight leading-tight">
-            Giao bài • Chấm từng bước • Học từ lỗi sai
+          <h1 className="text-2xl sm:text-3xl lg:text-[2.6rem] font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-600 to-teal-600 dark:from-blue-400 dark:via-indigo-400 dark:to-teal-300 tracking-tight leading-tight">
+            Chấm từng bước • Học từ lỗi sai
           </h1>
-          <p className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
-            AI hỗ trợ giáo viên phát hiện lỗi gốc, tạo bài luyện cá nhân và theo dõi tiến bộ; giáo viên luôn giữ quyền duyệt điểm.
+          <p className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 max-w-xl mx-auto">
+            PDF / Ảnh / Word / LaTeX → giáo viên duyệt → giao bài → AI tìm lỗi gốc.
           </p>
-
-          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900 text-[10px] font-bold text-blue-700 dark:text-blue-300">
-              <FileCheck className="w-3 h-3" />
-              Chấm theo từng bước
-            </span>
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-900 text-[10px] font-bold text-amber-700 dark:text-amber-300">
-              <Sparkles className="w-3 h-3" />
-              Tìm lỗi gốc
-            </span>
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-900 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
-              <BarChart3 className="w-3 h-3" />
-              Theo dõi tiến bộ
-            </span>
-          </div>
 
           {/* Search / Enter Assignment Code Box */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-2 sm:p-2.5 shadow-md border border-indigo-100 dark:border-slate-800 text-left mt-2">
@@ -135,7 +120,7 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
                   <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                  Giao bài, AI chấm từng bước &amp; theo dõi lỗi sai
+                  Giao bài • Xem kết quả
                 </p>
               </div>
             </Link>
@@ -158,7 +143,7 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
                   </span>
                 </div>
                 <p className="text-[11px] text-orange-800/80 dark:text-orange-200/80 truncate mt-0.5">
-                  Đấu trường thi, bảng vàng xếp hạng
+                  Thi &amp; xếp hạng
                 </p>
               </div>
             </Link>
@@ -177,7 +162,7 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
                   <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                  Nhập mã bài tập &amp; kho tự luyện
+                  Nhập mã • Tự luyện
                 </p>
               </div>
             </Link>
@@ -191,11 +176,11 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
               </div>
               <div>
                 <div className="flex items-center gap-1.5">
-                  <span className="font-black text-xs sm:text-sm">Góc Tự Luyện &amp; Ôn Tập Chuyên Đề AI</span>
+                  <span className="font-black text-xs sm:text-sm">Tự luyện với AI</span>
                   <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-900 text-[10px] font-black uppercase">Mới</span>
                 </div>
                 <p className="text-xs text-indigo-100 mt-0.5">
-                  Chọn lớp 6-9 và chuyên đề bất kỳ — AI tạo ngay đề trắc nghiệm kèm lời giải từng bước.
+                  Chọn lớp, chọn chuyên đề → AI tạo bài luyện.
                 </p>
               </div>
             </div>

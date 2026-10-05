@@ -394,6 +394,7 @@ function AppContent() {
   // 8H: tách rõ trải nghiệm học sinh và giáo viên để demo không bị rối.
   const isTakingExam = location.pathname === '/exam' || location.pathname.endsWith('/exam');
   const isTeacherArea = location.pathname.startsWith('/teacher');
+  const isHomePage = location.pathname === '/';
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
@@ -401,7 +402,7 @@ function AppContent() {
       <Navbar onResetData={handleResetData} onClearDemoData={handleClearDemoData} />
 
       {/* Top Zustand Learning Progress Bar (Sticky / Header Status Bar) */}
-      {!isTakingExam && !isTeacherArea && (
+      {!isTakingExam && !isTeacherArea && !isHomePage && (
         <StudentProgressBar assignments={assignments} />
       )}
 
