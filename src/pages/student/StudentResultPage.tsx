@@ -686,9 +686,9 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         )}
 
         {/* DETAILED ANSWER REVIEW & RESULT SHEET */}
-        {effectiveReviewMode !== 'score_only' ? (
-          <div className="space-y-6">
+        <div className="space-y-6">
             {/* VIEW MODE TABS: PHIẾU KẾT QUẢ THI VS CHI TIẾT TỪNG CÂU */}
+            {effectiveReviewMode !== 'score_only' && (
             <div className="flex bg-slate-200/80 p-1.5 rounded-2xl max-w-md mx-auto shadow-inner border border-slate-300 gap-1.5 print:hidden">
               <button
                 onClick={() => setResultViewMode('sheet')}
@@ -713,6 +713,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 <span>{effectiveReviewMode === 'wrong_only' ? 'Câu sai' : 'Chi tiết'}</span>
               </button>
             </div>
+            )}
 
             {/* 1. OFFICIAL EXAM RESULT SHEET VIEW */}
             {resultViewMode === 'sheet' && (
@@ -729,7 +730,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
             )}
 
             {/* 2. DETAILED ANSWER REVIEW */}
-            {resultViewMode === 'detailed' && (
+            {effectiveReviewMode !== 'score_only' && resultViewMode === 'detailed' && (
               <div id="answer-review-section" className="space-y-6 scroll-mt-24">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
                   <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
@@ -1089,11 +1090,6 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
           </div>
         )}
       </div>
-    ) : (
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center text-xs text-slate-600">
-            Giáo viên chọn chế độ <strong>Chỉ xem điểm</strong> cho bài này.
-          </div>
-        )}
       </div>
 
       {/* LIGHTBOX VIEWER */}
