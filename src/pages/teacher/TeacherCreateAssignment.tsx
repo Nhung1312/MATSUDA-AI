@@ -32,7 +32,6 @@ import {
   FileBadge,
   AlertTriangle,
   Image as ImageIcon,
-  Camera,
   Filter
 } from 'lucide-react';
 
@@ -669,7 +668,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">
-              {isEditing ? 'Chỉnh sửa bài tập & Câu hỏi' : 'Tạo bài tập & Đề kiểm tra mới'}
+              {isEditing ? 'Chỉnh sửa bài tập' : 'Tạo bài tập'}
             </h1>
             {isEditing && editingAssignment && (
               <span className="px-2.5 py-1 rounded-full text-xs font-black bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
@@ -679,27 +678,9 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
           </div>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             {isEditing
-              ? `Chỉnh sửa nội dung đề bài, đáp án đúng, thang điểm và các câu hỏi của bài tập.`
-              : 'Soạn đề linh hoạt: nhập tay hoặc tách câu hỏi từ PDF, ảnh chụp, Word, LaTeX, Excel/JSON.'}
+              ? 'Chỉnh câu hỏi, đáp án và thang điểm.'
+              : 'Nhập tay hoặc bắt đầu từ PDF / Ảnh / Word / LaTeX.'}
           </p>
-          {!isEditing && (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-black uppercase text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-2.5 py-1">
-                Không cần soạn lại từ đầu
-              </span>
-              {['PDF', 'Ảnh chụp', 'Word', 'LaTeX'].map((format) => (
-                <span
-                  key={format}
-                  className="text-[10px] font-bold text-slate-600 bg-white border border-slate-200 rounded-lg px-2 py-1"
-                >
-                  {format}
-                </span>
-              ))}
-              <span className="text-[10px] text-slate-500">
-                → tách câu hỏi → giáo viên kiểm tra → giao bài
-              </span>
-            </div>
-          )}
         </div>
         <div className="flex items-center space-x-2">
           <button
@@ -733,12 +714,12 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
       <form onSubmit={handleSave} className="space-y-6">
         
         {/* Section 1: General Assignment Info */}
-        <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 space-y-6">
+        <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 space-y-4">
           <h2 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">
             <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-black">
               1
             </span>
-            Thông tin chung bài tập
+            Thông tin bài
           </h2>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -804,7 +785,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
             {/* Duration */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Thời gian làm bài (Phút)
+                Thời gian (phút)
               </label>
               <input
                 type="number"
@@ -815,7 +796,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
                 placeholder="0 = Không giới hạn"
                 className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm"
               />
-              <span className="text-[11px] text-slate-400 mt-0.5 block">Nhập 0 nếu không tính giờ</span>
+
             </div>
 
             {/* Deadline */}
@@ -839,7 +820,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
                 className="w-5 h-5 text-indigo-600 rounded-md focus:ring-indigo-500 border-slate-300"
               />
               <label htmlFor="allowViewResult" className="text-sm font-semibold text-slate-800 cursor-pointer">
-                Cho phép học sinh xem điểm và lời giải chi tiết ngay sau khi nộp
+                Cho học sinh xem điểm & lời giải sau khi nộp
               </label>
             </div>
           </div>
@@ -857,7 +838,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
             }`}
           >
             <FileText className="w-4 h-4" />
-            <span>Chế độ nhập câu hỏi</span>
+            <span>Câu hỏi số hóa</span>
           </button>
           <button
             type="button"
@@ -869,7 +850,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
             }`}
           >
             <FileBadge className="w-4 h-4" />
-            <span>Chế độ Tải đề PDF</span>
+            <span>PDF nguyên bản</span>
           </button>
         </div>
 
@@ -892,86 +873,61 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
                 <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-black">
                   2
                 </span>
-                Ngân hàng câu hỏi ({questions.length} câu)
+                Câu hỏi ({questions.length})
               </h2>
 
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAiSolveModal(true)}
-                  className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-700 hover:from-violet-700 hover:to-indigo-700 text-white text-xs font-black rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
-                  title="AI Tự động giải toán & Lập bảng đáp án chuẩn A-B-C-D cho toàn bộ câu hỏi (Bảo toàn 100% câu hỏi)"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span>AI Giải & Lập bảng đáp án</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowTextQuickPaste(!showTextQuickPaste)}
-                  className="inline-flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
-                  title="Dán nhanh chuỗi đáp án (vd: 1A 2B 3C... hoặc ABCD...)"
-                >
-                  <Copy className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Dán đáp án nhanh</span>
-                </button>
-
                 <button
                   type="button"
                   onClick={() => {
                     setFileUploadInitialTab('pdf');
                     setShowFileUploadModal(true);
                   }}
-                  className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all active:scale-95 cursor-pointer"
-                  title="Tách toàn bộ câu hỏi và công thức toán từ file PDF bằng AI Gemini"
+                  className="inline-flex items-center space-x-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl shadow-sm transition-all active:scale-95 cursor-pointer"
+                  title="Tách câu hỏi từ PDF, ảnh, Word, LaTeX và các tệp hỗ trợ"
                 >
-                  <FileText className="w-4 h-4 text-rose-300" />
-                  <span>Tách đề PDF (AI)</span>
+                  <UploadCloud className="w-4 h-4" />
+                  <span>Tách đề nguồn</span>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setFileUploadInitialTab('image');
-                    setShowFileUploadModal(true);
-                  }}
-                  className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all active:scale-95 cursor-pointer"
-                  title="Dán trực tiếp ảnh chụp đề bài từ clipboard (Ctrl+V) hoặc tải ảnh chụp"
+                  onClick={() => setShowAiSolveModal(true)}
+                  className="inline-flex items-center space-x-1.5 px-3.5 py-2.5 bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                  title="AI hỗ trợ giải và lập bảng đáp án cho câu hỏi hiện có"
                 >
-                  <Camera className="w-4 h-4 text-purple-200" />
-                  <span>Dán ảnh đề (Ctrl+V)</span>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>AI giải & đáp án</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFileUploadInitialTab('file');
-                    setShowFileUploadModal(true);
-                  }}
-                  className="inline-flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
-                  title="Nhập từ Word (.docx), LaTeX (.tex), Excel (.xlsx), JSON hoặc tệp văn bản"
-                >
-                  <UploadCloud className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Word / LaTeX / Excel</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowAiGenModal(true)}
-                  className="inline-flex items-center space-x-1.5 px-3 py-2 bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-xl shadow-2xs transition-colors cursor-pointer"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                  <span>Sinh câu hỏi gợi ý</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowRawImportModal(true)}
-                  className="inline-flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Dán đề text</span>
-                </button>
+                <details className="relative">
+                  <summary className="list-none inline-flex items-center px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer select-none">
+                    Công cụ khác
+                  </summary>
+                  <div className="absolute right-0 top-full mt-1 z-20 w-52 rounded-2xl bg-white border border-slate-200 shadow-xl p-1.5 space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowTextQuickPaste(!showTextQuickPaste)}
+                      className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 text-xs font-bold text-slate-700"
+                    >
+                      Dán đáp án nhanh
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowAiGenModal(true)}
+                      className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 text-xs font-bold text-slate-700"
+                    >
+                      Sinh câu hỏi gợi ý
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowRawImportModal(true)}
+                      className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 text-xs font-bold text-slate-700"
+                    >
+                      Dán đề text
+                    </button>
+                  </div>
+                </details>
               </div>
             </div>
 
@@ -1010,14 +966,14 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <h4 className="font-black text-sm text-amber-950">
-                        Phát hiện {missingImageQuestions.length} câu hỏi có thể cần hình vẽ minh họa!
+                        {missingImageQuestions.length} câu có thể thiếu hình
                       </h4>
                       <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-200 text-amber-900">
                         Đề bài nhắc đến hình vẽ
                       </span>
                     </div>
-                    <p className="text-xs text-amber-800 mt-1 leading-relaxed max-w-2xl">
-                      Đề bài các câu này có chứa từ khóa <em>"hình bên", "hình vẽ", "đồ thị", "như hình"...</em> nhưng chưa có ảnh đính kèm. Thầy/Cô hãy kiểm tra đề gốc, chụp màn hình và dán (Ctrl+V) vào ô câu hỏi tương ứng:
+                    <p className="text-xs text-amber-800 mt-1">
+                      Kiểm tra đề gốc và bổ sung ảnh cho các câu này trước khi giao.
                     </p>
                     {/* Danh sách nút nhảy nhanh đến từng câu */}
                     <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
