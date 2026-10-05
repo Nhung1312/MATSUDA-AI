@@ -136,7 +136,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
       // 1. Cập nhật state hiển thị UI
       setStepGradingResults(prev => ({ ...prev, [question.id]: res }));
-      if (!isDemoPreview) {
+      if (!isDemoPreview && !isTeacherPreview) {
         useLearningProgressStore.getState().recordStepAnalysisCompleted(
           question.id,
           res.firstErrorStep,
@@ -211,7 +211,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
       };
 
       setSubmission(updatedSub);
-      if (!isDemoPreview) {
+      if (!isDemoPreview && !isTeacherPreview) {
         StorageService.saveSubmission(updatedSub);
         FirestoreService.saveResult(updatedSub).catch(() => {});
         if (updatedSub.wrongCount > 0) {
@@ -249,7 +249,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
       errorType: errorCtx.errorType,
       referenceStepLatex: errorCtx.referenceStepLatex,
       detectedError: `Lỗi gốc tại Bước ${errorCtx.firstErrorStep}: ${errorCtx.comment}`,
-      mistakeRecordId: `${assignment.id}_${errorCtx.questionId}`,
+      mistakeRecordId: isTeacherPreview ? undefined : `${assignment.id}_${errorCtx.questionId}`,
     });
   };
 
@@ -274,7 +274,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
     setSocraticResultContext({
       questionId: question.id,
-      mistakeRecordId: `${assignment.id}_${question.id}`,
+      mistakeRecordId: isTeacherPreview ? undefined : `${assignment.id}_${question.id}`,
       questionText: question.question,
       questionType: question.type,
       grade: String(assignment.grade),
@@ -294,7 +294,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
   // Tự động đồng bộ câu sai vào Mistake Vault khi vào trang kết quả
   useEffect(() => {
-    if (isDemoPreview) return;
+    if (isDemoPreview || isTeacherPreview) return;
     if (submission && submission.wrongCount > 0) {
       try {
         useMistakeVaultStore.getState().addMistakesFromSubmission(submission, assignment);
@@ -655,7 +655,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
           {/* Quick Actions */}
           <div className="flex flex-wrap items-center justify-center gap-3 mt-8">
-            {!isDemoPreview && (
+            {!isDemoPreview && !isTeacherPreview && (
               <button
                 onClick={() => setShowMistakeVault(true)}
                 className="inline-flex items-center space-x-2 px-5 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
@@ -664,7 +664,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 <span>Sổ tay câu sai {submission.wrongCount > 0 ? `(${submission.wrongCount})` : ''}</span>
               </button>
             )}
-            {!isDemoPreview && (
+            {!isDemoPreview && !isTeacherPreview && (
               <button
                 onClick={onRetake}
                 className="inline-flex items-center space-x-2 px-5 py-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-sm transition-colors border border-indigo-200 shadow-xs cursor-pointer"
@@ -685,7 +685,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
               className="inline-flex items-center space-x-2 px-6 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm shadow-md transition-colors cursor-pointer"
             >
               <Home className="w-4 h-4" />
-              <span>{isDemoPreview ? 'Quay lại Dashboard' : 'Về trang chủ'}</span>
+              <span>{isDemoPreview || isTeacherPreview ? 'Quay lại Dashboard' : 'Về trang chủ'}</span>
             </button>
           </div>
         </div>
@@ -705,7 +705,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 Mỗi lỗi được giữ lại thành dữ liệu học tập để tạo bài luyện phù hợp và theo dõi mức độ khắc phục.
               </p>
             </div>
-            {!isDemoPreview && currentAssignmentMistakes.length > 0 && (
+            {!isDemoPreview && !isTeacherPreview && currentAssignmentMistakes.length > 0 && (
               <button
                 onClick={() => setShowMistakeVault(true)}
                 className="shrink-0 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-sm transition-colors"
