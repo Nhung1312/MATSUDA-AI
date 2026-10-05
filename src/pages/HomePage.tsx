@@ -226,6 +226,7 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
             })}
           </div>
         </div>
+      </div>
 
       {/* Compact Footer */}
       <footer className="border-t border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 py-3 text-center text-[11px] text-slate-500 dark:text-slate-400">
