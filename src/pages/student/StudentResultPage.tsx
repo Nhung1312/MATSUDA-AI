@@ -72,6 +72,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
   // MỚI: Trạng thái hiển thị Sổ tay câu sai (Mistake Vault)
   const [showMistakeVault, setShowMistakeVault] = useState<boolean>(false);
+  const mistakeRecords = useMistakeVaultStore((state) => state.mistakes);
 
   // MỚI: Trạng thái Gia sư Socratic AI trong trang kết quả (Đợt 3)
   const [socraticResultContext, setSocraticResultContext] = useState<SocraticContext | null>(null);
@@ -358,6 +359,18 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
     ratingMessage = 'Đừng nản lòng! Hãy đọc kỹ lời giải từng bước của AI và luyện tập lại đề này.';
   }
 
+  // Đợt 8A: Hiển thị rõ chu trình AI khép kín để học sinh và người xem hiểu ngay.
+  const currentAssignmentMistakes = mistakeRecords.filter(m => m.assignmentId === assignment.id);
+  const analyzedEssayCount = submission.answers.filter(a =>
+    (a.stepAnalysis && a.stepAnalysis.length > 0) || !!a.stepGradingResponse
+  ).length;
+  const firstErrorCount = submission.answers.filter(a =>
+    a.firstErrorStep !== undefined && a.firstErrorStep !== null
+  ).length;
+  const remedialCount = currentAssignmentMistakes.filter(m => !!m.remedialExercise).length;
+  const practicedCount = currentAssignmentMistakes.filter(m => (m.practiceCount || 0) > 0).length;
+  const improvingCount = currentAssignmentMistakes.filter(m => m.masteryStatus === 'improving').length;
+  const masteredCount = currentAssignmentMistakes.filter(m => m.mastered || m.masteryStatus === 'mastered').length;
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-16">
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
@@ -621,6 +634,89 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
           </div>
         </div>
 
+        {/* ĐỢT 8A: AI LEARNING LOOP - làm rõ chu trình học tập khép kín */}
+        <section className="print:hidden bg-white rounded-3xl border border-indigo-100 shadow-sm p-5 sm:p-6 overflow-hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-black uppercase tracking-wider mb-2">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Chu trình AI học từ lỗi sai</span>
+              </div>
+              <h2 className="text-lg sm:text-xl font-black text-slate-900">
+                Không chỉ chấm điểm — hệ thống dẫn bạn từ lỗi sai đến tiến bộ
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                Mỗi lỗi được giữ lại thành dữ liệu học tập để tạo bài luyện phù hợp và theo dõi mức độ khắc phục.
+              </p>
+            </div>
+            {currentAssignmentMistakes.length > 0 && (
+              <button
+                onClick={() => setShowMistakeVault(true)}
+                className="shrink-0 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-sm transition-colors"
+              >
+                Mở lộ trình khắc phục
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
+            <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-3">
+              <div className="w-7 h-7 rounded-full bg-blue-600 text-white text-xs font-black flex items-center justify-center mb-2">1</div>
+              <div className="font-black text-xs text-blue-950">AI chấm từng bước</div>
+              <div className="text-[11px] text-blue-700 mt-1">
+                {analyzedEssayCount > 0 ? `${analyzedEssayCount} câu đã phân tích` : 'Sẵn sàng phân tích bài làm'}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
+              <div className="w-7 h-7 rounded-full bg-amber-500 text-white text-xs font-black flex items-center justify-center mb-2">2</div>
+              <div className="font-black text-xs text-amber-950">Tìm lỗi gốc</div>
+              <div className="text-[11px] text-amber-700 mt-1">
+                {firstErrorCount > 0 ? `${firstErrorCount} lỗi gốc đã xác định` : (submission.wrongCount > 0 ? 'Đã xác định câu cần củng cố' : 'Không phát hiện lỗi cần sửa')}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-3">
+              <div className="w-7 h-7 rounded-full bg-rose-600 text-white text-xs font-black flex items-center justify-center mb-2">3</div>
+              <div className="font-black text-xs text-rose-950">Hồ sơ câu sai</div>
+              <div className="text-[11px] text-rose-700 mt-1">
+                {currentAssignmentMistakes.length > 0 ? `${currentAssignmentMistakes.length} câu đã lưu` : 'Chưa có câu cần lưu'}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-violet-200 bg-violet-50/70 p-3">
+              <div className="w-7 h-7 rounded-full bg-violet-600 text-white text-xs font-black flex items-center justify-center mb-2">4</div>
+              <div className="font-black text-xs text-violet-950">Luyện cá nhân</div>
+              <div className="text-[11px] text-violet-700 mt-1">
+                {practicedCount > 0 || remedialCount > 0 ? `${Math.max(practicedCount, remedialCount)} câu đang luyện` : 'Bài tương tự + Gia sư Socratic'}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3">
+              <div className="w-7 h-7 rounded-full bg-emerald-600 text-white text-xs font-black flex items-center justify-center mb-2">5</div>
+              <div className="font-black text-xs text-emerald-950">Theo dõi tiến bộ</div>
+              <div className="text-[11px] text-emerald-700 mt-1">
+                {masteredCount > 0 ? `${masteredCount} lỗi đã khắc phục` : improvingCount > 0 ? `${improvingCount} lỗi đang tiến bộ` : 'Theo dõi qua từng lần luyện'}
+              </div>
+            </div>
+          </div>
+
+          {currentAssignmentMistakes.length > 0 && (
+            <div className="mt-4 rounded-2xl bg-slate-50 border border-slate-200 px-4 py-3 text-xs text-slate-600 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <span>
+                <strong className="text-slate-900">Trạng thái hiện tại:</strong>{' '}
+                {masteredCount > 0
+                  ? `${masteredCount} lỗi đã làm chủ; ${Math.max(0, currentAssignmentMistakes.length - masteredCount)} lỗi còn tiếp tục luyện.`
+                  : practicedCount > 0
+                    ? 'Bạn đã bắt đầu luyện lại. Hệ thống sẽ cập nhật khi bạn làm đúng ổn định.'
+                    : 'Các lỗi đã được lưu. Bước tiếp theo là luyện câu tương tự hoặc dùng Gia sư Socratic.'}
+              </span>
+              <span className="font-bold text-indigo-700 whitespace-nowrap">
+                Phát hiện → Luyện lại → Kiểm tra → Làm chủ
+              </span>
+            </div>
+          )}
+        </section>
         {/* DETAILED ANSWER REVIEW & RESULT SHEET */}
         {assignment.allowViewResult ? (
           <div className="space-y-6">
