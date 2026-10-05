@@ -19,7 +19,6 @@ import {
   GraduationCap,
   Target,
   Trophy,
-  Layers,
   Award
 } from 'lucide-react';
 
