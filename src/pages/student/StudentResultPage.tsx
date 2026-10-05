@@ -302,7 +302,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         console.warn('Lỗi lưu câu sai vào Sổ tay câu sai:', e);
       }
     }
-  }, [submission, assignment, isDemoPreview]);
+  }, [submission, assignment, isDemoPreview, isTeacherPreview]);
 
   const toggleExpand = (questionId: string) => {
     setExpandedCards(prev => ({
@@ -407,6 +407,20 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-16">
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
         
+        {isTeacherPreview && !isDemoPreview && (
+          <div className="print:hidden bg-sky-50 border-2 border-sky-200 rounded-3xl p-4 text-left flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-sky-600 text-white flex items-center justify-center shrink-0">
+              <Eye className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-black text-sm text-sky-900">Đang xem hồ sơ học sinh từ Dashboard giáo viên</h3>
+              <p className="text-xs text-sky-800 mt-1 leading-relaxed">
+                Đây là chế độ xem an toàn phục vụ đối chiếu/demo. Các thao tác phân tích thử trên màn hình này không ghi ngược vào kết quả thật hay hồ sơ luyện tập của học sinh.
+              </p>
+            </div>
+          </div>
+        )}
+
         {isDemoPreview && (
           <div className="print:hidden bg-amber-50 border-2 border-amber-200 rounded-3xl p-4 text-left flex items-start gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
@@ -627,7 +641,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                   </p>
                 </div>
               </div>
-              {!isDemoPreview && (
+              {!isDemoPreview && !isTeacherPreview && (
                 <button
                   onClick={() => setShowMistakeVault(true)}
                   className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-700 hover:to-pink-700 text-white font-black text-xs shadow-lg hover:shadow-xl transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center space-x-1.5 shrink-0"
