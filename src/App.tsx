@@ -406,8 +406,10 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
-      {/* Top Navbar */}
-      <Navbar onResetData={handleResetData} onClearDemoData={handleClearDemoData} />
+      {/* Màn làm bài có header riêng; ẩn Navbar chung để tập trung vào đề. */}
+      {!isTakingExam && (
+        <Navbar onResetData={handleResetData} onClearDemoData={handleClearDemoData} />
+      )}
 
       {/* Top Zustand Learning Progress Bar (Sticky / Header Status Bar) */}
       {!isTakingExam && !isTeacherArea && !isHomePage && !isStudentEntryPage && (
@@ -545,7 +547,7 @@ function AppContent() {
       </main>
 
       {/* PWA / mobile student controls: ẩn trong khu vực giáo viên để demo sạch và tập trung. */}
-      {!isTeacherArea && <PWAInstallBanner />}
+      {!isTeacherArea && !isTakingExam && <PWAInstallBanner />}
 
       {!isTakingExam && !isTeacherArea && !isStudentEntryPage && (
         <MobileBottomNav 
