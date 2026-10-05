@@ -110,21 +110,44 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
           {/* Refined Badge */}
           <div className="inline-flex items-center space-x-1.5 bg-blue-50 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60 text-[11px] font-bold px-3 py-1 rounded-full mb-3 shadow-2xs">
             <Sparkles className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-            <span>Khu vực Quản trị Giáo viên</span>
+            <span>Matsuda AI • Trợ lý AI cho Giáo viên Toán THCS</span>
           </div>
 
           {/* Main Heading without slash */}
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">
-            Chào mừng Thầy Cô đến với TOÁN THCS
+            Từ một bài làm sai → thành một lộ trình học cá nhân
           </h1>
           
           {/* Subtitle */}
           <p className="text-slate-600 dark:text-slate-300 text-xs sm:text-sm mt-2 leading-relaxed font-medium">
-            Hệ thống tạo đề, giao bài tập tự động bằng mã QR và phân tích chi tiết kết quả học tập của từng lớp.
+            Matsuda AI giúp giáo viên giao bài, chấm tự luận theo từng bước, tìm lỗi gốc và tạo vòng luyện lại để học sinh tiến bộ — thay vì chỉ dừng ở một con điểm.
           </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-4 max-w-2xl">
+            <div className="rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 px-3 py-2">
+              <div className="text-[10px] font-black uppercase text-blue-700 dark:text-blue-300">Vấn đề</div>
+              <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">GV khó chấm sâu từng bài và theo dõi lỗi lặp lại.</div>
+            </div>
+            <div className="rounded-xl bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-900 px-3 py-2">
+              <div className="text-[10px] font-black uppercase text-violet-700 dark:text-violet-300">AI hỗ trợ</div>
+              <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">Phân tích bước giải, tìm lỗi gốc, chấm theo barem.</div>
+            </div>
+            <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 px-3 py-2">
+              <div className="text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-300">Kết quả</div>
+              <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">Lỗi sai trở thành bài luyện và dữ liệu tiến bộ.</div>
+            </div>
+          </div>
 
           {/* Action Buttons */}
           <div className="flex flex-wrap gap-3 mt-6">
+            <button
+              onClick={() => document.getElementById('judge-demo')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className="inline-flex items-center space-x-2 bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl shadow-xs hover:shadow-md transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
+            >
+              <Play className="w-4 h-4" />
+              <span>Xem demo AI 2 phút</span>
+            </button>
+
             {/* Primary Action Button */}
             <button
               onClick={() => onNavigate('create')}
@@ -220,12 +243,12 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
         </div>
       </section>
       {/* ĐỢT 8B: KỊCH BẢN DEMO NHANH 3–5 PHÚT */}
-      <section className="rounded-3xl border-2 border-dashed border-fuchsia-200 dark:border-fuchsia-900 bg-gradient-to-r from-fuchsia-50 via-white to-indigo-50 dark:from-fuchsia-950/20 dark:via-slate-900 dark:to-indigo-950/20 p-5 sm:p-6 shadow-sm">
+      <section id="judge-demo" className="scroll-mt-28 rounded-3xl border-2 border-dashed border-fuchsia-200 dark:border-fuchsia-900 bg-gradient-to-r from-fuchsia-50 via-white to-indigo-50 dark:from-fuchsia-950/20 dark:via-slate-900 dark:to-indigo-950/20 p-5 sm:p-6 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
           <div className="max-w-xl">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-fuchsia-100 dark:bg-fuchsia-950 text-fuchsia-700 dark:text-fuchsia-300 text-[10px] font-black uppercase tracking-wider mb-2">
               <Play className="w-3.5 h-3.5" />
-              <span>Demo nhanh 3–5 phút</span>
+              <span>Demo trọng tâm cho giám khảo • 2–5 phút</span>
             </div>
             <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
               Đi theo 4 bước này để trình diễn toàn bộ giá trị cốt lõi
