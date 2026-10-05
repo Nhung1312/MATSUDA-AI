@@ -472,11 +472,11 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
               <Sparkles className="w-5 h-5 text-amber-300" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
-                Tách Đề Thi & Bóc Tách Câu Hỏi Bằng AI
+              <h2 className="text-base sm:text-lg font-black text-slate-900">
+                Tách đề nguồn
               </h2>
               <p className="text-xs text-slate-500">
-                Chuẩn hóa câu hỏi, công thức Toán LaTeX/KaTeX, phương án và phân loại Trắc nghiệm / Tự luận từ nhiều định dạng
+                PDF • Ảnh • Word • LaTeX → câu hỏi để giáo viên duyệt
               </p>
             </div>
           </div>
@@ -488,26 +488,44 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
           </button>
         </div>
 
-        {/* GEMINI API KEY & MODEL STATUS BAR */}
-        <div className="px-4 sm:px-6 py-2.5 bg-gradient-to-r from-indigo-50 via-purple-50 to-indigo-50 border-b border-indigo-100/80 text-xs flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center space-x-2">
-              <Key className="w-3.5 h-3.5 text-indigo-600" />
-              <span className="font-bold text-slate-700">Gemini Key:</span>
-              {hasApiKey ? (
-                <span className="inline-flex items-center gap-1 font-mono font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md text-[11px]">
-                  <Check className="w-3 h-3 stroke-[3]" /> Đã kết nối
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md font-bold text-[11px]">
-                  <AlertCircle className="w-3 h-3" /> Cần có API Key
-                </span>
-              )}
+        {/* AI STATUS - compact by default */}
+        <div className="px-4 sm:px-6 py-2 border-b border-slate-100 bg-white flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className={`w-2 h-2 rounded-full shrink-0 ${hasApiKey ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+            <span className="font-bold text-slate-700">
+              {hasApiKey ? 'AI đã sẵn sàng' : 'Cần API Key để dùng AI'}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowKeyInput(!showKeyInput)}
+            className="shrink-0 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold cursor-pointer"
+          >
+            {showKeyInput ? 'Ẩn cài đặt' : 'Cài đặt AI'}
+          </button>
+        </div>
+
+        {showKeyInput && (
+          <div className="px-4 sm:px-6 py-3 bg-slate-50 border-b border-slate-200 text-xs space-y-3 animate-in slide-in-from-top-1">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="password"
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                placeholder="Gemini API Key"
+                className="flex-1 px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+              />
+              <button
+                type="button"
+                onClick={handleSaveApiKey}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl cursor-pointer"
+              >
+                Lưu Key
+              </button>
             </div>
 
-            {/* Quick Model Selector */}
-            <div className="flex items-center space-x-1.5 bg-white border border-indigo-200/90 rounded-xl px-2.5 py-1 shadow-2xs">
-              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Mô hình:</span>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+              <label className="font-bold text-slate-600">Mô hình</label>
               <select
                 value={selectedModel}
                 onChange={(e) => {
@@ -515,60 +533,25 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                   setSelectedModel(val);
                   aiService.setModel(val);
                 }}
-                className="text-[11px] font-black text-indigo-700 bg-transparent border-none outline-none cursor-pointer pr-1"
-                title="Chọn mô hình AI tiết kiệm hạn mức API hoặc nâng cao"
+                className="flex-1 sm:max-w-sm px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-700"
               >
-                <option value="gemini-3.1-flash-lite">⚡ Gemini 3.1 Flash-Lite (Siêu tiết kiệm nhất)</option>
-                <option value="gemini-3.8-flash">🌟 Gemini 3.8 Flash (Chuẩn Toán THCS)</option>
-                <option value="gemini-3.1-pro-preview">🧠 Gemini 3.1 Pro (Toán nâng cao)</option>
+                <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash-Lite</option>
+                <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
+                <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro</option>
               </select>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <button
-              type="button"
-              onClick={() => setShowKeyInput(!showKeyInput)}
-              className="text-indigo-600 hover:text-indigo-800 font-bold hover:underline cursor-pointer"
-            >
-              {showKeyInput ? 'Ẩn ô nhập Key' : (hasApiKey ? 'Thay đổi Key' : 'Nhập API Key')}
-            </button>
-            <span className="text-slate-300">|</span>
-            <a
-              href="https://aistudio.google.com/apikey"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 hover:underline font-bold"
-            >
-              <span>Lấy Key miễn phí</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
-        </div>
-
-        {/* INLINE API KEY INPUT ACCORDION */}
-        {showKeyInput && (
-          <div className="px-4 sm:px-6 py-3 bg-amber-50/50 border-b border-amber-200/80 text-xs space-y-2 animate-in slide-in-from-top-1">
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              <input
-                type="password"
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder="Dán Gemini API Key của bạn vào đây (bắt đầu bằng AIza...)"
-                className="flex-1 px-3 py-2 text-xs bg-white border border-amber-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
-              />
-              <button
-                type="button"
-                onClick={handleSaveApiKey}
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl transition-colors shrink-0 cursor-pointer shadow-xs"
+              <a
+                href="https://aistudio.google.com/apikey"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-indigo-600 hover:underline font-bold"
               >
-                Lưu API Key
-              </button>
+                Lấy API Key
+                <ExternalLink className="w-3 h-3" />
+              </a>
             </div>
+
             {keySavedMessage && (
-              <div className="text-emerald-700 font-bold text-[11px] flex items-center gap-1">
-                <Check className="w-3.5 h-3.5 stroke-[3]" /> {keySavedMessage}
-              </div>
+              <div className="text-emerald-700 font-bold text-[11px]">{keySavedMessage}</div>
             )}
           </div>
         )}
@@ -586,10 +569,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
               }`}
             >
               <FileText className="w-4 h-4 text-rose-500" />
-              <span>1. Tách đề từ file PDF (AI)</span>
-              <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-md font-black">
-                Gemini
-              </span>
+              <span>PDF</span>
             </button>
 
             <button
@@ -602,7 +582,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
               }`}
             >
               <Camera className="w-4 h-4 text-purple-600" />
-              <span>2. Dán ảnh đề bài (Ctrl+V)</span>
+              <span>Ảnh</span>
               {pastedImages.length > 0 && (
                 <span className="text-[10px] bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded-full font-black">
                   {pastedImages.length} ảnh
@@ -620,7 +600,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
               }`}
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-              <span>3. Word / LaTeX / Excel / JSON</span>
+              <span>Word / LaTeX</span>
             </button>
           </div>
         )}
@@ -643,11 +623,9 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
             <div className="p-8 bg-indigo-50/80 rounded-3xl border border-indigo-100 text-center space-y-3">
               <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto" />
               <div className="font-extrabold text-sm text-indigo-950">
-                {aiProgressStatus || 'Đang xử lý và bóc tách câu hỏi toán học...'}
+                {aiProgressStatus || 'Đang tách câu hỏi...'}
               </div>
-              <p className="text-xs text-indigo-700 max-w-md mx-auto">
-                Gemini AI đang đọc từng ký tự toán học, công thức LaTeX, phương án A, B, C, D và tự động thẩm định đáp án đúng...
-              </p>
+
             </div>
           )}
 
@@ -954,7 +932,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                           className="w-full py-3 bg-gradient-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-700 hover:to-indigo-800 text-white font-black text-xs sm:text-sm rounded-2xl shadow-md transition-all active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
                         >
                           <Sparkles className="w-4 h-4 text-amber-300" />
-                          <span>BÓC TÁCH CÂU HỎI TỪ {pastedImages.length} TRANG ẢNH (GEMINI VISION)</span>
+                          <span>TÁCH {pastedImages.length} TRANG ẢNH</span>
                         </button>
                       </div>
                     </div>
