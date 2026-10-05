@@ -39,7 +39,6 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
     navigate(`/join?code=${encodeURIComponent(assignmentCode.trim().toUpperCase())}`);
   };
 
-  const sampleAssignment = assignments[0];
   const gradeList: GradeLevel[] = ['6', '7', '8', '9'];
 
   return (
@@ -95,27 +94,13 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
                 type="submit"
                 className="w-full sm:w-auto py-2.5 sm:py-2 px-4 sm:px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl shadow-xs transition-all active:scale-95 text-xs sm:text-sm flex items-center justify-center space-x-1.5 shrink-0 cursor-pointer"
               >
-                <span>VÀO THI</span>
+                <span>VÀO BÀI</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </form>
 
             {error && <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1.5 font-medium px-1">{error}</p>}
 
-            {/* Quick Demo Assignment Pill */}
-            {sampleAssignment && (
-              <div className="mt-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-1 text-[11px] text-slate-500 dark:text-slate-400">
-                <span className="text-[11px]">Đề mẫu có sẵn:</span>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/join?code=${sampleAssignment.assignmentCode}`)}
-                  className="inline-flex items-center space-x-1 font-mono font-bold text-indigo-600 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 px-2 py-0.5 rounded-md border border-indigo-200/60 dark:border-indigo-800/60 transition-colors cursor-pointer text-[11px]"
-                >
-                  <span>{sampleAssignment.assignmentCode}</span>
-                  <span className="font-sans font-normal text-slate-500 dark:text-slate-400 truncate max-w-[150px]">({sampleAssignment.title})</span>
-                </button>
-              </div>
-            )}
           </div>
 
           {/* 3 Big Action Portals (Teacher, Online Contest, Student Practice) */}
