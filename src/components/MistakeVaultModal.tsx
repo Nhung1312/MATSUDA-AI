@@ -835,14 +835,14 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
             <div>
               <div className="flex items-center space-x-2">
                 <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
-                  Sổ Tay Câu Sai (Mistake Vault)
+                  Câu cần luyện
                 </h2>
                 <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full bg-white/20 text-white text-[11px] font-black uppercase tracking-wider">
-                  AI Phân Tích
+                  
                 </span>
               </div>
               <p className="text-xs sm:text-sm text-rose-100 mt-0.5">
-                Tự động gom nhặt câu làm sai sau mỗi bài thi • Luyện tập lấp lỗ hổng kiến thức
+                Sai → luyện lại → tiến bộ
               </p>
             </div>
           </div>
@@ -862,21 +862,21 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
           <div className="flex items-center space-x-2 sm:space-x-3 text-xs">
             <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 font-bold shadow-2xs">
               <AlertCircle className="w-4 h-4 text-rose-500" />
-              <span>Cần khắc phục:</span>
+              <span>Cần luyện</span>
               <span className="font-black text-rose-600 dark:text-rose-400">{needsPracticeCount} câu</span>
             </div>
 
             {improvingCount > 0 && (
               <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-300 font-bold shadow-2xs">
                 <Sparkles className="w-4 h-4 text-blue-500" />
-                <span>Đang tiến bộ:</span>
+                <span>Tiến bộ</span>
                 <span className="font-black text-blue-600 dark:text-blue-400">{improvingCount} câu</span>
               </div>
             )}
 
             <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-900 text-emerald-700 dark:text-emerald-300 font-bold shadow-2xs">
               <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-              <span>Đã nắm vững:</span>
+              <span>Đã nắm</span>
               <span className="font-black text-emerald-600 dark:text-emerald-400">{masteredCount} câu</span>
             </div>
           </div>
@@ -888,7 +888,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                 className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 font-semibold px-2.5 py-1.5 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
                 title="Dọn dẹp các câu đã luyện tập thành thạo"
               >
-                Dọn câu đã xong
+                Dọn đã nắm
               </button>
             )}
 
@@ -897,7 +897,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                 {showConfirmClearAll ? (
                   <div className="flex items-center space-x-1.5 bg-rose-50 dark:bg-rose-950/80 p-1 rounded-xl border border-rose-200 dark:border-rose-900">
                     <span className="text-[11px] font-bold text-rose-800 dark:text-rose-200 pl-1.5">
-                      Xóa toàn bộ sổ tay?
+                      Xóa tất cả?
                     </span>
                     <button
                       type="button"
@@ -924,7 +924,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                     title="Xóa toàn bộ câu sai trong sổ tay"
                   >
                     <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                    <span>Xóa toàn bộ sổ tay</span>
+                    <span>Xóa tất cả</span>
                   </button>
                 )}
               </>
@@ -943,7 +943,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                   : 'text-slate-600 dark:text-slate-300'
               }`}
             >
-              Tất cả khối
+              Khối
             </button>
             {(['6', '7', '8', '9'] as GradeLevel[]).map((g) => (
               <button
@@ -955,7 +955,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                     : 'text-slate-600 dark:text-slate-300'
                 }`}
               >
-                Lớp {g}
+                {g}
               </button>
             ))}
           </div>
@@ -969,7 +969,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                   : 'text-slate-600 dark:text-slate-300'
               }`}
             >
-              <span>🔴 Cần luyện</span>
+              <span>Cần luyện</span>
               <span className="font-mono text-[10px]">({needsPracticeCount})</span>
             </button>
             <button
@@ -980,7 +980,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                   : 'text-slate-600 dark:text-slate-300'
               }`}
             >
-              <span>🔵 Đang tiến bộ</span>
+              <span>Tiến bộ</span>
               <span className="font-mono text-[10px]">({improvingCount})</span>
             </button>
             <button
@@ -991,7 +991,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                   : 'text-slate-600 dark:text-slate-300'
               }`}
             >
-              <span>🟢 Đã nắm vững</span>
+              <span>Đã nắm</span>
               <span className="font-mono text-[10px]">({masteredCount})</span>
             </button>
             <button
@@ -1010,7 +1010,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Tìm theo chuyên đề, từ khóa..."
+              placeholder="Tìm câu / chuyên đề..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -1021,7 +1021,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
         {/* VIEW GROUPING SWITCH ROW */}
         <div className="px-5 sm:px-8 py-2.5 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center space-x-1.5 font-bold text-slate-500 dark:text-slate-400">
-            <span>Cách xem:</span>
+            <span>Xem</span>
             <div className="flex items-center bg-white dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
               <button
                 onClick={() => {
@@ -1035,7 +1035,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                 }`}
               >
                 <FileText className="w-3.5 h-3.5" />
-                <span>Theo từng đề thi ({mistakesByExam.length})</span>
+                <span>Theo đề</span>
               </button>
               <button
                 onClick={() => {
@@ -1049,7 +1049,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                 }`}
               >
                 <Layers className="w-3.5 h-3.5" />
-                <span>Theo chuyên đề ({mistakesByTopic.length})</span>
+                <span>Theo chuyên đề</span>
               </button>
               <button
                 onClick={() => {
@@ -1062,7 +1062,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                     : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
                 }`}
               >
-                <span>Toàn bộ câu sai ({filteredMistakes.length})</span>
+                <span>Tất cả</span>
               </button>
             </div>
           </div>
@@ -1070,13 +1070,13 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
           <div className="flex flex-wrap items-center gap-3">
             {allAvailableExams.length > 0 && (
               <div className="flex items-center space-x-1.5 text-xs">
-                <span className="font-bold text-slate-500 dark:text-slate-400">Lọc đề thi:</span>
+                <span className="font-bold text-slate-500 dark:text-slate-400">Đề</span>
                 <select
                   value={selectedExamTitle}
                   onChange={(e) => setSelectedExamTitle(e.target.value)}
                   className="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500 max-w-[260px] truncate cursor-pointer shadow-2xs"
                 >
-                  <option value="all">📂 Tất cả đề thi ({allAvailableExams.length} đề)</option>
+                  <option value="all">Tất cả đề</option>
                   {allAvailableExams.map((ex) => (
                     <option key={ex.title} value={ex.title}>
                       {ex.title} ({ex.unmastered > 0 ? `${ex.unmastered} câu cần sửa` : 'Đã xong'})
@@ -1085,9 +1085,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                 </select>
               </div>
             )}
-            <div className="text-[11px] text-slate-500 dark:text-slate-400">
-              💡 Bấm <strong>"Luyện cả đề"</strong> để làm lại các câu sai của bài thi đó!
-            </div>
+            
           </div>
         </div>
 
@@ -1100,7 +1098,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                   onClick={() => setActiveExamPractice(null)}
                   className="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition-colors cursor-pointer flex items-center space-x-1"
                 >
-                  <span>← Thoát luyện tập</span>
+                  <span>← Quay lại</span>
                 </button>
                 <div>
                   <div className="flex items-center space-x-2">
@@ -1108,11 +1106,11 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                       Toán {activeExamPractice.grade}
                     </span>
                     <h3 className="font-extrabold text-sm sm:text-base">
-                      Luyện tập câu sai: {activeExamPractice.title}
+                      {activeExamPractice.title}
                     </h3>
                   </div>
                   <p className="text-xs text-rose-100 mt-0.5">
-                    Tập trung rèn luyện các câu bạn từng làm sai trong đề thi này
+                    
                   </p>
                 </div>
               </div>
@@ -1160,7 +1158,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                       onClick={() => setExamPracticeIndex(prev => prev + 1)}
                       className="px-4 py-2 rounded-xl text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer shadow-xs flex items-center space-x-1"
                     >
-                      <span>Câu tiếp theo</span>
+                      <span>Tiếp</span>
                       <ChevronRight className="w-4 h-4" />
                     </button>
                   ) : (
@@ -1173,7 +1171,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                       className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-md flex items-center space-x-1"
                     >
                       <CheckCheck className="w-4 h-4" />
-                      <span>Hoàn thành bài luyện</span>
+                      <span>Hoàn thành</span>
                     </button>
                   )}
                 </div>
@@ -1190,12 +1188,12 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                 </div>
                 <h3 className="text-base sm:text-lg font-black text-slate-800 dark:text-white">
                   {mistakes.length === 0
-                    ? 'Sổ tay câu sai đang trống!'
+                    ? 'Chưa có câu cần luyện'
                     : 'Không có câu hỏi nào khớp với bộ lọc'}
                 </h3>
                 <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto mt-1">
                   {mistakes.length === 0
-                    ? 'Sau khi làm bài kiểm tra hoặc đề luyện tập, nếu có câu nào chưa đúng, hệ thống sẽ tự động lưu vào đây để bạn luyện lại.'
+                    ? 'Các câu cần củng cố sẽ xuất hiện ở đây.'
                     : 'Hãy thử chọn khối lớp khác hoặc chuyển sang xem các câu đã nắm vững.'}
                 </p>
               </div>
@@ -1226,11 +1224,11 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                               </h3>
                             </div>
                             <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
-                              <span>Tổng {exam.mistakes.length} câu sai</span>
+                              <span>{exam.mistakes.length} câu</span>
                               <span>•</span>
-                              <span className="text-rose-600 dark:text-rose-400 font-bold">{examUnmastered} câu cần sửa</span>
+                              <span className="text-rose-600 dark:text-rose-400 font-bold">{examUnmastered} cần luyện</span>
                               <span>•</span>
-                              <span className="text-emerald-600 dark:text-emerald-400 font-bold">{examMastered} câu đã hiểu</span>
+                              <span className="text-emerald-600 dark:text-emerald-400 font-bold">{examMastered} đã nắm</span>
                             </div>
                           </div>
                         </div>
@@ -1248,7 +1246,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                             className="px-3.5 py-1.5 bg-gradient-to-r from-rose-600 to-indigo-600 hover:from-rose-700 hover:to-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center space-x-1.5 transition-transform active:scale-95 cursor-pointer"
                           >
                             <PlayCircle className="w-4 h-4" />
-                            <span>Luyện tập lại đề này ({exam.mistakes.length} câu)</span>
+                            <span>Luyện đề</span>
                           </button>
                           <button
                             onClick={() => toggleGroup(exam.assignmentTitle)}
@@ -1296,11 +1294,11 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                               </h3>
                             </div>
                             <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
-                              <span>Tổng {topic.mistakes.length} câu</span>
+                              <span>{topic.mistakes.length} câu</span>
                               <span>•</span>
-                              <span className="text-rose-600 dark:text-rose-400 font-bold">{topicUnmastered} câu cần sửa</span>
+                              <span className="text-rose-600 dark:text-rose-400 font-bold">{topicUnmastered} cần luyện</span>
                               <span>•</span>
-                              <span className="text-emerald-600 dark:text-emerald-400 font-bold">{topicMastered} câu đã hiểu</span>
+                              <span className="text-emerald-600 dark:text-emerald-400 font-bold">{topicMastered} đã nắm</span>
                             </div>
                           </div>
                         </div>
@@ -1318,7 +1316,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                             className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center space-x-1.5 transition-transform active:scale-95 cursor-pointer"
                           >
                             <PlayCircle className="w-4 h-4" />
-                            <span>Luyện chuyên đề này ({topic.mistakes.length} câu)</span>
+                            <span>Luyện chuyên đề</span>
                           </button>
                           <button
                             onClick={() => toggleGroup(topic.topicName)}
@@ -1346,17 +1344,12 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
         )}
 
         {/* MODAL FOOTER */}
-        <div className="px-5 sm:px-8 py-3.5 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 select-none shrink-0">
-          <div className="flex items-center space-x-1.5">
-            <span className="font-bold text-indigo-600 dark:text-indigo-400">🌟 Phương pháp học chủ động:</span>
-            <span>Mỗi lần sửa đúng 1 câu sai là một lần nâng cao điểm số bài thi chính thức!</span>
-          </div>
-
+        <div className="px-5 sm:px-8 py-3 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex justify-end shrink-0">
           <button
             onClick={onClose}
             className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs transition-colors cursor-pointer"
           >
-            Đóng sổ tay
+            Đóng
           </button>
         </div>
 
