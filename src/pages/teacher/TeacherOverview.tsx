@@ -40,6 +40,25 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
   const activeAssignments = safeAssignments.filter(a => Boolean(a && a.isPublished)).length;
   const totalSubmissions = safeSubmissions.length;
 
+  // Đợt 8A: số liệu tóm tắt cho chu trình AI khép kín trên dashboard.
+  const aiAnalyzedAnswers = safeSubmissions.reduce(
+    (sum, sub) => sum + (Array.isArray(sub.answers)
+      ? sub.answers.filter(a => a.aiGraded || (a.stepAnalysis && a.stepAnalysis.length > 0) || !!a.stepGradingResponse).length
+      : 0),
+    0
+  );
+  const rootErrorsDetected = safeSubmissions.reduce(
+    (sum, sub) => sum + (Array.isArray(sub.answers)
+      ? sub.answers.filter(a => a.firstErrorStep !== undefined && a.firstErrorStep !== null).length
+      : 0),
+    0
+  );
+  const pendingTeacherReviews = safeSubmissions.reduce(
+    (sum, sub) => sum + (Array.isArray(sub.answers)
+      ? sub.answers.filter(a => a.needsTeacherReview && a.teacherScore === undefined).length
+      : 0),
+    0
+  );
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
       {/* Welcome Banner - Modern Minimalist Clean UI */}
@@ -112,6 +131,61 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
         </div>
       </div>
 
+      {/* ĐỢT 8A: AI LEARNING LOOP - trình bày rõ giá trị khác biệt của hệ thống */}
+      <section className="bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-indigo-950/30 dark:via-slate-900 dark:to-emerald-950/20 rounded-3xl p-5 sm:p-6 border border-indigo-200/70 dark:border-indigo-900/60 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-1.5 bg-indigo-100/80 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider mb-2">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Chu trình AI khép kín</span>
+            </div>
+            <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
+              AI không dừng ở việc cho điểm — mỗi lỗi sai trở thành một lộ trình học tập
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1">
+              Giáo viên giao bài một lần, hệ thống hỗ trợ chấm từng bước, tìm lỗi gốc, tạo bài luyện cá nhân và ghi nhận tiến bộ qua các lần làm lại.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 shrink-0">
+            <div className="bg-white/90 dark:bg-slate-900 rounded-xl border border-blue-200 dark:border-blue-900 px-3 py-2 text-center">
+              <div className="text-lg font-black text-blue-700 dark:text-blue-300">{aiAnalyzedAnswers}</div>
+              <div className="text-[9px] font-bold text-slate-500 uppercase">Lượt AI phân tích</div>
+            </div>
+            <div className="bg-white/90 dark:bg-slate-900 rounded-xl border border-amber-200 dark:border-amber-900 px-3 py-2 text-center">
+              <div className="text-lg font-black text-amber-700 dark:text-amber-300">{rootErrorsDetected}</div>
+              <div className="text-[9px] font-bold text-slate-500 uppercase">Lỗi gốc</div>
+            </div>
+            <div className="bg-white/90 dark:bg-slate-900 rounded-xl border border-violet-200 dark:border-violet-900 px-3 py-2 text-center">
+              <div className="text-lg font-black text-violet-700 dark:text-violet-300">{pendingTeacherReviews}</div>
+              <div className="text-[9px] font-bold text-slate-500 uppercase">Chờ GV duyệt</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
+          {[
+            ['1', 'Giao bài', 'QR / mã bài / đề có sẵn'],
+            ['2', 'AI chấm từng bước', 'Điểm + Step Analysis'],
+            ['3', 'Phát hiện lỗi gốc', 'First / cascading / independent'],
+            ['4', 'Luyện cá nhân', 'Sổ tay câu sai + bài tương tự + Socratic'],
+            ['5', 'Theo dõi tiến bộ', 'Làm lại → AI kiểm tra → làm chủ']
+          ].map(([index, title, desc], idx) => (
+            <React.Fragment key={index}>
+              <div className="bg-white/90 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-3 relative">
+                <div className="w-7 h-7 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-black mb-2">
+                  {index}
+                </div>
+                <div className="text-xs font-black text-slate-900 dark:text-white">{title}</div>
+                <div className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1">{desc}</div>
+                {idx < 4 && (
+                  <ArrowRight className="hidden sm:block absolute -right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400 z-10" />
+                )}
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
+      </section>
       {/* Top Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
