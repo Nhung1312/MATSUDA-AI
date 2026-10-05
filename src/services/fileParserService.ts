@@ -38,6 +38,58 @@ export interface ParseResult {
 
 export class FileParserService {
   /**
+   * Chuẩn hóa kết quả import trước khi đưa vào editor:
+   * - đánh số lại liên tục 1..n;
+   * - chuẩn hóa ID phương án theo A/B/C/D nhưng giữ đúng đáp án tương ứng;
+   * - làm sạch khoảng trắng cơ bản;
+   * - không tự bịa đáp án mới nếu nguồn không có.
+   */
+  static normalizeParseResult(result: ParseResult): ParseResult {
+    const normalizedItems = (Array.isArray(result.items) ? result.items : [])
+      .filter(item => !!item && typeof item.question === 'string' && item.question.trim().length > 0)
+      .map((item, idx) => {
+        const isEssay = item.category === 'tu_luan' || item.type === 'essay' || item.type === 'short_answer';
+        const originalOptions = Array.isArray(item.options) ? item.options : [];
+        const originalCorrect = String(item.correctAnswer || '').trim().toUpperCase();
+
+        let normalizedCorrect = originalCorrect;
+        let options: QuestionOption[] = [];
+
+        if (!isEssay) {
+          options = originalOptions.map((opt, optIdx) => ({
+            id: String.fromCharCode(65 + optIdx),
+            text: String(opt?.text || '').trim()
+          }));
+
+          const originalCorrectIndex = originalOptions.findIndex(
+            opt => String(opt?.id || '').trim().toUpperCase() === originalCorrect
+          );
+          if (originalCorrectIndex >= 0) {
+            normalizedCorrect = String.fromCharCode(65 + originalCorrectIndex);
+          } else if (!['A', 'B', 'C', 'D'].includes(normalizedCorrect)) {
+            normalizedCorrect = '';
+          }
+        }
+
+        return {
+          ...item,
+          order: idx + 1,
+          question: item.question.trim(),
+          options: isEssay ? [] : options,
+          correctAnswer: isEssay ? String(item.correctAnswer || '').trim() : normalizedCorrect
+        };
+      });
+
+    return {
+      ...result,
+      totalFound: normalizedItems.length,
+      multipleChoiceCount: normalizedItems.filter(i => i.category === 'trac_nghiem').length,
+      essayCount: normalizedItems.filter(i => i.category === 'tu_luan').length,
+      items: normalizedItems
+    };
+  }
+
+  /**
    * Main entry point to parse any supported file
    */
   static async parseFile(file: File): Promise<ParseResult> {
