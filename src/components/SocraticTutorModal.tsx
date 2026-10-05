@@ -14,14 +14,9 @@ import {
   AlertCircle,
   HelpCircle,
   PenTool,
-  Info,
   CheckCircle2,
   Image as ImageIcon,
-  Zap,
   Target,
-  ArrowRight,
-  Eye,
-  EyeOff
 } from 'lucide-react';
 import {
   SocraticContext,
