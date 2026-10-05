@@ -202,7 +202,7 @@ export class FileParserService {
         const rawValue = g.value.trim();
         const isTrue = /\\True\b/i.test(rawValue);
         const clean = rawValue.replace(/\\True\b/gi, '').trim();
-        return `${isTrue ? '\\True ' : ''}${letters[i]}. ${clean}`;
+        return `${letters[i]}. ${isTrue ? '\\True ' : ''}${clean}`;
       }).join('\n');
 
       out = out.slice(0, m.index) + '\n' + options + '\n' + out.slice(cursor);
