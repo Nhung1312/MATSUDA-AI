@@ -59,10 +59,17 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   isTeacherPreview = false
 }) => {
   const [submission, setSubmission] = useState<Submission>(initialSubmission);
+  const effectiveReviewMode: 'score_only' | 'wrong_only' | 'full' =
+    isTeacherPreview || isDemoPreview
+      ? 'full'
+      : assignment.resultReviewMode || (assignment.allowViewResult ? 'full' : 'score_only');
+
   const [resultViewMode, setResultViewMode] = useState<'sheet' | 'detailed'>(
     isTeacherPreview ? 'detailed' : 'sheet'
   );
-  const [filterType, setFilterType] = useState<'all' | 'wrong' | 'correct'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'wrong' | 'correct'>(
+    effectiveReviewMode === 'wrong_only' ? 'wrong' : 'all'
+  );
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
   
   // AI Explanations & Grading
@@ -360,6 +367,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   // Filtered list of answers
   const filteredAnswers = submission.answers.filter(ans => {
     const isAwaitingAnsReview = ans.needsTeacherReview && ans.teacherScore === undefined;
+    if (effectiveReviewMode === 'wrong_only') return !ans.isCorrect && !isAwaitingAnsReview;
     if (filterType === 'correct') return ans.isCorrect;
     if (filterType === 'wrong') return !ans.isCorrect && !isAwaitingAnsReview;
     return true;
@@ -549,7 +557,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
           </details>
 
           {/* SỔ TAY CÂU SAI BANNER (MISTAKE VAULT) */}
-          {submission.wrongCount > 0 ? (
+          {effectiveReviewMode !== 'score_only' && (submission.wrongCount > 0 ? (
             <div className="mt-6 max-w-2xl mx-auto bg-gradient-to-r from-rose-500/10 via-pink-500/10 to-indigo-500/10 border-2 border-rose-200 dark:border-rose-900 rounded-3xl p-5 text-left flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-in fade-in duration-300">
               <div className="flex items-start space-x-3.5">
                 <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-rose-600 to-pink-600 text-white flex items-center justify-center font-bold shrink-0 shadow-md">
@@ -588,11 +596,26 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
               </div>
             </div>
-          )}
+          ))}
 
           {/* Quick Actions */}
           <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-center gap-2 sm:gap-3 mt-6 sm:mt-8">
-            {!isDemoPreview && !isTeacherPreview && (
+            {!isDemoPreview && !isTeacherPreview && effectiveReviewMode === 'wrong_only' && submission.wrongCount > 0 && (
+              <button
+                onClick={() => {
+                  setFilterType('wrong');
+                  setResultViewMode('detailed');
+                  window.setTimeout(() => {
+                    document.getElementById('answer-review-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }, 50);
+                }}
+                className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-5 py-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-sm cursor-pointer"
+              >
+                <BookOpen className="w-4 h-4" />
+                <span>Xem câu sai ({submission.wrongCount})</span>
+              </button>
+            )}
+            {!isDemoPreview && !isTeacherPreview && effectiveReviewMode !== 'score_only' && (
               <button
                 onClick={() => setShowMistakeVault(true)}
                 className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-5 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
@@ -628,6 +651,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         </div>
 
         {/* Chu trình học từ lỗi sai - bản gọn */}
+        {effectiveReviewMode !== 'score_only' && (
         <section className="print:hidden bg-white rounded-2xl border border-indigo-100 shadow-sm p-4">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-2">
@@ -659,11 +683,12 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
             ))}
           </div>
         </section>
+        )}
 
         {/* DETAILED ANSWER REVIEW & RESULT SHEET */}
-        {assignment.allowViewResult ? (
-          <div className="space-y-6">
+        <div className="space-y-6">
             {/* VIEW MODE TABS: PHIẾU KẾT QUẢ THI VS CHI TIẾT TỪNG CÂU */}
+            {effectiveReviewMode !== 'score_only' && (
             <div className="flex bg-slate-200/80 p-1.5 rounded-2xl max-w-md mx-auto shadow-inner border border-slate-300 gap-1.5 print:hidden">
               <button
                 onClick={() => setResultViewMode('sheet')}
@@ -685,62 +710,69 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 }`}
               >
                 <BookOpen className="w-4 h-4 text-indigo-600" />
-                <span>Chi tiết</span>
+                <span>{effectiveReviewMode === 'wrong_only' ? 'Câu sai' : 'Chi tiết'}</span>
               </button>
             </div>
+            )}
 
             {/* 1. OFFICIAL EXAM RESULT SHEET VIEW */}
             {resultViewMode === 'sheet' && (
               <ExamResultSheetView
                 submission={submission}
                 assignment={assignment}
-                onBackToDetailedView={() => setResultViewMode('detailed')}
+                reviewMode={effectiveReviewMode}
+                onBackToDetailedView={() => {
+                  if (effectiveReviewMode === 'wrong_only') setFilterType('wrong');
+                  setResultViewMode('detailed');
+                }}
                 onRetake={onRetake}
               />
             )}
 
             {/* 2. DETAILED ANSWER REVIEW */}
-            {resultViewMode === 'detailed' && (
-              <div className="space-y-6">
+            {effectiveReviewMode !== 'score_only' && resultViewMode === 'detailed' && (
+              <div id="answer-review-section" className="space-y-6 scroll-mt-24">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
                   <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
                     <BookOpen className="w-4 h-4 text-indigo-600" />
-                    <span>Chi tiết từng câu</span>
+                    <span>{effectiveReviewMode === 'wrong_only' ? 'Các câu cần xem lại' : 'Chi tiết từng câu'}</span>
                   </h2>
 
-                  {/* Filter Tabs */}
-                  <div className="flex bg-slate-100 p-1.5 rounded-xl shrink-0 gap-1">
-                    <button
-                      onClick={() => setFilterType('all')}
-                      className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
-                        filterType === 'all'
-                          ? 'bg-white text-slate-900 shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      Tất cả ({submission.answers.length})
-                    </button>
-                    <button
-                      onClick={() => setFilterType('wrong')}
-                      className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
-                        filterType === 'wrong'
-                          ? 'bg-white text-rose-700 shadow-xs'
-                          : 'text-slate-600 hover:text-rose-700'
-                      }`}
-                    >
-                      Sai ({submission.wrongCount})
-                    </button>
-                    <button
-                      onClick={() => setFilterType('correct')}
-                      className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
-                        filterType === 'correct'
-                          ? 'bg-white text-emerald-700 shadow-xs'
-                          : 'text-slate-600 hover:text-emerald-700'
-                      }`}
-                    >
-                      Đúng ({submission.correctCount})
-                    </button>
-                  </div>
+                  {effectiveReviewMode === 'full' && (
+                    <div className="flex bg-slate-100 p-1.5 rounded-xl shrink-0 gap-1">
+                      <button
+                        onClick={() => setFilterType('all')}
+                        className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                          filterType === 'all'
+                            ? 'bg-white text-slate-900 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Tất cả ({submission.answers.length})
+                      </button>
+                      <button
+                        onClick={() => setFilterType('wrong')}
+                        className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                          filterType === 'wrong'
+                            ? 'bg-white text-rose-700 shadow-xs'
+                            : 'text-slate-600 hover:text-rose-700'
+                        }`}
+                      >
+                        Sai ({submission.wrongCount})
+                      </button>
+                      <button
+                        onClick={() => setFilterType('correct')}
+                        className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                          filterType === 'correct'
+                            ? 'bg-white text-emerald-700 shadow-xs'
+                            : 'text-slate-600 hover:text-emerald-700'
+                        }`}
+                      >
+                        Đúng ({submission.correctCount})
+                      </button>
+                    </div>
+  
+                  )}
                 </div>
 
                 {/* List of Questions with Full Explanations */}
@@ -1058,11 +1090,6 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
           </div>
         )}
       </div>
-    ) : (
-          <div className="bg-amber-50 border border-amber-200 rounded-3xl p-6 text-center text-xs text-amber-800">
-            Giáo viên đã tắt chế độ xem đáp án chi tiết cho bài kiểm tra này.
-          </div>
-        )}
       </div>
 
       {/* LIGHTBOX VIEWER */}

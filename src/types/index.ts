@@ -81,7 +81,8 @@ export interface Assignment {
   questions: Question[];
   durationMinutes: number; // 0 = unlimited, >0 = minutes limit
   deadline: string; // ISO date string or YYYY-MM-DD
-  allowViewResult: boolean; // Whether students can view score and answers immediately after submitting
+  allowViewResult: boolean; // Legacy compatibility: false = chỉ xem điểm; true = cho phép xem lại theo resultReviewMode
+  resultReviewMode?: 'score_only' | 'wrong_only' | 'full'; // Mức học sinh được xem sau khi nộp
   assignmentCode: string; // e.g. "TOAN6A1-8K4P"
   createdAt: string;
   isPublished: boolean;
