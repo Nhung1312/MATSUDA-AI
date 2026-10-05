@@ -58,9 +58,23 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
           <h1 className="text-2xl sm:text-3xl lg:text-[2.6rem] font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-600 to-teal-600 dark:from-blue-400 dark:via-indigo-400 dark:to-teal-300 tracking-tight leading-tight">
             Chấm từng bước • Học từ lỗi sai
           </h1>
-          <p className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 max-w-xl mx-auto">
-            PDF / Ảnh / Word / LaTeX → giáo viên duyệt → giao bài → AI tìm lỗi gốc.
-          </p>
+          <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 pt-1 text-[10px] sm:text-[11px] font-bold text-slate-600 dark:text-slate-300">
+            {[
+              ['1', 'Tách đề'],
+              ['2', 'GV duyệt & giao'],
+              ['3', 'HS làm'],
+              ['4', 'AI chấm & lỗi gốc'],
+              ['5', 'Luyện lại & tiến bộ']
+            ].map(([n, label], idx) => (
+              <React.Fragment key={n}>
+                <span className="inline-flex items-center gap-1 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-2.5 py-1 shadow-2xs">
+                  <span className="w-4 h-4 rounded-full bg-indigo-600 text-white text-[9px] flex items-center justify-center">{n}</span>
+                  <span>{label}</span>
+                </span>
+                {idx < 4 && <ArrowRight className="hidden sm:block w-3 h-3 text-slate-300" />}
+              </React.Fragment>
+            ))}
+          </div>
 
           {/* Search / Enter Assignment Code Box */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-2 sm:p-2.5 shadow-md border border-indigo-100 dark:border-slate-800 text-left mt-2">
@@ -119,9 +133,7 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
                   <span>GIÁO VIÊN</span>
                   <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
                 </h3>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                  Giao bài • Xem kết quả
-                </p>
+
               </div>
             </Link>
 
@@ -142,9 +154,7 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
                     Mới
                   </span>
                 </div>
-                <p className="text-[11px] text-orange-800/80 dark:text-orange-200/80 truncate mt-0.5">
-                  Thi &amp; xếp hạng
-                </p>
+
               </div>
             </Link>
 
@@ -161,9 +171,7 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
                   <span>HỌC SINH</span>
                   <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
                 </h3>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                  Nhập mã • Tự luyện
-                </p>
+
               </div>
             </Link>
           </div>
@@ -174,14 +182,9 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
               <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0 shadow-xs">
                 <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
               </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="font-black text-xs sm:text-sm">Tự luyện với AI</span>
-                  <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-900 text-[10px] font-black uppercase">Mới</span>
-                </div>
-                <p className="text-xs text-indigo-100 mt-0.5">
-                  Chọn lớp, chọn chuyên đề → AI tạo bài luyện.
-                </p>
+              <div className="flex items-center gap-1.5">
+                <span className="font-black text-xs sm:text-sm">Tự luyện với AI</span>
+                <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-900 text-[10px] font-black uppercase">Mới</span>
               </div>
             </div>
 
@@ -203,9 +206,7 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
             <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-1.5">
               <span>📚 Danh mục Lớp học</span>
             </h2>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400">
-              Toán 6, 7, 8, 9
-            </span>
+
           </div>
 
           {/* 2x2 Grid Layout for Grade 6, 7, 8, 9 - Clean & Concise */}
@@ -222,11 +223,10 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
                   <div className="min-w-0 flex-1 pr-3">
                     <div className="flex items-center space-x-2.5">
                       <span className={`text-[11px] font-black uppercase px-2.5 py-1 rounded-lg ${meta.colorScheme.badgeBg} ${meta.colorScheme.badgeText} shadow-2xs`}>
-                        {meta.badge}
+                        Lớp {grade}
                       </span>
-                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                        <span>📚</span>
-                        <span>{count} đề luyện tập</span>
+                      <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500">
+                        {count} đề
                       </span>
                     </div>
                   </div>
@@ -241,57 +241,6 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
             })}
           </div>
         </div>
-
-        {/* Platform Feature Cards (4 Compact Highlights) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-left pt-1">
-          <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-start space-x-2.5">
-            <div className="w-7 h-7 rounded-lg bg-violet-100 dark:bg-violet-950/80 text-violet-700 dark:text-violet-400 flex items-center justify-center shrink-0 mt-0.5">
-              <FileCheck className="w-4 h-4" />
-            </div>
-            <div>
-              <h4 className="font-bold text-xs text-slate-900 dark:text-white">Tách đề đa định dạng</h4>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                PDF, ảnh chụp, Word, LaTeX → câu hỏi số hóa để giáo viên duyệt và giao ngay.
-              </p>
-            </div>
-          </div>
-          <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-start space-x-2.5">
-            <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
-              <QrCode className="w-4 h-4" />
-            </div>
-            <div>
-              <h4 className="font-bold text-xs text-slate-900 dark:text-white">Giao bài 1 chạm QR</h4>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                Tạo mã đề hoặc QR gửi nhóm Zalo, học sinh vào thi ngay.
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-start space-x-2.5">
-            <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
-              <Zap className="w-4 h-4" />
-            </div>
-            <div>
-              <h4 className="font-bold text-xs text-slate-900 dark:text-white">Tự chấm &amp; Lời giải</h4>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                Chấm điểm tức thì sau khi nộp, giải thích chi tiết từng bước.
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-start space-x-2.5">
-            <div className="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-400 flex items-center justify-center shrink-0 mt-0.5">
-              <BarChart3 className="w-4 h-4" />
-            </div>
-            <div>
-              <h4 className="font-bold text-xs text-slate-900 dark:text-white">Phổ điểm &amp; Xếp hạng</h4>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                Vinh danh Top 3, thống kê câu hỏi học sinh hay nhầm lẫn.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Compact Footer */}
       <footer className="border-t border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 py-3 text-center text-[11px] text-slate-500 dark:text-slate-400">
