@@ -250,6 +250,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
       referenceStepLatex: errorCtx.referenceStepLatex,
       detectedError: `Lỗi gốc tại Bước ${errorCtx.firstErrorStep}: ${errorCtx.comment}`,
       mistakeRecordId: isTeacherPreview ? undefined : `${assignment.id}_${errorCtx.questionId}`,
+      readOnly: isTeacherPreview || isDemoPreview,
     });
   };
 
@@ -275,6 +276,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
     setSocraticResultContext({
       questionId: question.id,
       mistakeRecordId: isTeacherPreview ? undefined : `${assignment.id}_${question.id}`,
+      readOnly: isTeacherPreview || isDemoPreview,
       questionText: question.question,
       questionType: question.type,
       grade: String(assignment.grade),
