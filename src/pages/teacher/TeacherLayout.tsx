@@ -36,6 +36,7 @@ interface TeacherLayoutProps {
   onRefreshData: () => void;
   onOpenShare: (assignment: Assignment) => void;
   onTestAssignment: (assignment: Assignment) => void;
+  onPreviewSubmission: (assignment: Assignment, submission: Submission) => void;
   onResetData: () => void;
   onClearDemoData?: () => void;
 }
@@ -47,6 +48,7 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
   onRefreshData,
   onOpenShare,
   onTestAssignment,
+  onPreviewSubmission,
   onResetData,
   onClearDemoData
 }) => {
@@ -248,6 +250,8 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
             submissions={safeSubmissions}
             onNavigate={handleNavigate}
             onOpenShare={onOpenShare}
+            onTestAssignment={onTestAssignment}
+            onPreviewSubmission={onPreviewSubmission}
           />
         )}
 
