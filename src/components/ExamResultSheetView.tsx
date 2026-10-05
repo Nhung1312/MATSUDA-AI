@@ -21,7 +21,7 @@ interface ExamResultSheetViewProps {
   assignment: Assignment;
   onBackToDetailedView?: () => void;
   onRetake?: () => void;
-  reviewMode?: 'wrong_only' | 'full';
+  reviewMode?: 'score_only' | 'wrong_only' | 'full';
 }
 
 export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
@@ -43,7 +43,9 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
   const pendingAnswers = submission.answers.filter(isAnswerPending);
   const pendingCount = pendingAnswers.length;
   const visibleAnswers =
-    reviewMode === 'wrong_only'
+    reviewMode === 'score_only'
+      ? []
+      : reviewMode === 'wrong_only'
       ? submission.answers.filter(ans => !ans.isCorrect && !isAnswerPending(ans))
       : submission.answers;
   const hasPendingReview =
@@ -282,6 +284,7 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
           {statusNote}
         </div>
 
+        {reviewMode !== 'score_only' && (
         <div className="mb-4">
           <h2 className="text-sm font-black mb-2">
             {reviewMode === 'wrong_only' ? 'Các câu cần xem lại' : 'Kết quả từng câu'}
@@ -356,11 +359,14 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
             </div>
           )}
         </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-200 pt-4 avoid-break">
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <h3 className="text-xs font-black text-slate-800 mb-2">Điểm cần củng cố</h3>
-            {improvementItems.length > 0 ? (
+            <h3 className="text-xs font-black text-slate-800 mb-2">{reviewMode === 'score_only' ? 'Trạng thái' : 'Điểm cần củng cố'}</h3>
+            {reviewMode === 'score_only' ? (
+              <p className="text-[11px] text-slate-600">Giáo viên chọn chế độ chỉ xem điểm cho bài này.</p>
+            ) : improvementItems.length > 0 ? (
               <ul className="space-y-1 text-[11px] text-slate-600">
                 {improvementItems.map((item, idx) => (
                   <li key={idx}>• {item}</li>
