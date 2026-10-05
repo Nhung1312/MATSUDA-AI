@@ -557,7 +557,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
           </details>
 
           {/* SỔ TAY CÂU SAI BANNER (MISTAKE VAULT) */}
-          {submission.wrongCount > 0 ? (
+          {effectiveReviewMode !== 'score_only' && (submission.wrongCount > 0 ? (
             <div className="mt-6 max-w-2xl mx-auto bg-gradient-to-r from-rose-500/10 via-pink-500/10 to-indigo-500/10 border-2 border-rose-200 dark:border-rose-900 rounded-3xl p-5 text-left flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-in fade-in duration-300">
               <div className="flex items-start space-x-3.5">
                 <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-rose-600 to-pink-600 text-white flex items-center justify-center font-bold shrink-0 shadow-md">
@@ -596,7 +596,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
               </div>
             </div>
-          )}
+          ))}
 
           {/* Quick Actions */}
           <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-center gap-2 sm:gap-3 mt-6 sm:mt-8">
@@ -615,7 +615,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 <span>Xem câu sai ({submission.wrongCount})</span>
               </button>
             )}
-            {!isDemoPreview && !isTeacherPreview && (
+            {!isDemoPreview && !isTeacherPreview && effectiveReviewMode !== 'score_only' && (
               <button
                 onClick={() => setShowMistakeVault(true)}
                 className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-5 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
@@ -651,6 +651,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         </div>
 
         {/* Chu trình học từ lỗi sai - bản gọn */}
+        {effectiveReviewMode !== 'score_only' && (
         <section className="print:hidden bg-white rounded-2xl border border-indigo-100 shadow-sm p-4">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-2">
@@ -682,6 +683,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
             ))}
           </div>
         </section>
+        )}
 
         {/* DETAILED ANSWER REVIEW & RESULT SHEET */}
         {effectiveReviewMode !== 'score_only' ? (
@@ -717,6 +719,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
               <ExamResultSheetView
                 submission={submission}
                 assignment={assignment}
+                reviewMode={effectiveReviewMode}
                 onBackToDetailedView={() => {
                   if (effectiveReviewMode === 'wrong_only') setFilterType('wrong');
                   setResultViewMode('detailed');
