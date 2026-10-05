@@ -52,11 +52,187 @@ export class FileParserService {
       return this.parseDocxFile(file);
     } else if (lowerName.endsWith('.pdf')) {
       return this.parsePdfFile(file);
+    } else if (lowerName.endsWith('.tex')) {
+      return this.parseLatexFile(file);
     } else {
       // Text fallback (.txt, .md, etc.)
       const text = await file.text();
       return this.parseRawText(text, fileName, 'text');
     }
+  }
+
+  /**
+   * Parse LaTeX (.tex) đề Toán.
+   * Hỗ trợ tốt cấu trúc phổ biến: \\begin{ex}...\\end{ex}, \\choice{A}{B}{C}{D},
+   * phương án đúng đánh dấu \\True và lời giải \\loigiai{...}.
+   * Nếu file không theo cấu trúc này, hệ thống vẫn đưa về parser văn bản chung.
+   */
+  static async parseLatexFile(file: File): Promise<ParseResult> {
+    const raw = await file.text();
+    const normalized = this.normalizeLatexExamText(raw);
+    return this.parseRawText(normalized, file.name, 'text');
+  }
+
+  private static normalizeLatexExamText(raw: string): string {
+    if (!raw || !raw.trim()) return '';
+
+    // Bỏ comment LaTeX (trừ \% đã escape) và phần khai báo thường không phải nội dung đề.
+    let text = raw
+      .split(/\r?\n/)
+      .map(line => line.replace(/(^|[^\\])%.*$/, '$1'))
+      .join('\n')
+      .replace(/\\documentclass(?:\[[^\]]*\])?\{[^}]+\}/g, '')
+      .replace(/\\usepackage(?:\[[^\]]*\])?\{[^}]+\}/g, '')
+      .replace(/\\begin\{document\}|\\end\{document\}/g, '');
+
+    const blocks: string[] = [];
+    const envRegex = /\\begin\{(ex|bt|vd)\}([\s\S]*?)\\end\{\1\}/gi;
+    let match: RegExpExecArray | null;
+    let order = 1;
+
+    while ((match = envRegex.exec(text)) !== null) {
+      const body = this.normalizeSingleLatexExercise(match[2], order);
+      if (body.trim()) {
+        blocks.push(body);
+        order++;
+      }
+    }
+
+    // Nếu không có môi trường ex/bt/vd, vẫn cố chuẩn hóa các macro phổ biến rồi dùng parser chung.
+    if (blocks.length === 0) {
+      text = this.replaceLatexChoices(text);
+      text = this.replaceLatexSolution(text);
+      text = text
+        .replace(/\\(?:textbf|textit|emph)\{([^{}]*)\}/g, '$1')
+        .replace(/\\(?:begin|end)\{(?:center|flushleft|flushright|enumerate|itemize)\}/g, '\n')
+        .replace(/\\item\s*/g, '\n')
+        .trim();
+      return text;
+    }
+
+    return blocks.join('\n\n');
+  }
+
+  private static normalizeSingleLatexExercise(body: string, order: number): string {
+    let content = body.trim();
+    let solution = '';
+
+    // Tách lời giải dạng \\loigiai{...}
+    const loiIdx = content.search(/\\loigiai\s*\{/i);
+    if (loiIdx !== -1) {
+      const braceStart = content.indexOf('{', loiIdx);
+      if (braceStart !== -1) {
+        const group = this.readBalancedGroup(content, braceStart);
+        if (group) {
+          solution = group.value.trim();
+          content = (content.slice(0, loiIdx) + content.slice(group.endIndex + 1)).trim();
+        }
+      }
+    }
+
+    // Tách lời giải dạng môi trường
+    const envSolution = content.match(/\\begin\{loigiai\}([\s\S]*?)\\end\{loigiai\}/i);
+    if (envSolution) {
+      solution = envSolution[1].trim();
+      content = content.replace(envSolution[0], '').trim();
+    }
+
+    content = this.replaceLatexChoices(content)
+      .replace(/\\(?:textbf|textit|emph)\{([^{}]*)\}/g, '$1')
+      .replace(/\\(?:begin|end)\{(?:center|flushleft|flushright|enumerate|itemize)\}/g, '\n')
+      .replace(/\\item\s*/g, '\n')
+      .trim();
+
+    if (solution) {
+      solution = solution
+        .replace(/\\(?:textbf|textit|emph)\{([^{}]*)\}/g, '$1')
+        .trim();
+    }
+
+    return `Câu ${order}. ${content}${solution ? `\nLời giải: ${solution}` : ''}`;
+  }
+
+  private static replaceLatexSolution(text: string): string {
+    let out = text;
+    const regex = /\\loigiai\s*\{/gi;
+    let guard = 0;
+    while (guard++ < 100) {
+      regex.lastIndex = 0;
+      const m = regex.exec(out);
+      if (!m) break;
+      const braceStart = out.indexOf('{', m.index);
+      if (braceStart === -1) break;
+      const group = this.readBalancedGroup(out, braceStart);
+      if (!group) break;
+      out = out.slice(0, m.index) + `\nLời giải: ${group.value}\n` + out.slice(group.endIndex + 1);
+    }
+    return out;
+  }
+
+  private static replaceLatexChoices(text: string): string {
+    let out = text;
+    const macroRegex = /\\choice(?:TF)?\s*/gi;
+    let guard = 0;
+
+    while (guard++ < 100) {
+      macroRegex.lastIndex = 0;
+      const m = macroRegex.exec(out);
+      if (!m) break;
+
+      let cursor = m.index + m[0].length;
+      const groups: Array<{ value: string; endIndex: number }> = [];
+
+      for (let i = 0; i < 4; i++) {
+        while (cursor < out.length && /\s/.test(out[cursor])) cursor++;
+        if (out[cursor] !== '{') break;
+        const group = this.readBalancedGroup(out, cursor);
+        if (!group) break;
+        groups.push(group);
+        cursor = group.endIndex + 1;
+      }
+
+      if (groups.length < 2) {
+        // Tránh vòng lặp vô hạn với macro không đúng cấu trúc.
+        out = out.slice(0, m.index) + ' ' + out.slice(m.index + m[0].length);
+        continue;
+      }
+
+      const letters = ['A', 'B', 'C', 'D'];
+      const options = groups.map((g, i) => {
+        const rawValue = g.value.trim();
+        const isTrue = /\\True\b/i.test(rawValue);
+        const clean = rawValue.replace(/\\True\b/gi, '').trim();
+        return `${isTrue ? '\\True ' : ''}${letters[i]}. ${clean}`;
+      }).join('\n');
+
+      out = out.slice(0, m.index) + '\n' + options + '\n' + out.slice(cursor);
+    }
+
+    return out;
+  }
+
+  private static readBalancedGroup(source: string, startIndex: number): { value: string; endIndex: number } | null {
+    if (source[startIndex] !== '{') return null;
+    let depth = 0;
+
+    for (let i = startIndex; i < source.length; i++) {
+      const ch = source[i];
+      const escaped = i > 0 && source[i - 1] === '\\';
+      if (escaped) continue;
+
+      if (ch === '{') depth++;
+      if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          return {
+            value: source.slice(startIndex + 1, i),
+            endIndex: i
+          };
+        }
+      }
+    }
+
+    return null;
   }
 
   /**
