@@ -156,7 +156,16 @@ export class GradingService {
     violationEvents?: ViolationEvent[];
     isShuffled?: boolean;
     attemptNumber?: number;
-    aiFeedbacks?: Record<string, { score?: number; feedback?: string; graded?: boolean }>;
+    aiFeedbacks?: Record<string, {
+      score?: number;
+      feedback?: string;
+      graded?: boolean;
+      needsTeacherReview?: boolean;
+      isProvisional?: boolean;
+      aiGradingError?: boolean;
+      stepGradingResponse?: StepGradingResponse;
+      firstErrorStep?: number | null;
+    }>;
   }): ContestSubmission {
     const {
       contest,
@@ -203,10 +212,14 @@ export class GradingService {
       if (isEssay) {
         hasEssay = true;
         if (aiEval && typeof aiEval.score === 'number') {
+          const stepRes = aiEval.stepGradingResponse;
+          const needsReview = !!(aiEval.needsTeacherReview || aiEval.isProvisional || aiEval.aiGradingError || stepRes?.needsTeacherReview || stepRes?.analysisSource === 'rule' || stepRes?.analysisSource === 'unavailable');
           pointsEarned = Math.min(questionPoints, Math.max(0, aiEval.score));
-          const stepRes = (aiEval as any).stepGradingResponse;
-          const hasError = !!(aiEval as any).firstErrorStep || !!stepRes?.firstErrorStep || (stepRes?.analysis || []).some((s: any) => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
-          if (stepRes && typeof stepRes.isAllCorrect === 'boolean') {
+          const hasError = !!aiEval.firstErrorStep || !!stepRes?.firstErrorStep || (stepRes?.analysis || []).some((s: any) => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
+          if (needsReview) {
+            isEssayGraded = false;
+            isCorrect = false;
+          } else if (stepRes && typeof stepRes.isAllCorrect === 'boolean') {
             isCorrect = stepRes.isAllCorrect && !hasError;
           } else if (hasError) {
             isCorrect = false;
@@ -240,8 +253,11 @@ export class GradingService {
       earnedTotalPoints += pointsEarned;
       maxPointsTotal += questionPoints;
 
+      const answerNeedsReview = isEssay && !!(aiEval?.needsTeacherReview || aiEval?.isProvisional || aiEval?.aiGradingError || aiEval?.stepGradingResponse?.needsTeacherReview || aiEval?.stepGradingResponse?.analysisSource === 'rule' || aiEval?.stepGradingResponse?.analysisSource === 'unavailable');
       if (isUnanswered) {
         unansweredCount++;
+      } else if (answerNeedsReview) {
+        // Chưa chấm chính thức: không tính là câu sai.
       } else if (isCorrect) {
         correctCount++;
       } else {
@@ -260,7 +276,11 @@ export class GradingService {
         maxPoints: questionPoints,
         aiFeedback: aiEval?.feedback,
         aiScore: aiEval?.score,
-        aiGraded: aiEval?.graded
+        aiGraded: aiEval?.graded,
+        needsTeacherReview: answerNeedsReview,
+        isProvisional: answerNeedsReview,
+        aiGradingError: !!aiEval?.aiGradingError,
+        stepGradingResponse: aiEval?.stepGradingResponse
       };
     });
 
@@ -319,7 +339,16 @@ export class GradingService {
     tabSwitchCount?: number;
     violationEvents?: ViolationEvent[];
     isShuffled?: boolean;
-    aiFeedbacks?: Record<string, { score?: number; feedback?: string; graded?: boolean }>;
+    aiFeedbacks?: Record<string, {
+      score?: number;
+      feedback?: string;
+      graded?: boolean;
+      needsTeacherReview?: boolean;
+      isProvisional?: boolean;
+      aiGradingError?: boolean;
+      stepGradingResponse?: StepGradingResponse;
+      firstErrorStep?: number | null;
+    }>;
   }): Submission {
     const { 
       assignment, 
@@ -369,10 +398,13 @@ export class GradingService {
         maxEssayPoints += q.points;
         // Với câu tự luận: nếu đã có điểm AI chấm
         if (aiEval && typeof aiEval.score === 'number') {
+          const stepRes = aiEval.stepGradingResponse;
+          const needsReview = !!(aiEval.needsTeacherReview || aiEval.isProvisional || aiEval.aiGradingError || stepRes?.needsTeacherReview || stepRes?.analysisSource === 'rule' || stepRes?.analysisSource === 'unavailable');
           pointsEarned = Math.min(q.points, Math.max(0, aiEval.score));
-          const stepRes = (aiEval as any).stepGradingResponse;
-          const hasError = !!(aiEval as any).firstErrorStep || !!stepRes?.firstErrorStep || (stepRes?.analysis || []).some((s: any) => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
-          if (stepRes && typeof stepRes.isAllCorrect === 'boolean') {
+          const hasError = !!aiEval.firstErrorStep || !!stepRes?.firstErrorStep || (stepRes?.analysis || []).some((s: any) => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
+          if (needsReview) {
+            isCorrect = false;
+          } else if (stepRes && typeof stepRes.isAllCorrect === 'boolean') {
             isCorrect = stepRes.isAllCorrect && !hasError;
           } else if (hasError) {
             isCorrect = false;
@@ -412,8 +444,11 @@ export class GradingService {
       earnedPointsTotal += pointsEarned;
       maxPointsTotal += q.points;
 
+      const answerNeedsReview = isEssay && !!(aiEval?.needsTeacherReview || aiEval?.isProvisional || aiEval?.aiGradingError || aiEval?.stepGradingResponse?.needsTeacherReview || aiEval?.stepGradingResponse?.analysisSource === 'rule' || aiEval?.stepGradingResponse?.analysisSource === 'unavailable' || ((solutionText || images.length > 0 || selected) && !aiEval));
       if (isUnanswered) {
         unansweredCount++;
+      } else if (answerNeedsReview) {
+        // Chưa chấm chính thức: không tính là câu sai.
       } else if (isCorrect) {
         correctCount++;
       } else {
@@ -436,9 +471,11 @@ export class GradingService {
         stepAnalysis: (aiEval as any)?.stepAnalysis || (aiEval as any)?.stepGradingResponse?.analysis,
         firstErrorStep: (aiEval as any)?.firstErrorStep !== undefined ? (aiEval as any)?.firstErrorStep : (aiEval as any)?.stepGradingResponse?.firstErrorStep,
         firstErrorType: (aiEval as any)?.firstErrorType || (aiEval as any)?.stepGradingResponse?.firstErrorType,
-        firstErrorExplanation: (aiEval as any)?.firstErrorExplanation || (aiEval as any)?.stepGradingResponse?.firstErrorExplanation,
-        needsTeacherReview: (aiEval as any)?.needsTeacherReview !== undefined ? (aiEval as any)?.needsTeacherReview : (aiEval as any)?.stepGradingResponse?.needsTeacherReview,
-        stepGradingResponse: (aiEval as any)?.stepGradingResponse
+        firstErrorExplanation: aiEval?.firstErrorExplanation || aiEval?.stepGradingResponse?.firstErrorExplanation,
+        needsTeacherReview: answerNeedsReview,
+        isProvisional: answerNeedsReview,
+        aiGradingError: !!aiEval?.aiGradingError,
+        stepGradingResponse: aiEval?.stepGradingResponse
       };
     });
 
@@ -450,6 +487,8 @@ export class GradingService {
     const startTime = new Date(startedAt).getTime();
     const endTime = new Date(submittedAt).getTime();
     const timeSpentSeconds = Math.max(1, Math.round((endTime - startTime) / 1000));
+
+    const provisionalCount = answers.filter(a => a.needsTeacherReview && a.teacherScore === undefined).length;
 
     return {
       id: `sub_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -463,7 +502,10 @@ export class GradingService {
       totalScore: finalScore,
       maxScore: 10,
       hasEssayQuestions,
-      gradingStatus: hasEssayQuestions ? 'pending_teacher_grading' : 'graded',
+      gradingStatus: provisionalCount > 0 ? 'needs_review' : (hasEssayQuestions ? 'pending_teacher_grading' : 'graded'),
+      needsTeacherReview: provisionalCount > 0,
+      isProvisional: provisionalCount > 0,
+      ungradedCount: provisionalCount,
       mcqScore,
       mcqPoints: Math.round(earnedMcqPoints * 10) / 10,
       maxMcqPoints: Math.round(maxMcqPoints * 10) / 10,
