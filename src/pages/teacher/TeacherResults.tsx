@@ -44,7 +44,8 @@ import {
   Brain,
   ZoomIn,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 
 interface TeacherResultsProps {
