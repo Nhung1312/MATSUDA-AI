@@ -410,7 +410,10 @@ export const TeacherContestResults: React.FC<TeacherContestResultsProps> = ({
             teacherScore: teacherScoreInput,
             teacherFeedback: teacherFeedbackInput,
             pointsEarned: teacherScoreInput,
-            isCorrect: teacherScoreInput >= (a.maxPoints || 1)
+            isCorrect: teacherScoreInput >= (a.maxPoints || 1),
+            needsTeacherReview: false,
+            isProvisional: false,
+            aiGradingError: false
           };
         }
         return a;
