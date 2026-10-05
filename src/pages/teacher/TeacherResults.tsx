@@ -113,6 +113,23 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   const targetClass = currentAssignment ? safeClasses.find(c => c.id === currentAssignment.classId) : null;
   const classStudents = targetClass?.students || [];
 
+  const isAnswerPendingTeacherReview = (submission: Submission, ans: StudentAnswer) => {
+    if (ans.teacherScore !== undefined) return false;
+    if (ans.needsTeacherReview || ans.isProvisional || ans.aiGradingError) return true;
+    if (submission.gradingStatus === 'pending_teacher_grading' && currentAssignment) {
+      const q = currentAssignment.questions.find(item => item.id === ans.questionId);
+      return Boolean(q && isEssayQuestion(q));
+    }
+    return false;
+  };
+
+  const getPendingReviewCount = (submission: Submission) =>
+    submission.answers.filter(ans => isAnswerPendingTeacherReview(submission, ans)).length;
+
+  const selectedPendingReviewCount = selectedSubmissionDetail
+    ? getPendingReviewCount(selectedSubmissionDetail)
+    : 0;
+
   // Filter submissions for current assignment
   const currentSubmissions = useMemo(() => {
     return safeSubmissions.filter(s => s.assignmentId === currentAssignment?.id);
@@ -370,7 +387,12 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   // Teacher manual override score and comment
   const handleSaveTeacherManualGrade = (ans: StudentAnswer, question: any) => {
     if (!selectedSubmissionDetail || !currentAssignment) return;
-    const scoreVal = teacherScoreInput[ans.questionId] !== undefined ? teacherScoreInput[ans.questionId] : (ans.teacherScore !== undefined ? ans.teacherScore : ans.pointsEarned);
+    const requestedScore = teacherScoreInput[ans.questionId] !== undefined
+      ? teacherScoreInput[ans.questionId]
+      : (ans.teacherScore !== undefined ? ans.teacherScore : ans.pointsEarned);
+    const maxScore = Number(question.points || ans.maxPoints || 1);
+    const numericScore = Number.isFinite(Number(requestedScore)) ? Number(requestedScore) : 0;
+    const scoreVal = Math.max(0, Math.min(maxScore, numericScore));
     const fbVal = teacherFeedbackInput[ans.questionId] !== undefined ? teacherFeedbackInput[ans.questionId] : (ans.teacherFeedback || '');
 
     const updatedAnswers = selectedSubmissionDetail.answers.map(a => {
@@ -400,13 +422,37 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       const max = q ? q.points : (a.maxPoints || 1);
       totalMax += max;
       totalEarned += (a.teacherScore !== undefined ? a.teacherScore : a.pointsEarned);
-      if (a.isCorrect) correctCnt++; else wrongCnt++;
+      const pendingForCounts =
+        a.teacherScore === undefined &&
+        Boolean(
+          a.needsTeacherReview ||
+          a.isProvisional ||
+          a.aiGradingError ||
+          (selectedSubmissionDetail.gradingStatus === 'pending_teacher_grading' && q && isEssayQuestion(q))
+        );
+      if (!pendingForCounts) {
+        if (a.isCorrect) correctCnt++;
+        else wrongCnt++;
+      }
     });
     const rawScore = totalMax > 0 ? (totalEarned / totalMax) * 10 : 0;
     const totalScore = Math.round(rawScore * 10) / 10;
 
-    // Kiểm tra còn câu nào cần duyệt chưa có điểm giáo viên không
-    const stillNeedsReview = updatedAnswers.some(a => a.needsTeacherReview && a.teacherScore === undefined);
+    const pendingReviewCount = updatedAnswers.filter(a => {
+      if (a.teacherScore !== undefined) return false;
+      if (a.needsTeacherReview || a.isProvisional || a.aiGradingError) return true;
+      if (selectedSubmissionDetail.gradingStatus === 'pending_teacher_grading') {
+        const q = currentAssignment.questions.find(item => item.id === a.questionId);
+        return Boolean(q && isEssayQuestion(q));
+      }
+      return false;
+    }).length;
+    const stillNeedsReview = pendingReviewCount > 0;
+
+    const wasReviewWorkflow =
+      Boolean(selectedSubmissionDetail.isProvisional || selectedSubmissionDetail.needsTeacherReview) ||
+      selectedSubmissionDetail.gradingStatus === 'pending_teacher_grading' ||
+      selectedSubmissionDetail.gradingStatus === 'needs_review';
 
     const updatedSubmission: Submission = {
       ...selectedSubmissionDetail,
@@ -415,9 +461,11 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       correctCount: correctCnt,
       wrongCount: wrongCnt,
       needsTeacherReview: stillNeedsReview,
-      isProvisional: stillNeedsReview,
-      gradingStatus: stillNeedsReview ? 'needs_review' : 'graded',
-      ungradedCount: updatedAnswers.filter(a => a.needsTeacherReview && a.teacherScore === undefined).length
+      isProvisional: stillNeedsReview || wasReviewWorkflow,
+      gradingStatus: stillNeedsReview
+        ? (selectedSubmissionDetail.gradingStatus === 'pending_teacher_grading' ? 'pending_teacher_grading' : 'needs_review')
+        : (wasReviewWorkflow ? 'needs_review' : 'graded'),
+      ungradedCount: pendingReviewCount
     };
 
     setSelectedSubmissionDetail(updatedSubmission);
@@ -428,6 +476,23 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     setTimeout(() => {
       setSavedGradeSuccess(prev => ({ ...prev, [ans.questionId]: false }));
     }, 2500);
+  };
+
+  const handleFinalizeSubmission = () => {
+    if (!selectedSubmissionDetail) return;
+    const pending = getPendingReviewCount(selectedSubmissionDetail);
+    if (pending > 0) return;
+
+    const finalized: Submission = {
+      ...selectedSubmissionDetail,
+      needsTeacherReview: false,
+      isProvisional: false,
+      ungradedCount: 0,
+      gradingStatus: 'graded'
+    };
+    setSelectedSubmissionDetail(finalized);
+    StorageService.saveSubmission(finalized);
+    FirestoreService.saveResult(finalized).catch(() => {});
   };
 
   // Export CSV
@@ -1276,7 +1341,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                           {sub.hasEssayQuestions && sub.gradingStatus === 'pending_teacher_grading' ? (
                             <div className="flex flex-col items-center gap-0.5">
                               <span className="inline-block px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-purple-100 text-purple-800 border border-purple-200">
-                                Chờ chấm tự luận
+                                Chờ chấm tự luận ({getPendingReviewCount(sub)})
                               </span>
                               <span className="text-[11px] text-slate-500 font-semibold">
                                 TN: {sub.mcqScore !== undefined ? sub.mcqScore.toFixed(1) : sub.totalScore.toFixed(1)}đ
@@ -1290,7 +1355,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                                 {sub.totalScore.toFixed(1)}
                               </span>
                               <span className="inline-block px-2 py-0.5 rounded-full font-black text-[9px] bg-amber-100 text-amber-900 border border-amber-300">
-                                ⚠️ Cần GV duyệt
+                                Cần GV duyệt ({getPendingReviewCount(sub)})
                               </span>
                             </div>
                           ) : (
@@ -1412,8 +1477,11 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                   Bài làm của {selectedSubmissionDetail.studentName}
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Thời gian làm: {GradingService.formatDuration(selectedSubmissionDetail.timeSpentSeconds)} • Điểm:{' '}
-                  <strong className="text-indigo-600 text-sm">{selectedSubmissionDetail.totalScore}/10</strong>
+                  Thời gian: {GradingService.formatDuration(selectedSubmissionDetail.timeSpentSeconds)} •{' '}
+                  <strong className={selectedPendingReviewCount > 0 ? 'text-amber-700 text-sm' : 'text-indigo-600 text-sm'}>
+                    {selectedSubmissionDetail.totalScore}/10
+                  </strong>
+                  {selectedPendingReviewCount > 0 && <span className="text-amber-700"> • Tạm tính</span>}
                 </p>
               </div>
               <div className="flex items-center space-x-2">
@@ -1424,7 +1492,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                   title="Chấm toàn bộ các câu tự luận bài này theo từng bước"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span>{gradingSingleInProgress ? 'Đang chấm AI...' : 'AI Chấm Toàn Bài Này'}</span>
+                  <span>{gradingSingleInProgress ? 'Đang chấm AI...' : 'AI chấm toàn bài'}</span>
                 </button>
                 <button
                   onClick={() => setSelectedSubmissionDetail(null)}
@@ -1433,6 +1501,39 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                   ✕
                 </button>
               </div>
+            </div>
+
+            <div className={`mb-4 rounded-2xl border px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+              selectedPendingReviewCount > 0
+                ? 'bg-amber-50 border-amber-200'
+                : 'bg-emerald-50 border-emerald-200'
+            }`}>
+              <div>
+                <div className={`text-sm font-black ${selectedPendingReviewCount > 0 ? 'text-amber-900' : 'text-emerald-900'}`}>
+                  {selectedPendingReviewCount > 0
+                    ? `Còn ${selectedPendingReviewCount} câu cần giáo viên duyệt`
+                    : 'Đã duyệt xong tất cả câu'}
+                </div>
+                <div className="text-[11px] text-slate-600 mt-0.5">
+                  {selectedPendingReviewCount > 0
+                    ? 'Các câu cần duyệt được đưa lên đầu. Lưu điểm từng câu để hoàn tất.'
+                    : 'Có thể chốt kết quả chính thức cho học sinh.'}
+                </div>
+              </div>
+              {selectedPendingReviewCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const pending = selectedSubmissionDetail.answers.find(ans =>
+                      isAnswerPendingTeacherReview(selectedSubmissionDetail, ans)
+                    );
+                    if (pending) document.getElementById(`teacher-review-${pending.questionId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }}
+                  className="px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold"
+                >
+                  Đến câu cần duyệt
+                </button>
+              )}
             </div>
 
             {/* Anti-Cheat Teacher Audit Box */}
@@ -1504,7 +1605,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
             )}
 
             <div className="space-y-4">
-              {selectedSubmissionDetail.answers.map((ans) => {
+              {[...selectedSubmissionDetail.answers]
+                .sort((a, b) => Number(isAnswerPendingTeacherReview(selectedSubmissionDetail, b)) - Number(isAnswerPendingTeacherReview(selectedSubmissionDetail, a)))
+                .map((ans) => {
                 const question = currentAssignment.questions.find(q => q.id === ans.questionId);
                 if (!question) return null;
 
@@ -1513,6 +1616,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                 const images = ans.essayImages || [];
                 const isLoadingAI = !!gradingAiInProgress[ans.questionId];
                 const isSaved = !!savedGradeSuccess[ans.questionId];
+                const isPendingReview = isAnswerPendingTeacherReview(selectedSubmissionDetail, ans);
 
                 const currentScore = teacherScoreInput[ans.questionId] !== undefined
                   ? teacherScoreInput[ans.questionId]
@@ -1524,17 +1628,32 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
 
                 return (
                   <div
+                    id={`teacher-review-${ans.questionId}`}
                     key={ans.questionId}
-                    className={`p-4 rounded-2xl border ${
-                      isCorrect ? 'border-emerald-200 bg-emerald-50/20' : 'border-rose-200 bg-rose-50/20'
+                    className={`p-4 rounded-2xl border scroll-mt-20 ${
+                      isPendingReview
+                        ? 'border-amber-300 bg-amber-50/30'
+                        : isCorrect
+                        ? 'border-emerald-200 bg-emerald-50/20'
+                        : 'border-rose-200 bg-rose-50/20'
                     }`}
                   >
                     <div className="flex items-center justify-between text-xs font-bold mb-1.5">
                       <span className="text-slate-700">
                         Câu {question.order} • {getQuestionTypeLabel(question)} ({question.points} điểm)
                       </span>
-                      <span className={isCorrect ? 'text-emerald-700 font-extrabold' : 'text-rose-700 font-extrabold'}>
-                        {isCorrect ? `✓ Đúng (+${ans.pointsEarned}đ)` : `✗ Chưa đạt (+${ans.pointsEarned}/${question.points}đ)`}
+                      <span className={
+                        isPendingReview
+                          ? 'text-amber-700 font-extrabold'
+                          : isCorrect
+                          ? 'text-emerald-700 font-extrabold'
+                          : 'text-rose-700 font-extrabold'
+                      }>
+                        {isPendingReview
+                          ? 'Chờ GV duyệt'
+                          : isCorrect
+                          ? `✓ Đúng (+${ans.pointsEarned}đ)`
+                          : `Cần xem lại (+${ans.pointsEarned}/${question.points}đ)`}
                       </span>
                     </div>
 
@@ -1743,29 +1862,33 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
               })}
             </div>
 
-            {/* Nút Duyệt và công bố điểm cho học sinh */}
-            {selectedSubmissionDetail.hasEssayQuestions && selectedSubmissionDetail.gradingStatus === 'pending_teacher_grading' && (
-              <div className="p-4 bg-purple-50 rounded-2xl border border-purple-200 flex flex-col sm:flex-row items-center justify-between gap-3 mt-4">
-                <div className="text-xs text-purple-900">
-                  <span className="font-bold block">Bài thi này đang ở trạng thái: "Chờ giáo viên chấm"</span>
-                  <span className="text-purple-700 text-[11px]">Học sinh mới chỉ xem được điểm trắc nghiệm tạm tính.</span>
+            {/* Chốt kết quả chính thức */}
+            {(selectedSubmissionDetail.gradingStatus !== 'graded' || selectedSubmissionDetail.needsTeacherReview || selectedSubmissionDetail.isProvisional) && (
+              <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 ${
+                selectedPendingReviewCount > 0
+                  ? 'bg-amber-50 border-amber-200'
+                  : 'bg-emerald-50 border-emerald-200'
+              }`}>
+                <div className="text-xs">
+                  <span className={`font-bold block ${selectedPendingReviewCount > 0 ? 'text-amber-900' : 'text-emerald-900'}`}>
+                    {selectedPendingReviewCount > 0
+                      ? `Chưa thể chốt • còn ${selectedPendingReviewCount} câu cần duyệt`
+                      : 'Bài đã đủ điều kiện chốt điểm'}
+                  </span>
+                  <span className="text-slate-600 text-[11px]">
+                    {selectedPendingReviewCount > 0
+                      ? 'Hãy lưu điểm giáo viên cho các câu còn lại.'
+                      : 'Sau khi chốt, phiếu học sinh sẽ chuyển sang KẾT QUẢ CHÍNH THỨC.'}
+                  </span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    const finalized: Submission = {
-                      ...selectedSubmissionDetail,
-                      gradingStatus: 'graded'
-                    };
-                    setSelectedSubmissionDetail(finalized);
-                    StorageService.saveSubmission(finalized);
-                    FirestoreService.saveResult(finalized).catch(() => {});
-                    alert('Đã duyệt và chính thức công bố điểm cho học sinh!');
-                  }}
-                  className="w-full sm:w-auto px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                  onClick={handleFinalizeSubmission}
+                  disabled={selectedPendingReviewCount > 0}
+                  className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Duyệt & Công bố điểm</span>
+                  <span>Chốt kết quả</span>
                 </button>
               </div>
             )}
