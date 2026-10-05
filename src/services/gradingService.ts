@@ -164,7 +164,10 @@ export class GradingService {
       isProvisional?: boolean;
       aiGradingError?: boolean;
       stepGradingResponse?: StepGradingResponse;
+      stepAnalysis?: StepAnalysis[];
       firstErrorStep?: number | null;
+      firstErrorType?: StepErrorType | null;
+      firstErrorExplanation?: string | null;
     }>;
   }): ContestSubmission {
     const {
@@ -253,7 +256,15 @@ export class GradingService {
       earnedTotalPoints += pointsEarned;
       maxPointsTotal += questionPoints;
 
-      const answerNeedsReview = isEssay && !!(aiEval?.needsTeacherReview || aiEval?.isProvisional || aiEval?.aiGradingError || aiEval?.stepGradingResponse?.needsTeacherReview || aiEval?.stepGradingResponse?.analysisSource === 'rule' || aiEval?.stepGradingResponse?.analysisSource === 'unavailable');
+      const answerNeedsReview = isEssay && !!(
+        aiEval?.needsTeacherReview ||
+        aiEval?.isProvisional ||
+        aiEval?.aiGradingError ||
+        aiEval?.stepGradingResponse?.needsTeacherReview ||
+        aiEval?.stepGradingResponse?.analysisSource === 'rule' ||
+        aiEval?.stepGradingResponse?.analysisSource === 'unavailable' ||
+        ((solutionText || images.length > 0 || selected) && !aiEval)
+      );
       if (isUnanswered) {
         unansweredCount++;
       } else if (answerNeedsReview) {
@@ -347,7 +358,10 @@ export class GradingService {
       isProvisional?: boolean;
       aiGradingError?: boolean;
       stepGradingResponse?: StepGradingResponse;
+      stepAnalysis?: StepAnalysis[];
       firstErrorStep?: number | null;
+      firstErrorType?: StepErrorType | null;
+      firstErrorExplanation?: string | null;
     }>;
   }): Submission {
     const { 
@@ -775,13 +789,14 @@ export class GradingService {
         const hasTeacherGraded = existingAns?.teacherScore !== undefined;
         const fallbackScore = hasTeacherGraded ? existingAns.teacherScore! : (existingAns?.pointsEarned ?? 0);
         totalEarned += fallbackScore;
-        // AI LỖI KHÔNG ĐƯỢC COI LÀ HỌC SINH SAI: chỉ tăng correctCnt nếu đã có điểm đúng, KHÔNG tự ý tăng wrongCnt
-        if (existingAns?.isCorrect) {
-          correctCnt++;
-        } else if (hasTeacherGraded && fallbackScore === 0) {
-          wrongCnt++;
+
+        if (hasTeacherGraded) {
+          // Điểm GV đã có là điểm chính thức; lỗi AI không được hạ trạng thái bài xuống "chờ duyệt".
+          if (existingAns?.isCorrect) correctCnt++; else wrongCnt++;
+        } else {
+          // AI lỗi khi chưa có điểm GV: chưa chấm chính thức, không tính đúng/sai.
+          overallNeedsReview = true;
         }
-        overallNeedsReview = true;
 
         updatedAnswers.push({
           ...(existingAns || { questionId: q.id, selectedAnswer: '' }),
@@ -789,10 +804,12 @@ export class GradingService {
           isCorrect: existingAns?.isCorrect ?? false,
           pointsEarned: fallbackScore,
           maxPoints,
-          needsTeacherReview: true,
+          needsTeacherReview: !hasTeacherGraded,
           isProvisional: !hasTeacherGraded,
-          aiGradingError: true,
-          aiFeedback: `AI chưa thể chấm câu này (${err?.message || 'Lỗi kết nối/ảnh không đọc được'}). Câu này CHƯA CÓ ĐIỂM chính thức và đang chờ Giáo viên duyệt.`
+          aiGradingError: !hasTeacherGraded,
+          aiFeedback: hasTeacherGraded
+            ? 'AI tạm thời không khả dụng; giữ nguyên điểm Giáo viên đã chấm.'
+            : `AI chưa thể chấm câu này (${err?.message || 'Lỗi kết nối/ảnh không đọc được'}). Câu này CHƯA CÓ ĐIỂM chính thức và đang chờ Giáo viên duyệt.`
         });
       }
     }
