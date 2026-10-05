@@ -92,9 +92,20 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
   const [questionCount, setQuestionCount] = useState<number>(10);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [generationStep, setGenerationStep] = useState<string>('');
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [isGenerationSlow, setIsGenerationSlow] = useState(false);
   const [socraticPracticeContext, setSocraticPracticeContext] = useState<SocraticContext | null>(null);
 
   const hasApiKey = aiService.hasApiKey();
+
+  React.useEffect(() => {
+    if (!isGenerating) {
+      setIsGenerationSlow(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setIsGenerationSlow(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [isGenerating]);
 
   // Topics for selected grade
   const availableTopics = CURRICULUM_MATH_TOPICS[selectedGrade] || [];
@@ -138,6 +149,7 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
       return;
     }
 
+    setGenerationError(null);
     setIsGenerating(true);
     setGenerationStep('Đang tạo bài luyện...');
 
@@ -224,7 +236,14 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
 
     } catch (err: any) {
       console.error('Lỗi khi lắp ráp đề ôn tập 3 tầng:', err);
-      alert('Có lỗi khi tạo đề ôn tập. Vui lòng kiểm tra lại kết nối mạng hoặc thử lại với số câu ít hơn.');
+      const raw = String(err?.message || '').toLowerCase();
+      if (raw.includes('429') || raw.includes('quota') || raw.includes('resource_exhausted')) {
+        setGenerationError('AI đang hết lượt hoặc quá tải. Hãy chờ một lúc rồi thử lại.');
+      } else if (raw.includes('network') || raw.includes('failed to fetch') || raw.includes('fetch')) {
+        setGenerationError('Không kết nối được. Kiểm tra mạng rồi thử lại.');
+      } else {
+        setGenerationError('Chưa tạo được bài luyện. Hãy thử lại hoặc giảm số câu.');
+      }
     } finally {
       setIsGenerating(false);
       setGenerationStep('');
@@ -699,6 +718,12 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
         </div>
       </div>
 
+      {generationError && !isGenerating && (
+        <div className="p-3 bg-rose-50 dark:bg-rose-950/40 rounded-xl border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-200">
+          <strong>Chưa tạo được bài.</strong> {generationError}
+        </div>
+      )}
+
       {/* Loading Progress State */}
       {isGenerating && (
         <div className="p-4 bg-violet-50 dark:bg-violet-950/60 rounded-2xl border border-violet-200 dark:border-violet-800 flex items-center space-x-3 animate-in fade-in">
@@ -707,6 +732,11 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
             <p className="text-xs font-bold text-violet-900 dark:text-violet-200">
               {generationStep || 'Đang tạo bài luyện...'}
             </p>
+            {isGenerationSlow && (
+              <p className="text-[11px] text-violet-700 dark:text-violet-300 mt-0.5">
+                Đang xử lý lâu hơn bình thường • không cần bấm lại
+              </p>
+            )}
           </div>
         </div>
       )}

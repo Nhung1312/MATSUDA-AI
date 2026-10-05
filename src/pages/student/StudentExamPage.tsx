@@ -593,7 +593,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
       triggerAntiCheatToast(`📸 Đã tải lên ${compressedList.length} ảnh bài làm thành công!`);
     } catch (err) {
       console.error(err);
-      alert('Không thể đọc file ảnh. Vui lòng thử lại.');
+      triggerAntiCheatToast('Không đọc được ảnh. Hãy chọn ảnh khác hoặc thử lại.');
     } finally {
       setUploadingImage(false);
       if (e.target) e.target.value = '';

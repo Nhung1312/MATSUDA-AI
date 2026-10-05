@@ -32,6 +32,9 @@ function AppContent() {
   const [classes, setClasses] = useState<ClassRoom[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator === 'undefined' ? true : navigator.onLine
+  );
 
   // Student exam taking flow state with sessionStorage restore support
   const [examSession, setExamSession] = useState<{
@@ -69,6 +72,17 @@ function AppContent() {
       return next;
     });
   };
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Share modal state
   const [shareAssignment, setShareAssignment] = useState<Assignment | null>(null);
@@ -409,6 +423,12 @@ function AppContent() {
       {/* Màn làm bài có header riêng; ẩn Navbar chung để tập trung vào đề. */}
       {!isTakingExam && (
         <Navbar onResetData={handleResetData} onClearDemoData={handleClearDemoData} />
+      )}
+
+      {!isOnline && (
+        <div className="bg-amber-50 border-b border-amber-200 px-3 py-2 text-center text-xs font-bold text-amber-800">
+          Mất kết nối mạng • dữ liệu trên máy vẫn được giữ, tính năng AI sẽ chờ khi có mạng
+        </div>
       )}
 
       {/* Top Zustand Learning Progress Bar (Sticky / Header Status Bar) */}

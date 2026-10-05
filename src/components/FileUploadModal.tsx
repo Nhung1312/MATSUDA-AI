@@ -50,6 +50,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [filterCategory, setFilterCategory] = useState<'all' | 'trac_nghiem' | 'tu_luan'>('all');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isTakingLong, setIsTakingLong] = useState(false);
 
   // Gemini API Key State
   const [hasApiKey, setHasApiKey] = useState<boolean>(aiService.hasApiKey());
@@ -66,6 +67,20 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+
+  const toFriendlyAiError = (err: any, fallback: string) => {
+    const raw = String(err?.message || err || '').toLowerCase();
+    if (raw.includes('429') || raw.includes('resource_exhausted') || raw.includes('quota')) {
+      return 'AI đang hết lượt hoặc quá tải. Hãy chờ một lúc rồi thử lại.';
+    }
+    if (raw.includes('503') || raw.includes('unavailable') || raw.includes('overloaded')) {
+      return 'AI đang tạm bận. Hãy thử lại sau ít phút.';
+    }
+    if (raw.includes('network') || raw.includes('failed to fetch') || raw.includes('fetch')) {
+      return 'Không kết nối được tới AI. Kiểm tra mạng rồi thử lại.';
+    }
+    return fallback;
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -85,6 +100,15 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       setPreviewingImage(null);
     }
   }, [isOpen, initialTab]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      setIsTakingLong(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setIsTakingLong(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [isLoading]);
 
   // Global Paste Listener for Clipboard Images (Ctrl + V)
   useEffect(() => {
@@ -212,7 +236,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       }));
     } catch (err: any) {
       console.error('PDF AI Extraction Error:', err);
-      setErrorMsg(err?.message || 'Có lỗi xảy ra khi bóc tách đề thi PDF bằng AI. Vui lòng thử lại.');
+      setErrorMsg(toFriendlyAiError(err, 'Không thể tách đề PDF bằng AI lúc này. Hãy thử lại.'));
     } finally {
       setIsLoading(false);
       setAiProgressStatus('');
@@ -312,7 +336,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       }));
     } catch (err: any) {
       console.error('Image AI Extraction Error:', err);
-      setErrorMsg(err?.message || 'Có lỗi xảy ra khi bóc tách câu hỏi từ ảnh đề thi. Vui lòng thử lại.');
+      setErrorMsg(toFriendlyAiError(err, 'Không thể tách câu hỏi từ ảnh lúc này. Hãy thử lại.'));
     } finally {
       setIsLoading(false);
       setAiProgressStatus('');
@@ -611,7 +635,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
             <div className="p-4 bg-rose-50 rounded-2xl border border-rose-200 text-rose-800 text-xs flex items-start space-x-2">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
               <div className="flex-1">
-                <strong>Lỗi: </strong> {errorMsg}
+                <strong>Chưa xử lý được.</strong> {errorMsg}
               </div>
             </div>
           )}
@@ -623,7 +647,11 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
               <div className="font-extrabold text-sm text-indigo-950">
                 {aiProgressStatus || 'Đang tách câu hỏi...'}
               </div>
-
+              {isTakingLong && (
+                <div className="text-[11px] text-indigo-700">
+                  Đang xử lý lâu hơn bình thường • cứ giữ cửa sổ này mở
+                </div>
+              )}
             </div>
           )}
 
