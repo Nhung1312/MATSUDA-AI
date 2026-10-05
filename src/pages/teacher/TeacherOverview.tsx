@@ -217,8 +217,8 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 <QrCode className="w-4 h-4 text-indigo-500" />
               </div>
               <div className="mt-2 inline-flex px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[9px] font-black">0:35–1:00</div>
-              <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">GV duyệt & giao bài</div>
-              <div className="text-[10px] text-slate-500 mt-1">Duyệt câu hỏi → QR / link</div>
+              <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">QR / mã bài</div>
+              <div className="text-[10px] text-slate-500 mt-1">Giao cho học sinh</div>
             </button>
 
             <button
@@ -231,8 +231,8 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 <Play className="w-4 h-4 text-blue-500" />
               </div>
               <div className="mt-2 inline-flex px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[9px] font-black">1:00–1:20</div>
-              <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">HS làm & nộp</div>
-              <div className="text-[10px] text-slate-500 mt-1">Làm thử như học sinh</div>
+              <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">Mở bài học sinh</div>
+              <div className="text-[10px] text-slate-500 mt-1">Làm thử & nộp</div>
             </button>
 
             <button
@@ -248,8 +248,8 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 <span className="inline-flex px-2 py-0.5 rounded-full bg-fuchsia-50 text-fuchsia-700 text-[9px] font-black">1:20–2:35</span>
                 <span className="inline-flex px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-black">TRỌNG TÂM</span>
               </div>
-              <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">Xem AI chấm & lỗi gốc</div>
-              <div className="text-[10px] text-slate-500 mt-1">Step Analysis → lỗi gốc</div>
+              <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">AI chấm & lỗi gốc</div>
+              <div className="text-[10px] text-slate-500 mt-1">Step Analysis</div>
             </button>
 
             <button

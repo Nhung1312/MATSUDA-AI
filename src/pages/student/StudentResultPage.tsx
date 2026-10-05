@@ -622,7 +622,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
               className="inline-flex items-center space-x-2 px-6 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm shadow-md transition-colors cursor-pointer"
             >
               <Home className="w-4 h-4" />
-              <span>{isDemoPreview || isTeacherPreview ? 'Quay lại Dashboard' : 'Về trang chủ'}</span>
+              <span>{isDemoPreview || isTeacherPreview ? 'Quay lại demo' : 'Về trang chủ'}</span>
             </button>
           </div>
         </div>
