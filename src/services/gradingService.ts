@@ -567,6 +567,7 @@ export class GradingService {
     const questionAnalyses: QuestionAnalysis[] = assignment.questions.map((q) => {
       let correctCount = 0;
       let wrongCount = 0;
+      let gradedResponses = 0;
       const optionDistribution: Record<string, number> = { A: 0, B: 0, C: 0, D: 0 };
 
       submissions.forEach(sub => {
@@ -576,17 +577,23 @@ export class GradingService {
             const opt = studentAns.selectedAnswer.toUpperCase();
             optionDistribution[opt] = (optionDistribution[opt] || 0) + 1;
           }
+          if (studentAns.needsTeacherReview && studentAns.teacherScore === undefined) {
+            // Chưa có kết luận chính thức: loại khỏi mẫu số đúng/sai để không làm sai thống kê lớp.
+            return;
+          }
+          gradedResponses++;
           if (studentAns.isCorrect) {
             correctCount++;
           } else {
             wrongCount++;
           }
         } else {
+          gradedResponses++;
           wrongCount++;
         }
       });
 
-      const totalResponses = submissions.length;
+      const totalResponses = gradedResponses;
       const accuracyRate = totalResponses > 0 ? Math.round((correctCount / totalResponses) * 100) : 0;
 
       return {
