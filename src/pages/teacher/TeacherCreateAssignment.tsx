@@ -86,7 +86,11 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
     d.setDate(d.getDate() + 7);
     return d.toISOString().split('T')[0];
   });
-  const [allowViewResult, setAllowViewResult] = useState<boolean>(editingAssignment?.allowViewResult ?? true);
+  const [resultReviewMode, setResultReviewMode] = useState<'score_only' | 'wrong_only' | 'full'>(() => {
+    if (editingAssignment?.resultReviewMode) return editingAssignment.resultReviewMode;
+    return editingAssignment?.allowViewResult === false ? 'score_only' : 'full';
+  });
+  const allowViewResult = resultReviewMode !== 'score_only';
 
   // --- TAB MODE SWITCHER ---
   // Khởi tạo tab dựa trên tham số truyền vào
@@ -616,6 +620,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
           durationMinutes: Number(durationMinutes) || 0,
           deadline,
           allowViewResult,
+          resultReviewMode,
           type: finalType,
           pdfUrl: finalPdfUrl || editingAssignment.pdfUrl
         };
@@ -633,6 +638,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
           durationMinutes: Number(durationMinutes) || 0,
           deadline,
           allowViewResult,
+          resultReviewMode,
           assignmentCode,
           createdAt: new Date().toISOString(),
           isPublished: true,
@@ -810,18 +816,44 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
               />
             </div>
 
-            {/* Allow view result */}
-            <div className="sm:col-span-2 flex items-center space-x-3 pt-2">
-              <input
-                type="checkbox"
-                id="allowViewResult"
-                checked={allowViewResult}
-                onChange={(e) => setAllowViewResult(e.target.checked)}
-                className="w-5 h-5 text-indigo-600 rounded-md focus:ring-indigo-500 border-slate-300"
-              />
-              <label htmlFor="allowViewResult" className="text-sm font-semibold text-slate-800 cursor-pointer">
-                Cho học sinh xem điểm & lời giải sau khi nộp
+            {/* Result review mode */}
+            <div className="sm:col-span-2 pt-2">
+              <label className="block text-xs font-bold text-slate-700 mb-2">
+                Sau khi nộp, học sinh được xem
               </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {[
+                  {
+                    value: 'score_only',
+                    title: 'Chỉ xem điểm',
+                    desc: 'Không hiện đáp án hay chi tiết từng câu.'
+                  },
+                  {
+                    value: 'wrong_only',
+                    title: 'Xem câu sai',
+                    desc: 'Chỉ mở các câu cần xem lại; câu chờ GV duyệt không tính là sai.'
+                  },
+                  {
+                    value: 'full',
+                    title: 'Xem toàn bộ',
+                    desc: 'Xem cả câu đúng, câu sai, đáp án và lời giải.'
+                  }
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setResultReviewMode(option.value as 'score_only' | 'wrong_only' | 'full')}
+                    className={`text-left rounded-xl border p-3 transition-all ${
+                      resultReviewMode === option.value
+                        ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-200'
+                        : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="text-xs font-black text-slate-900">{option.title}</div>
+                    <div className="text-[11px] text-slate-500 mt-1 leading-relaxed">{option.desc}</div>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
