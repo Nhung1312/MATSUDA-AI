@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Assignment, ClassRoom, Submission } from '../../types';
 import { SHOWCASE_DEMO_ASSIGNMENT, SHOWCASE_DEMO_SUBMISSION } from '../../data/showcaseDemo';
 import { 
@@ -92,6 +92,17 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
   const analysisDemoSubmission = richRealTarget?.submission || SHOWCASE_DEMO_SUBMISSION;
   const isUsingShowcaseFallback = !richRealTarget;
 
+  // 8I: khi quay lại từ hồ sơ học sinh, trở đúng khối demo rồi xóa hash
+  // để những lần vào Dashboard sau không bị tự động cuộn ngoài ý muốn.
+  useEffect(() => {
+    if (window.location.hash !== '#judge-demo') return;
+    const timer = window.setTimeout(() => {
+      document.getElementById('judge-demo')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
       {/* Welcome Banner - Modern Minimalist Clean UI */}
@@ -149,12 +160,12 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
               className="inline-flex items-center space-x-2 bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl shadow-xs hover:shadow-md transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
             >
               <Play className="w-4 h-4" />
-              <span>Xem demo AI 2 phút</span>
+              <span>Xem demo AI 3 phút</span>
             </button>
 
             {/* Primary Action Button */}
             <button
-              onClick={() => onNavigate('create')}
+              onClick={() => onNavigate('create', { autoOpenImport: true })}
               className="inline-flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl shadow-xs hover:shadow-md transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
@@ -253,7 +264,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
           <div className="max-w-xl">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-fuchsia-100 dark:bg-fuchsia-950 text-fuchsia-700 dark:text-fuchsia-300 text-[10px] font-black uppercase tracking-wider mb-2">
               <Play className="w-3.5 h-3.5" />
-              <span>Demo trọng tâm cho giám khảo • 2–5 phút</span>
+              <span>Demo trọng tâm cho giám khảo • khoảng 3 phút</span>
             </div>
             <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
               Đi theo 5 bước này để trình diễn toàn bộ giá trị cốt lõi
@@ -295,7 +306,8 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 <span className="w-7 h-7 rounded-full bg-violet-600 text-white flex items-center justify-center text-xs font-black">1</span>
                 <FileText className="w-4 h-4 text-violet-500" />
               </div>
-              <div className="font-black text-xs text-slate-900 dark:text-white mt-2">Tách đề nguồn</div>
+              <div className="mt-2 inline-flex px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 text-[9px] font-black">0:00–0:35</div>
+              <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">Tách đề nguồn</div>
               <div className="text-[10px] text-slate-500 mt-1">PDF / ảnh / Word / LaTeX → câu hỏi để giáo viên duyệt.</div>
             </button>
 
@@ -308,7 +320,8 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 <span className="w-7 h-7 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-black">2</span>
                 <QrCode className="w-4 h-4 text-indigo-500" />
               </div>
-              <div className="font-black text-xs text-slate-900 dark:text-white mt-2">GV duyệt & giao bài</div>
+              <div className="mt-2 inline-flex px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[9px] font-black">0:35–1:00</div>
+              <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">GV duyệt & giao bài</div>
               <div className="text-[10px] text-slate-500 mt-1">Giáo viên kiểm tra câu hỏi rồi phát QR/link; AI không tự xuất bản thay giáo viên.</div>
             </button>
 
@@ -321,7 +334,8 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 <span className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-black">3</span>
                 <Play className="w-4 h-4 text-blue-500" />
               </div>
-              <div className="font-black text-xs text-slate-900 dark:text-white mt-2">HS làm & nộp</div>
+              <div className="mt-2 inline-flex px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[9px] font-black">1:00–1:20</div>
+              <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">HS làm & nộp</div>
               <div className="text-[10px] text-slate-500 mt-1">Minh họa trải nghiệm học sinh làm bài trên điện thoại hoặc máy tính.</div>
             </button>
 
@@ -334,7 +348,11 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 <span className="w-7 h-7 rounded-full bg-fuchsia-600 text-white flex items-center justify-center text-xs font-black">4</span>
                 <Eye className="w-4 h-4 text-fuchsia-500" />
               </div>
-              <div className="font-black text-xs text-slate-900 dark:text-white mt-2">Xem AI chấm & lỗi gốc</div>
+              <div className="mt-2 flex items-center gap-1.5">
+                <span className="inline-flex px-2 py-0.5 rounded-full bg-fuchsia-50 text-fuchsia-700 text-[9px] font-black">1:20–2:35</span>
+                <span className="inline-flex px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-black">TRỌNG TÂM</span>
+              </div>
+              <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">Xem AI chấm & lỗi gốc</div>
               <div className="text-[10px] text-slate-500 mt-1">Mở ngay bài đã chấm: Step Analysis → lỗi gốc → luyện lại.</div>
             </button>
 
@@ -347,7 +365,8 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 <span className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-black">5</span>
                 <BarChart3 className="w-4 h-4 text-emerald-500" />
               </div>
-              <div className="font-black text-xs text-slate-900 dark:text-white mt-2">Kết quả lớp</div>
+              <div className="mt-2 inline-flex px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[9px] font-black">2:35–3:00</div>
+              <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">Kết quả lớp</div>
               <div className="text-[10px] text-slate-500 mt-1">Chốt demo bằng thống kê, bài cần duyệt và tiến bộ học tập.</div>
             </button>
           </div>
@@ -357,6 +376,35 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
           <Sparkles className="w-3.5 h-3.5 text-fuchsia-500" />
           <span><strong className="text-slate-700 dark:text-slate-200">Mẹo demo:</strong> nếu thời gian ngắn, chỉ mở Bước 1 và Bước 4 để cho thấy hai điểm khác biệt mạnh nhất: số hóa đề nguồn và chẩn đoán lỗi từng bước.</span>
         </div>
+
+        <details className="mt-3 rounded-2xl bg-slate-950 text-slate-100 border border-slate-800 overflow-hidden">
+          <summary className="cursor-pointer px-4 py-3 text-xs font-black flex items-center gap-2 select-none">
+            <Play className="w-3.5 h-3.5 text-fuchsia-300" />
+            Kịch bản nói 3 phút — bấm để mở khi tập demo
+          </summary>
+          <div className="px-4 pb-4 grid grid-cols-1 sm:grid-cols-5 gap-2 text-[10px] leading-relaxed">
+            <div className="rounded-xl bg-white/5 border border-white/10 p-2.5">
+              <strong className="text-violet-300">0:00–0:35</strong>
+              <p className="mt-1">“Giáo viên không cần soạn lại. Tôi có thể bắt đầu từ PDF, ảnh, Word hoặc LaTeX và đưa về cấu trúc câu hỏi để kiểm tra.”</p>
+            </div>
+            <div className="rounded-xl bg-white/5 border border-white/10 p-2.5">
+              <strong className="text-indigo-300">0:35–1:00</strong>
+              <p className="mt-1">“AI hỗ trợ số hóa, nhưng giáo viên là người duyệt cuối rồi mới giao bằng QR hoặc mã bài.”</p>
+            </div>
+            <div className="rounded-xl bg-white/5 border border-white/10 p-2.5">
+              <strong className="text-blue-300">1:00–1:20</strong>
+              <p className="mt-1">“Học sinh làm trên điện thoại hoặc máy tính; tự luận có thể nhập lời giải hoặc gửi ảnh bài làm.”</p>
+            </div>
+            <div className="rounded-xl bg-white/5 border border-white/10 p-2.5">
+              <strong className="text-fuchsia-300">1:20–2:35</strong>
+              <p className="mt-1">“Điểm khác biệt là AI không chỉ cho điểm: hệ thống phân tích từng bước, tìm lỗi gốc và phân biệt lỗi kéo theo.”</p>
+            </div>
+            <div className="rounded-xl bg-white/5 border border-white/10 p-2.5">
+              <strong className="text-emerald-300">2:35–3:00</strong>
+              <p className="mt-1">“Lỗi sai được đưa vào luyện cá nhân và dữ liệu tiến bộ; kết quả AI chưa chắc chắn luôn chờ giáo viên duyệt.”</p>
+            </div>
+          </div>
+        </details>
 
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-2.5">
           <div className="rounded-2xl bg-white/90 dark:bg-slate-900 border border-sky-200 dark:border-sky-900 p-3.5">
