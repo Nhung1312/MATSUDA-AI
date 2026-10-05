@@ -232,8 +232,17 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
           </div>
 
           {safeClasses.length === 0 ? (
-            <div className="text-center py-8 px-2 text-xs text-slate-400">
-              Chưa có lớp học nào. Bấm nút <strong>"+ Thêm lớp học mới"</strong> ở trên để tạo lớp.
+            <div className="text-center py-8 px-3">
+              <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <div className="text-sm font-bold text-slate-700">Chưa có lớp học</div>
+              <div className="text-xs text-slate-400 mt-1">Tạo lớp đầu tiên để thêm học sinh và giao bài.</div>
+              <button
+                type="button"
+                onClick={() => setShowAddClassModal(true)}
+                className="mt-3 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl"
+              >
+                Tạo lớp
+              </button>
             </div>
           ) : (
             safeClasses.map((cls) => {
@@ -375,9 +384,9 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
                   {filteredStudents.length === 0 ? (
                     <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
                       <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                      <p className="text-sm font-semibold text-slate-600">Chưa có học sinh nào</p>
+                      <p className="text-sm font-semibold text-slate-700">Chưa có học sinh</p>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        Bấm "+ Thêm học sinh" hoặc "Dán từ Excel" để bổ sung danh sách lớp.
+                        Thêm học sinh để bắt đầu theo dõi lớp.
                       </p>
                     </div>
                   ) : (
@@ -457,9 +466,9 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
                   {classAssignments.length === 0 ? (
                     <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
                       <BookOpen className="w-9 h-9 text-slate-300 mx-auto mb-2" />
-                      <p className="text-sm font-semibold text-slate-700">Chưa có bài tập nào cho lớp {currentClass.name}</p>
+                      <p className="text-sm font-semibold text-slate-700">Chưa có bài tập</p>
                       <p className="text-xs text-slate-400 mt-1 mb-3">
-                        Tạo bài tập mới hoặc gán bài tập hiện có cho lớp này.
+                        Tạo bài đầu tiên cho lớp {currentClass.name}.
                       </p>
                       {onNavigate && (
                         <button
