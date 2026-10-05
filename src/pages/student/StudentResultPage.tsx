@@ -77,6 +77,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   const [loadingAi, setLoadingAi] = useState<Record<string, boolean>>({});
   const [aiGradingFeedback, setAiGradingFeedback] = useState<Record<string, { score: number; feedback: string }>>({});
   const [loadingAiGrading, setLoadingAiGrading] = useState<Record<string, boolean>>({});
+  const [aiActionMessage, setAiActionMessage] = useState<{ type: 'warning' | 'error'; text: string } | null>(null);
 
   // Lightbox modal state
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
@@ -92,7 +93,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   const [stepGradingResults, setStepGradingResults] = useState<Record<string, StepGradingResponse>>({});
   const [loadingStepGrading, setLoadingStepGrading] = useState<Record<string, boolean>>({});
 
-  // Tự động tải StepAnalysis đã lưu từ trước trong bài nộp (không gọi lại Gemini nếu đã có)
+  // Tự động tải StepAnalysis đã lưu từ trước trong bài nộp (không gọi lại AI nếu đã có)
   useEffect(() => {
     if (submission && Array.isArray(submission.answers)) {
       const initialMap: Record<string, StepGradingResponse> = {};
@@ -225,7 +226,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
       }
     } catch (err) {
       console.error(err);
-      alert('Không thể thực hiện phân tích từng bước lúc này. Vui lòng thử lại sau.');
+      setAiActionMessage({ type: 'error', text: 'Chưa phân tích từng bước được lúc này. Hãy thử lại sau.' });
     } finally {
       setLoadingStepGrading(prev => ({ ...prev, [question.id]: false }));
     }
@@ -330,7 +331,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
       });
       setAiExplanations(prev => ({ ...prev, [question.id]: exp }));
     } catch {
-      alert('Không thể tải hướng dẫn của AI lúc này. Bạn hãy xem lời giải chuẩn bên dưới nhé!');
+      setAiActionMessage({ type: 'warning', text: 'AI chưa tải được gợi ý. Bạn vẫn có thể xem lời giải chuẩn bên dưới.' });
     } finally {
       setLoadingAi(prev => ({ ...prev, [question.id]: false }));
     }
@@ -354,7 +355,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         [question.id]: { score: res.score, feedback: res.feedback }
       }));
     } catch {
-      alert('Chấm bài bằng AI không thành công. Bạn hãy thử lại sau.');
+      setAiActionMessage({ type: 'error', text: 'AI chưa chấm được câu này. Hãy thử lại sau.' });
     } finally {
       setLoadingAiGrading(prev => ({ ...prev, [question.id]: false }));
     }
@@ -426,6 +427,17 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
               <div className="font-black text-sm text-purple-900">Có câu đang chờ giáo viên duyệt</div>
               <div className="text-xs text-purple-700">Điểm hiển thị hiện là tạm tính.</div>
             </div>
+          </div>
+        )}
+
+        {aiActionMessage && (
+          <div className={`print:hidden rounded-xl border px-3 py-2 text-xs font-bold flex items-center justify-between gap-3 ${
+            aiActionMessage.type === 'error'
+              ? 'bg-rose-50 border-rose-200 text-rose-800'
+              : 'bg-amber-50 border-amber-200 text-amber-800'
+          }`}>
+            <span>{aiActionMessage.text}</span>
+            <button type="button" onClick={() => setAiActionMessage(null)} className="underline shrink-0">Đóng</button>
           </div>
         )}
 
