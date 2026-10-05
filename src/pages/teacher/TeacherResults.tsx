@@ -254,6 +254,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
         });
         scoreVal = res.score;
         feedbackVal = res.feedback;
+        needsReviewVal = !!(res.needsTeacherReview || res.isProvisional || res.aiGradingError);
       }
 
       let isCorrect = false;
