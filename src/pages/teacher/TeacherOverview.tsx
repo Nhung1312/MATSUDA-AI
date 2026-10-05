@@ -308,8 +308,8 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 <span className="w-7 h-7 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-black">2</span>
                 <QrCode className="w-4 h-4 text-indigo-500" />
               </div>
-              <div className="font-black text-xs text-slate-900 dark:text-white mt-2">Giao bài</div>
-              <div className="text-[10px] text-slate-500 mt-1">Mở QR + link để cho thấy cách học sinh nhận bài.</div>
+              <div className="font-black text-xs text-slate-900 dark:text-white mt-2">GV duyệt & giao bài</div>
+              <div className="text-[10px] text-slate-500 mt-1">Giáo viên kiểm tra câu hỏi rồi phát QR/link; AI không tự xuất bản thay giáo viên.</div>
             </button>
 
             <button
@@ -321,8 +321,8 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 <span className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-black">3</span>
                 <Play className="w-4 h-4 text-blue-500" />
               </div>
-              <div className="font-black text-xs text-slate-900 dark:text-white mt-2">Làm thử như học sinh</div>
-              <div className="text-[10px] text-slate-500 mt-1">Nếu cần, minh họa nhanh trải nghiệm làm và nộp bài.</div>
+              <div className="font-black text-xs text-slate-900 dark:text-white mt-2">HS làm & nộp</div>
+              <div className="text-[10px] text-slate-500 mt-1">Minh họa trải nghiệm học sinh làm bài trên điện thoại hoặc máy tính.</div>
             </button>
 
             <button
@@ -355,7 +355,31 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
 
         <div className="mt-4 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2">
           <Sparkles className="w-3.5 h-3.5 text-fuchsia-500" />
-          <span><strong className="text-slate-700 dark:text-slate-200">Mẹo demo:</strong> nếu thời gian ngắn, bỏ qua Bước 2 và mở thẳng Bước 3 để cho thấy khác biệt AI trong khoảng 2 phút.</span>
+          <span><strong className="text-slate-700 dark:text-slate-200">Mẹo demo:</strong> nếu thời gian ngắn, chỉ mở Bước 1 và Bước 4 để cho thấy hai điểm khác biệt mạnh nhất: số hóa đề nguồn và chẩn đoán lỗi từng bước.</span>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-2.5">
+          <div className="rounded-2xl bg-white/90 dark:bg-slate-900 border border-sky-200 dark:border-sky-900 p-3.5">
+            <div className="text-[10px] font-black uppercase text-sky-700 dark:text-sky-300">Thông điệp 1</div>
+            <div className="text-xs font-black text-slate-900 dark:text-white mt-1">Tận dụng tài liệu giáo viên đang có</div>
+            <div className="text-[10px] leading-relaxed text-slate-500 mt-1">
+              Không phải soạn lại từ đầu: PDF, ảnh, Word, LaTeX được đưa về một cấu trúc câu hỏi để giáo viên duyệt.
+            </div>
+          </div>
+          <div className="rounded-2xl bg-white/90 dark:bg-slate-900 border border-fuchsia-200 dark:border-fuchsia-900 p-3.5">
+            <div className="text-[10px] font-black uppercase text-fuchsia-700 dark:text-fuchsia-300">Thông điệp 2</div>
+            <div className="text-xs font-black text-slate-900 dark:text-white mt-1">AI không chỉ cho một con điểm</div>
+            <div className="text-[10px] leading-relaxed text-slate-500 mt-1">
+              Hệ thống phân tích từng bước, tìm lỗi gốc và phân biệt lỗi kéo theo để phản hồi đúng chỗ học sinh vướng.
+            </div>
+          </div>
+          <div className="rounded-2xl bg-white/90 dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900 p-3.5">
+            <div className="text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-300">Thông điệp 3</div>
+            <div className="text-xs font-black text-slate-900 dark:text-white mt-1">Giáo viên vẫn là người quyết định</div>
+            <div className="text-[10px] leading-relaxed text-slate-500 mt-1">
+              AI hỗ trợ số hóa và chấm; câu chưa chắc chắn được đưa về trạng thái chờ duyệt, không tự biến thành điểm chính thức.
+            </div>
+          </div>
         </div>
       </section>
       {/* Top Stat Cards */}
