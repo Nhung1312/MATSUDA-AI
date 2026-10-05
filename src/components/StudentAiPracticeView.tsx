@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Assignment, ClassRoom, GradeLevel, SocraticContext } from '../types';
 import { CURRICULUM_MATH_TOPICS, MathTopic } from '../data/mathTopics';
 import { SocraticTutorModal } from './SocraticTutorModal';
@@ -10,21 +10,16 @@ import {
   Sparkles, 
   BookOpen, 
   Clock, 
-  HelpCircle, 
   ArrowRight, 
   Calculator, 
   Shapes, 
   PieChart, 
-  Zap, 
   CheckCircle2, 
   Loader2,
   GraduationCap,
   Target,
   Trophy,
   Layers,
-  Database,
-  Shuffle,
-  ShieldCheck,
   Award
 } from 'lucide-react';
 
@@ -98,20 +93,9 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
   const [questionCount, setQuestionCount] = useState<number>(10);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [generationStep, setGenerationStep] = useState<string>('');
-  const [availableBankExamCount, setAvailableBankExamCount] = useState<number>(0);
   const [socraticPracticeContext, setSocraticPracticeContext] = useState<SocraticContext | null>(null);
 
   const hasApiKey = aiService.hasApiKey();
-
-  // Load count of teacher exams available in storage
-  useEffect(() => {
-    const checkBank = () => {
-      const exams = (StorageService.getAssignments() || []).filter(e => e.verificationStatus !== 'unverified');
-      const gradeExams = exams.filter(e => String(e.grade) === String(selectedGrade));
-      setAvailableBankExamCount(gradeExams.length);
-    };
-    checkBank();
-  }, [selectedGrade]);
 
   // Topics for selected grade
   const availableTopics = CURRICULUM_MATH_TOPICS[selectedGrade] || [];
@@ -492,6 +476,25 @@ export const StudentAiPracticeView: React.FC<StudentAiPracticeViewProps> = ({
                       </div>
                     );
                   })}
+                </div>
+
+                <div className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs">
+                  <span className="truncate text-slate-500">
+                    Đang chọn: <strong className="text-violet-700 dark:text-violet-300">{activeTopicName}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSocraticPracticeContext({
+                        questionText: `Chuyên đề: ${activeTopicName}. Hãy nhắc lại các định nghĩa, công thức cốt lõi và các lỗi sai thường gặp khi giải dạng toán này.`,
+                        grade: String(selectedGrade),
+                        topic: activeTopicName,
+                      });
+                    }}
+                    className="shrink-0 px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-bold"
+                  >
+                    Gia sư AI
+                  </button>
                 </div>
               </div>
             ) : (
