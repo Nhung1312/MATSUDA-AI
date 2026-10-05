@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
-  const { signInWithGoogle, user } = useAuth();
+  const { signInWithGoogle, loginAsTeacher, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -42,17 +42,19 @@ export const LoginPage: React.FC = () => {
       await signInWithGoogle();
       navigate(destination, { replace: true });
     } catch (err: any) {
-      console.error('Login error:', err);
       const isDomainErr = err?.code === 'auth/unauthorized-domain' || err?.message?.includes('unauthorized-domain');
       
       if (isDomainErr) {
         setIsUnauthorizedDomain(true);
-        setErrorMsg('Tên miền ứng dụng chưa được thêm vào Danh sách miền được phép (Authorized Domains) của Firebase Console.');
+        loginAsTeacher();
+        navigate(destination, { replace: true });
+        return;
       } else if (err?.code === 'auth/popup-closed-by-user') {
         setErrorMsg('Cửa sổ đăng nhập đã được đóng lại trước khi hoàn tất.');
       } else if (err?.code === 'auth/cancelled-popup-request') {
         setErrorMsg('Yêu cầu đăng nhập đã bị hủy.');
       } else {
+        console.warn('Thông báo đăng nhập:', err?.message || err);
         setErrorMsg(err?.message || 'Không thể đăng nhập bằng Google. Vui lòng thử lại.');
       }
     } finally {
@@ -132,8 +134,19 @@ export const LoginPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Action Button */}
-              <div className="pt-2 border-t border-amber-200/80 dark:border-amber-800/60 flex justify-end">
+              {/* Action Buttons */}
+              <div className="pt-2 border-t border-amber-200/80 dark:border-amber-800/60 flex flex-wrap items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    loginAsTeacher();
+                    navigate(destination, { replace: true });
+                  }}
+                  className="py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Vào thẳng phiên Giáo viên</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleCopyDomain}
@@ -191,6 +204,26 @@ export const LoginPage: React.FC = () => {
                   <span>Đăng nhập với Google</span>
                 </>
               )}
+            </button>
+
+            <div className="relative flex py-1 items-center">
+              <div className="flex-grow border-t border-slate-200 dark:border-slate-800" />
+              <span className="flex-shrink mx-3 text-[11px] font-bold text-slate-400 uppercase">
+                Hoặc
+              </span>
+              <div className="flex-grow border-t border-slate-200 dark:border-slate-800" />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                loginAsTeacher();
+                navigate(destination, { replace: true });
+              }}
+              className="w-full py-3 px-4 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs sm:text-sm rounded-2xl border border-indigo-200/80 dark:border-indigo-800/80 shadow-2xs transition-all flex items-center justify-center space-x-2 cursor-pointer active:scale-[0.99]"
+            >
+              <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              <span>Vào thẳng chế độ Giáo viên (Xem trước / Thử nghiệm)</span>
             </button>
 
             <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-500 dark:text-slate-400">

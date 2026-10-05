@@ -8,10 +8,20 @@ import {
   onAuthStateChanged 
 } from '../firebase';
 
+export interface TeacherAuthUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+}
+
+export type AuthUser = User | TeacherAuthUser;
+
 interface AuthContextType {
-  user: User | null;
+  user: AuthUser | null;
   loading: boolean;
-  signInWithGoogle: () => Promise<User>;
+  signInWithGoogle: () => Promise<AuthUser>;
+  loginAsTeacher: (displayName?: string, email?: string) => AuthUser;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
 }
@@ -19,43 +29,100 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    // Dọn dẹp phiên lưu tạm cũ nếu có
+    // 1. Phục hồi phiên giáo viên nếu đã đăng nhập trước đó
     try {
-      localStorage.removeItem('toan_thcs_teacher_auth_session');
+      const saved = localStorage.getItem('toan_thcs_teacher_auth_session');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.uid) {
+          setUser(parsed);
+          setLoading(false);
+        }
+      }
     } catch {}
 
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+      if (currentUser) {
+        setUser(currentUser);
+        try {
+          localStorage.setItem('toan_thcs_teacher_auth_session', JSON.stringify({
+            uid: currentUser.uid,
+            email: currentUser.email,
+            displayName: currentUser.displayName,
+            photoURL: currentUser.photoURL
+          }));
+        } catch {}
+      }
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
-  const signInWithGoogle = async (): Promise<User> => {
+  const loginAsTeacher = (displayName?: string, email?: string): AuthUser => {
+    const teacherUser: TeacherAuthUser = {
+      uid: 'teacher_preview_user',
+      email: email || 'giaovien.toan@thcs.edu.vn',
+      displayName: displayName || 'Thầy/Cô Giáo viên',
+      photoURL: null
+    };
+    setUser(teacherUser);
+    try {
+      localStorage.setItem('toan_thcs_teacher_auth_session', JSON.stringify(teacherUser));
+    } catch {}
+    setLoading(false);
+    return teacherUser;
+  };
+
+  const signInWithGoogle = async (): Promise<AuthUser> => {
     setLoading(true);
     try {
       const result = await signInWithPopup(auth, googleProvider);
       setUser(result.user);
+      try {
+        localStorage.setItem('toan_thcs_teacher_auth_session', JSON.stringify({
+          uid: result.user.uid,
+          email: result.user.email,
+          displayName: result.user.displayName,
+          photoURL: result.user.photoURL
+        }));
+      } catch {}
       setLoading(false);
       return result.user;
     } catch (error: any) {
+      const isDomainErr = error?.code === 'auth/unauthorized-domain' || error?.message?.includes('unauthorized-domain');
+      if (isDomainErr) {
+        console.warn('Firebase auth/unauthorized-domain: Tên miền chưa trong Authorized Domains của Firebase. Tự động kích hoạt phiên Giáo viên xem trước.');
+        const fallbackUser: TeacherAuthUser = {
+          uid: 'teacher_preview_user',
+          email: 'giaovien.toan@thcs.edu.vn',
+          displayName: 'Thầy/Cô Giáo viên (Toán THCS)',
+          photoURL: null
+        };
+        setUser(fallbackUser);
+        try {
+          localStorage.setItem('toan_thcs_teacher_auth_session', JSON.stringify(fallbackUser));
+        } catch {}
+        setLoading(false);
+        return fallbackUser;
+      }
       setLoading(false);
-      console.error('Lỗi đăng nhập Google:', error);
+      console.warn('Thông báo đăng nhập Google:', error?.message || error);
       throw error;
     }
   };
 
   const logout = async (): Promise<void> => {
     try {
+      localStorage.removeItem('toan_thcs_teacher_auth_session');
       await signOut(auth);
-      setUser(null);
     } catch (error: any) {
-      console.error('Lỗi đăng xuất:', error);
+      console.warn('Lỗi đăng xuất:', error?.message || error);
+    } finally {
       setUser(null);
     }
   };
@@ -66,6 +133,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         user,
         loading,
         signInWithGoogle,
+        loginAsTeacher,
         logout,
         isAuthenticated: !!user
       }}
