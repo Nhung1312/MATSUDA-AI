@@ -232,10 +232,9 @@ export class HybridAIService implements IAIService {
     } catch {
       // localStorage not accessible
     }
-    // Check environment variables if available
-    const envKey = (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) ||
-                   (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_API_KEY);
-    return envKey ? String(envKey).trim() : null;
+    // Production system key is intentionally server-only.
+    // Never read GEMINI_API_KEY / VITE_GEMINI_API_KEY into the browser bundle.
+    return null;
   }
 
   setApiKey(key: string): void {
