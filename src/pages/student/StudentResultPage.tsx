@@ -640,13 +640,15 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 <span>Sổ tay câu sai {submission.wrongCount > 0 ? `(${submission.wrongCount})` : ''}</span>
               </button>
             )}
-            <button
-              onClick={onRetake}
-              className="inline-flex items-center space-x-2 px-5 py-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-sm transition-colors border border-indigo-200 shadow-xs cursor-pointer"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Luyện tập lại đề này</span>
-            </button>
+            {!isDemoPreview && (
+              <button
+                onClick={onRetake}
+                className="inline-flex items-center space-x-2 px-5 py-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-sm transition-colors border border-indigo-200 shadow-xs cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Luyện tập lại đề này</span>
+              </button>
+            )}
             <button
               onClick={handlePrint}
               className="inline-flex items-center space-x-2 px-5 py-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-sm transition-colors border border-slate-300 shadow-xs cursor-pointer"
@@ -659,7 +661,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
               className="inline-flex items-center space-x-2 px-6 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm shadow-md transition-colors cursor-pointer"
             >
               <Home className="w-4 h-4" />
-              <span>Về trang chủ</span>
+              <span>{isDemoPreview ? 'Quay lại Dashboard' : 'Về trang chủ'}</span>
             </button>
           </div>
         </div>
