@@ -161,19 +161,17 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
               </button>
 
               {!BILLING_ENABLED ? (
-                /* Chế độ Trải nghiệm Miễn phí toàn hệ thống: Hiển thị badge thân thiện */
-                <button
-                  type="button"
-                  onClick={() => setShowPaymentModal(true)}
-                  title="Hệ thống đang mở trải nghiệm miễn phí tất cả tính năng cho Thầy Cô (Nhấn để xem thông tin gói bản quyền)"
-                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500/15 to-teal-500/15 border border-emerald-400/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/40 dark:hover:bg-emerald-950/40 text-xs font-extrabold transition-all cursor-pointer shadow-2xs"
+                /* Chế độ miễn phí: chỉ hiển thị trạng thái, không mở cửa sổ thanh toán gây nhiễu khi demo. */
+                <div
+                  title="Hệ thống hiện đang mở miễn phí các tính năng cho Giáo viên"
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500/15 to-teal-500/15 border border-emerald-400/40 text-emerald-700 dark:text-emerald-300 text-xs font-extrabold shadow-2xs"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span className="hidden sm:inline">Trải nghiệm</span>
+                  <span className="hidden sm:inline">Giáo viên</span>
                   <span className="bg-emerald-600 text-white text-[9px] px-1.5 py-0.2 rounded-full font-black">
                     Miễn phí
                   </span>
-                </button>
+                </div>
               ) : subscription?.isVip ? (
                 <button
                   type="button"

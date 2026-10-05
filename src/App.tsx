@@ -391,8 +391,9 @@ function AppContent() {
     navigate('/result');
   };
 
-  // Check if we are inside an ongoing active exam (to hide progress bar during test for distraction-free)
+  // 8H: tách rõ trải nghiệm học sinh và giáo viên để demo không bị rối.
   const isTakingExam = location.pathname === '/exam' || location.pathname.endsWith('/exam');
+  const isTeacherArea = location.pathname.startsWith('/teacher');
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
@@ -400,7 +401,7 @@ function AppContent() {
       <Navbar onResetData={handleResetData} onClearDemoData={handleClearDemoData} />
 
       {/* Top Zustand Learning Progress Bar (Sticky / Header Status Bar) */}
-      {!isTakingExam && (
+      {!isTakingExam && !isTeacherArea && (
         <StudentProgressBar assignments={assignments} />
       )}
 
@@ -490,6 +491,7 @@ function AppContent() {
                   assignment={examSession.assignment}
                   onRetake={handleRetakeExam}
                   isDemoPreview={!!examSession.showcasePreview}
+                  isTeacherPreview={!!examSession.previewFromTeacher}
                   onGoHome={() => {
                     const shouldReturnToTeacher = !!examSession.previewFromTeacher;
                     updateExamSession({});
@@ -533,11 +535,10 @@ function AppContent() {
         </Routes>
       </main>
 
-      {/* PWA Add to Home Screen Prompt Banner */}
-      <PWAInstallBanner />
+      {/* PWA / mobile student controls: ẩn trong khu vực giáo viên để demo sạch và tập trung. */}
+      {!isTeacherArea && <PWAInstallBanner />}
 
-      {/* Mobile Native-Style Bottom Navigation Bar (Hidden during active test for focus) */}
-      {!isTakingExam && (
+      {!isTakingExam && !isTeacherArea && (
         <MobileBottomNav 
           onOpenProgress={() => useLearningProgressStore.getState().setProgressModalOpen(true)} 
         />
