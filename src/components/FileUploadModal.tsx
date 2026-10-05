@@ -11,6 +11,7 @@ import {
   Trash2, 
   FileCheck, 
   Sparkles,
+  ArrowLeft,
   ArrowRight,
   Camera,
   Key,
@@ -203,14 +204,14 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         selected: true
       }));
 
-      setParseResult({
+      setParseResult(FileParserService.normalizeParseResult({
         fileName: file.name,
         fileType: 'pdf',
         totalFound: parsedItems.length,
         multipleChoiceCount: parsedItems.filter(i => i.category === 'trac_nghiem').length,
         essayCount: parsedItems.filter(i => i.category === 'tu_luan').length,
         items: parsedItems
-      });
+      }));
     } catch (err: any) {
       console.error('PDF AI Extraction Error:', err);
       setErrorMsg(err?.message || 'Có lỗi xảy ra khi bóc tách đề thi PDF bằng AI. Vui lòng thử lại.');
@@ -231,7 +232,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       if (result.totalFound === 0) {
         setErrorMsg('Không tìm thấy câu hỏi dạng văn bản trong file PDF (có thể đây là file PDF scan từ ảnh chụp). Nếu bạn có API Key, hãy chuyển sang chế độ "⚡ Bóc tách bằng AI Gemini" để AI nhận diện.');
       } else {
-        setParseResult(result);
+        setParseResult(FileParserService.normalizeParseResult(result));
       }
     } catch (err: any) {
       console.error('PDF Standard Parse Error:', err);
@@ -303,14 +304,14 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         selected: true
       }));
 
-      setParseResult({
+      setParseResult(FileParserService.normalizeParseResult({
         fileName: `${pastedImages.length} trang ảnh đề thi`,
         fileType: 'text',
         totalFound: parsedItems.length,
         multipleChoiceCount: parsedItems.filter(i => i.category === 'trac_nghiem').length,
         essayCount: parsedItems.filter(i => i.category === 'tu_luan').length,
         items: parsedItems
-      });
+      }));
     } catch (err: any) {
       console.error('Image AI Extraction Error:', err);
       setErrorMsg(err?.message || 'Có lỗi xảy ra khi bóc tách câu hỏi từ ảnh đề thi. Vui lòng thử lại.');
@@ -322,12 +323,19 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
 
   // 3. PROCESS OFFICE FILES (WORD / EXCEL / JSON)
   const handleProcessOfficeFile = async (file: File) => {
+    const supportedExtensions = ['.xlsx', '.xls', '.csv', '.json', '.docx', '.pdf', '.txt', '.md', '.tex'];
+    const lowerName = file.name.toLowerCase();
+    if (!supportedExtensions.some(ext => lowerName.endsWith(ext))) {
+      setErrorMsg('Định dạng chưa được hỗ trợ. Hãy dùng PDF, ảnh, Word .docx, LaTeX .tex, Excel/CSV, JSON, TXT hoặc Markdown.');
+      return;
+    }
+
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      const result = await FileParserService.parseFile(file);
+      const result = FileParserService.normalizeParseResult(await FileParserService.parseFile(file));
       if (result.totalFound === 0) {
-        setErrorMsg('Không tìm thấy câu hỏi nào hợp lệ trong tệp. Vui lòng kiểm tra định dạng file.');
+        setErrorMsg('Không tìm thấy câu hỏi nào hợp lệ trong tệp. Vui lòng kiểm tra cấu trúc hoặc thử chế độ AI nếu đây là PDF scan/ảnh.');
       } else {
         setParseResult(result);
       }
@@ -366,6 +374,19 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
 
   const removeImage = (id: string) => {
     setPastedImages(prev => prev.filter(img => img.id !== id));
+  };
+
+  const moveImage = (id: string, direction: -1 | 1) => {
+    setPastedImages(prev => {
+      const currentIndex = prev.findIndex(img => img.id === id);
+      if (currentIndex < 0) return prev;
+      const targetIndex = currentIndex + direction;
+      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+
+      const next = [...prev];
+      [next[currentIndex], next[targetIndex]] = [next[targetIndex], next[currentIndex]];
+      return next;
+    });
   };
 
   const toggleSelectAll = (select: boolean) => {
@@ -842,7 +863,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                       <div className="flex items-center justify-between">
                         <div className="font-black text-xs text-slate-800 flex items-center gap-1.5">
                           <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          <span>Đã nạp {pastedImages.length} trang ảnh đề thi:</span>
+                          <span>Đã nạp {pastedImages.length} trang ảnh đề thi — hãy kiểm tra đúng thứ tự trước khi bóc tách:</span>
                         </div>
                         <button
                           type="button"
@@ -867,6 +888,26 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                             />
                             <div className="absolute top-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded font-black">
                               Trang {idx + 1}
+                            </div>
+                            <div className="absolute bottom-1 left-1 right-1 flex items-center justify-center gap-1 opacity-90 group-hover:opacity-100">
+                              <button
+                                type="button"
+                                onClick={() => moveImage(img.id, -1)}
+                                disabled={idx === 0}
+                                className="p-1 bg-white/95 text-slate-700 rounded-lg shadow disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-100 cursor-pointer"
+                                title="Đưa trang này lên trước"
+                              >
+                                <ArrowLeft className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveImage(img.id, 1)}
+                                disabled={idx === pastedImages.length - 1}
+                                className="p-1 bg-white/95 text-slate-700 rounded-lg shadow disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-100 cursor-pointer"
+                                title="Đưa trang này xuống sau"
+                              >
+                                <ArrowRight className="w-3 h-3" />
+                              </button>
                             </div>
                             <button
                               type="button"
