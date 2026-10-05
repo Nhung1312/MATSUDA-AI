@@ -257,8 +257,19 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
           </div>
         </div>
 
-        {/* Platform Feature Cards (3 Compact Highlights) */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-left pt-1">
+        {/* Platform Feature Cards (4 Compact Highlights) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-left pt-1">
+          <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-start space-x-2.5">
+            <div className="w-7 h-7 rounded-lg bg-violet-100 dark:bg-violet-950/80 text-violet-700 dark:text-violet-400 flex items-center justify-center shrink-0 mt-0.5">
+              <FileCheck className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="font-bold text-xs text-slate-900 dark:text-white">Tách đề đa định dạng</h4>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                PDF, ảnh chụp, Word, LaTeX → câu hỏi số hóa để giáo viên duyệt và giao ngay.
+              </p>
+            </div>
+          </div>
           <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-start space-x-2.5">
             <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
               <QrCode className="w-4 h-4" />
@@ -301,7 +312,7 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
       <footer className="border-t border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 py-3 text-center text-[11px] text-slate-500 dark:text-slate-400">
         <div className="max-w-5xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-1.5">
           <p className="font-medium text-slate-700 dark:text-slate-300">
-            TOÁN THCS – Nền tảng Ôn tập &amp; Kiểm tra Toán Lớp 6, 7, 8, 9
+            Matsuda AI – Số hóa đề • Giao bài • Chấm từng bước • Học từ lỗi sai
           </p>
           <div className="flex items-center space-x-2.5 text-slate-500">
             <Link to="/grade/6" className="hover:text-indigo-600">Lớp 6</Link>

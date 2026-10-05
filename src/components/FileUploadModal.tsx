@@ -430,7 +430,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                 Tách Đề Thi & Bóc Tách Câu Hỏi Bằng AI
               </h2>
               <p className="text-xs text-slate-500">
-                Nhận diện chính xác 100% công thức Toán (LaTeX KaTeX), bảng đáp án và phân loại Trắc nghiệm / Tự luận
+                Chuẩn hóa câu hỏi, công thức Toán LaTeX/KaTeX, phương án và phân loại Trắc nghiệm / Tự luận từ nhiều định dạng
               </p>
             </div>
           </div>
@@ -574,7 +574,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
               }`}
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-              <span>3. Word / Excel / JSON</span>
+              <span>3. Word / LaTeX / Excel / JSON</span>
             </button>
           </div>
         )}
@@ -896,7 +896,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                 </div>
               )}
 
-              {/* TAB 3: OFFICE FILES (WORD / EXCEL / JSON) */}
+              {/* TAB 3: OFFICE & SOURCE FILES (WORD / LATEX / EXCEL / JSON) */}
               {activeTab === 'file' && (
                 <div className="space-y-4">
                   <div
@@ -921,7 +921,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept=".xlsx,.xls,.csv,.json,.docx,.pdf,.txt"
+                      accept=".xlsx,.xls,.csv,.json,.docx,.pdf,.txt,.md,.tex"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file) handleProcessOfficeFile(file);
@@ -936,6 +936,9 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                       <span className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center shadow-xs" title="Word">
                         <FileType className="w-6 h-6" />
                       </span>
+                      <span className="w-12 h-12 rounded-2xl bg-violet-100 text-violet-700 flex items-center justify-center shadow-xs" title="LaTeX .tex">
+                        <FileText className="w-6 h-6" />
+                      </span>
                       <span className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shadow-xs" title="Excel">
                         <FileSpreadsheet className="w-6 h-6" />
                       </span>
@@ -945,10 +948,10 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                     </div>
 
                     <h3 className="text-base sm:text-lg font-black text-slate-800 mb-1">
-                      Kéo thả file PDF, Word (.docx), Excel (.xlsx) hoặc JSON vào đây
+                      Kéo thả Word, LaTeX (.tex), Excel, JSON, TXT hoặc PDF vào đây
                     </h3>
                     <p className="text-xs text-slate-500 max-w-md mx-auto mb-4">
-                      Đọc và chuyển đổi trực tiếp trên máy bằng bộ xử lý nội bộ. 100% miễn phí, không cần API Key.
+                      Đọc và chuyển đổi trực tiếp trên máy. LaTeX hỗ trợ các cấu trúc phổ biến như \\begin{ex}, \\choice, \\True và \\loigiai.
                     </p>
 
                     <div className="inline-flex items-center space-x-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all active:scale-95">

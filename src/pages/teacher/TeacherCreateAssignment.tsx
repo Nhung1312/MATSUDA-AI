@@ -671,7 +671,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             {isEditing
               ? `Chỉnh sửa nội dung đề bài, đáp án đúng, thang điểm và các câu hỏi của bài tập.`
-              : 'Soạn đề thi linh hoạt qua việc nhập từng câu hoặc tải file PDF.'}
+              : 'Soạn đề linh hoạt: nhập tay hoặc tách câu hỏi từ PDF, ảnh chụp, Word, LaTeX, Excel/JSON.'}
           </p>
         </div>
         <div className="flex items-center space-x-2">
@@ -922,10 +922,10 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
                     setShowFileUploadModal(true);
                   }}
                   className="inline-flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
-                  title="Nhập từ file Word (.docx), Excel (.xlsx) hoặc JSON"
+                  title="Nhập từ Word (.docx), LaTeX (.tex), Excel (.xlsx), JSON hoặc tệp văn bản"
                 >
                   <UploadCloud className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Word / Excel</span>
+                  <span>Word / LaTeX / Excel</span>
                 </button>
 
                 <button

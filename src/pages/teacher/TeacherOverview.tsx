@@ -120,10 +120,14 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
           
           {/* Subtitle */}
           <p className="text-slate-600 dark:text-slate-300 text-xs sm:text-sm mt-2 leading-relaxed font-medium">
-            Matsuda AI giúp giáo viên giao bài, chấm tự luận theo từng bước, tìm lỗi gốc và tạo vòng luyện lại để học sinh tiến bộ — thay vì chỉ dừng ở một con điểm.
+            Từ PDF, ảnh chụp, Word hay LaTeX, Matsuda AI giúp giáo viên số hóa đề, giao bài, chấm tự luận theo từng bước, tìm lỗi gốc và tạo vòng luyện lại để học sinh tiến bộ — thay vì chỉ dừng ở một con điểm.
           </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-4 max-w-2xl">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 mt-4 max-w-3xl">
+            <div className="rounded-xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-900 px-3 py-2">
+              <div className="text-[10px] font-black uppercase text-sky-700 dark:text-sky-300">Đầu vào</div>
+              <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">PDF • Ảnh • Word • LaTeX → đề số hóa.</div>
+            </div>
             <div className="rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 px-3 py-2">
               <div className="text-[10px] font-black uppercase text-blue-700 dark:text-blue-300">Vấn đề</div>
               <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">GV khó chấm sâu từng bài và theo dõi lỗi lặp lại.</div>
@@ -199,7 +203,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
               AI không dừng ở việc cho điểm — mỗi lỗi sai trở thành một lộ trình học tập
             </h2>
             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1">
-              Giáo viên giao bài một lần, hệ thống hỗ trợ chấm từng bước, tìm lỗi gốc, tạo bài luyện cá nhân và ghi nhận tiến bộ qua các lần làm lại.
+              Tài liệu có sẵn được tách thành câu hỏi số hóa, giáo viên duyệt rồi giao bài; sau đó hệ thống hỗ trợ chấm từng bước, tìm lỗi gốc, tạo bài luyện cá nhân và ghi nhận tiến bộ.
             </p>
           </div>
 
@@ -219,13 +223,14 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
           {[
-            ['1', 'Giao bài', 'QR / mã bài / đề có sẵn'],
-            ['2', 'AI chấm từng bước', 'Điểm + Step Analysis'],
-            ['3', 'Phát hiện lỗi gốc', 'First / cascading / independent'],
-            ['4', 'Luyện cá nhân', 'Sổ tay câu sai + bài tương tự + Socratic'],
-            ['5', 'Theo dõi tiến bộ', 'Làm lại → AI kiểm tra → làm chủ']
+            ['1', 'Tách đề nguồn', 'PDF / Ảnh / Word / LaTeX'],
+            ['2', 'Giáo viên duyệt & giao', 'Kiểm tra câu hỏi → QR / mã bài'],
+            ['3', 'AI chấm từng bước', 'Điểm + Step Analysis'],
+            ['4', 'Phát hiện lỗi gốc', 'First / cascading / independent'],
+            ['5', 'Luyện cá nhân', 'Sổ tay câu sai + bài tương tự + Socratic'],
+            ['6', 'Theo dõi tiến bộ', 'Làm lại → AI kiểm tra → làm chủ']
           ].map(([index, title, desc], idx) => (
             <React.Fragment key={index}>
               <div className="bg-white/90 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-3 relative">
@@ -234,7 +239,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 </div>
                 <div className="text-xs font-black text-slate-900 dark:text-white">{title}</div>
                 <div className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1">{desc}</div>
-                {idx < 4 && (
+                {idx < 5 && (
                   <ArrowRight className="hidden sm:block absolute -right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400 z-10" />
                 )}
               </div>
@@ -251,7 +256,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
               <span>Demo trọng tâm cho giám khảo • 2–5 phút</span>
             </div>
             <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
-              Đi theo 4 bước này để trình diễn toàn bộ giá trị cốt lõi
+              Đi theo 5 bước này để trình diễn toàn bộ giá trị cốt lõi
             </h2>
             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
               Hệ thống tự chọn bài có dữ liệu phù hợp nhất để giảm thao tác và tránh phải chờ AI xử lý lại trong lúc thuyết trình.
@@ -259,7 +264,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
 
             <div className="mt-4 rounded-2xl bg-white/90 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-3">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="text-[10px] font-black uppercase text-slate-400">Hồ sơ AI dùng cho bước 3</div>
+                <div className="text-[10px] font-black uppercase text-slate-400">Hồ sơ AI dùng cho bước 4</div>
                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${isUsingShowcaseFallback ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                   {isUsingShowcaseFallback ? 'DỮ LIỆU MINH HỌA DỰ PHÒNG' : 'DỮ LIỆU THẬT ĐÃ CÓ'}
                 </span>
@@ -275,20 +280,32 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
               )}
               {liveDemoAssignment && liveDemoAssignment.id !== analysisDemoAssignment.id && (
                 <div className="text-[10px] text-slate-500 mt-2">
-                  Bước 1, 2 và 4 vẫn dùng đề thật hiện có: <strong>{liveDemoAssignment.title}</strong>.
+                  Bước 2, 3 và 5 vẫn dùng đề thật hiện có: <strong>{liveDemoAssignment.title}</strong>.
                 </div>
               )}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 flex-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 flex-1">
+            <button
+              onClick={() => onNavigate('create')}
+              className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-violet-200 dark:border-violet-900 p-3.5 hover:shadow-md transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <span className="w-7 h-7 rounded-full bg-violet-600 text-white flex items-center justify-center text-xs font-black">1</span>
+                <FileText className="w-4 h-4 text-violet-500" />
+              </div>
+              <div className="font-black text-xs text-slate-900 dark:text-white mt-2">Tách đề nguồn</div>
+              <div className="text-[10px] text-slate-500 mt-1">PDF / ảnh / Word / LaTeX → câu hỏi để giáo viên duyệt.</div>
+            </button>
+
             <button
               disabled={!liveDemoAssignment}
               onClick={() => liveDemoAssignment && onOpenShare(liveDemoAssignment)}
               className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-900 p-3.5 hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               <div className="flex items-center justify-between">
-                <span className="w-7 h-7 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-black">1</span>
+                <span className="w-7 h-7 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-black">2</span>
                 <QrCode className="w-4 h-4 text-indigo-500" />
               </div>
               <div className="font-black text-xs text-slate-900 dark:text-white mt-2">Giao bài</div>
@@ -301,7 +318,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
               className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-900 p-3.5 hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               <div className="flex items-center justify-between">
-                <span className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-black">2</span>
+                <span className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-black">3</span>
                 <Play className="w-4 h-4 text-blue-500" />
               </div>
               <div className="font-black text-xs text-slate-900 dark:text-white mt-2">Làm thử như học sinh</div>
@@ -314,7 +331,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
               className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-fuchsia-200 dark:border-fuchsia-900 p-3.5 hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               <div className="flex items-center justify-between">
-                <span className="w-7 h-7 rounded-full bg-fuchsia-600 text-white flex items-center justify-center text-xs font-black">3</span>
+                <span className="w-7 h-7 rounded-full bg-fuchsia-600 text-white flex items-center justify-center text-xs font-black">4</span>
                 <Eye className="w-4 h-4 text-fuchsia-500" />
               </div>
               <div className="font-black text-xs text-slate-900 dark:text-white mt-2">Xem AI chấm & lỗi gốc</div>
@@ -327,7 +344,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
               className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900 p-3.5 hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               <div className="flex items-center justify-between">
-                <span className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-black">4</span>
+                <span className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-black">5</span>
                 <BarChart3 className="w-4 h-4 text-emerald-500" />
               </div>
               <div className="font-black text-xs text-slate-900 dark:text-white mt-2">Kết quả lớp</div>
