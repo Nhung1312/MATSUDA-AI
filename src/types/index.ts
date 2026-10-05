@@ -390,6 +390,7 @@ export interface SocraticContext {
   essayImages?: string[];
   studentAnswer?: any;
   mistakeRecordId?: string;
+  readOnly?: boolean; // teacher/demo preview: allow AI interaction without writing learning history
 }
 
 export interface SocraticMessage {
