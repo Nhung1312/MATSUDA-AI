@@ -23,8 +23,6 @@ import {
   Lightbulb, 
   GraduationCap,
   ShieldCheck,
-  ShieldAlert,
-  Shuffle,
   Camera,
   Image as ImageIcon,
   Eye,
@@ -394,17 +392,6 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
   // Đợt 8A: Hiển thị rõ chu trình AI khép kín để học sinh và người xem hiểu ngay.
   const currentAssignmentMistakes = mistakeRecords.filter(m => m.assignmentId === assignment.id);
-  const displayMistakeCount = isDemoPreview ? submission.wrongCount : currentAssignmentMistakes.length;
-  const analyzedEssayCount = submission.answers.filter(a =>
-    (a.stepAnalysis && a.stepAnalysis.length > 0) || !!a.stepGradingResponse
-  ).length;
-  const firstErrorCount = submission.answers.filter(a =>
-    a.firstErrorStep !== undefined && a.firstErrorStep !== null
-  ).length;
-  const remedialCount = currentAssignmentMistakes.filter(m => !!m.remedialExercise).length;
-  const practicedCount = currentAssignmentMistakes.filter(m => (m.practiceCount || 0) > 0).length;
-  const improvingCount = currentAssignmentMistakes.filter(m => m.masteryStatus === 'improving').length;
-  const masteredCount = currentAssignmentMistakes.filter(m => m.mastered || m.masteryStatus === 'mastered').length;
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-16">
       <div className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-8 space-y-4 sm:space-y-6">
