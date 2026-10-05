@@ -395,6 +395,14 @@ function AppContent() {
   const isTakingExam = location.pathname === '/exam' || location.pathname.endsWith('/exam');
   const isTeacherArea = location.pathname.startsWith('/teacher');
   const isHomePage = location.pathname === '/';
+  const isStudentEntryPage =
+    location.pathname === '/join' ||
+    location.pathname.startsWith('/join/') ||
+    location.pathname === '/practice' ||
+    location.pathname === '/ai-practice' ||
+    location.pathname.startsWith('/assignment/') ||
+    location.pathname.startsWith('/test/') ||
+    (location.pathname.startsWith('/exam/') && location.pathname !== '/exam');
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
@@ -402,7 +410,7 @@ function AppContent() {
       <Navbar onResetData={handleResetData} onClearDemoData={handleClearDemoData} />
 
       {/* Top Zustand Learning Progress Bar (Sticky / Header Status Bar) */}
-      {!isTakingExam && !isTeacherArea && !isHomePage && (
+      {!isTakingExam && !isTeacherArea && !isHomePage && !isStudentEntryPage && (
         <StudentProgressBar assignments={assignments} />
       )}
 
@@ -539,7 +547,7 @@ function AppContent() {
       {/* PWA / mobile student controls: ẩn trong khu vực giáo viên để demo sạch và tập trung. */}
       {!isTeacherArea && <PWAInstallBanner />}
 
-      {!isTakingExam && !isTeacherArea && (
+      {!isTakingExam && !isTeacherArea && !isStudentEntryPage && (
         <MobileBottomNav 
           onOpenProgress={() => useLearningProgressStore.getState().setProgressModalOpen(true)} 
         />
