@@ -577,9 +577,9 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                   </div>
                   <div>
                     <h4 className="font-black text-sm text-emerald-900 flex items-center gap-1.5">
-                      <span>Giám sát thi cử: Trung thực tuyệt đối</span>
+                      <span>Giám sát thi cử: Không ghi nhận rời màn hình</span>
                       <span className="text-[10px] bg-emerald-200/70 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
-                        0 vi phạm
+                        0 lần rời màn hình
                       </span>
                     </h4>
                     <p className="text-xs text-emerald-700 mt-0.5">
@@ -606,7 +606,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                         Biên bản giám sát: Đã ghi nhận {submission.tabSwitchCount} lần rời màn hình
                       </h4>
                       <span className="text-xs bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded-full font-extrabold">
-                        {submission.tabSwitchCount} vi phạm
+                        {submission.tabSwitchCount} sự kiện
                       </span>
                     </div>
                     <p className="text-xs text-amber-800 mt-1">
@@ -1102,7 +1102,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                         <div className="flex items-center justify-between font-extrabold text-indigo-900 border-b border-indigo-200/60 pb-2">
                           <span className="flex items-center gap-1.5">
                             <Sparkles className="w-4 h-4 text-indigo-600" />
-                            <span>Trợ lý Gemini AI chấm bài tự luận:</span>
+                            <span>Matsuda AI phân tích bài tự luận:</span>
                           </span>
                           <span className="bg-indigo-600 text-white px-2.5 py-0.5 rounded-full text-xs">
                             Đạt {currentAiGrading.score}/{question.points} điểm

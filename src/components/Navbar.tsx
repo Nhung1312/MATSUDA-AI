@@ -57,7 +57,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
             <div className="w-10 h-10 rounded-xl overflow-hidden shadow-md group-hover:scale-105 transition-transform bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center border border-slate-200/50 dark:border-slate-700/50 shrink-0">
               <img
                 src={currentLogo}
-                alt="Logo Toán THCS"
+                alt="Logo Matsuda AI"
                 className="w-full h-full object-cover"
                 onError={(e) => {
                   e.currentTarget.style.display = 'none';
@@ -71,10 +71,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
             </div>
             <div>
               <span className="font-extrabold text-lg text-slate-900 dark:text-white tracking-tight">
-                TOÁN THCS
+                Matsuda AI
               </span>
               <p className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block font-medium">
-                Giao bài • Luyện tập • Tự chấm
+                Số hóa đề • Chấm từng bước
               </p>
             </div>
           </Link>

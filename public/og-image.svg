@@ -70,7 +70,7 @@
 
     <!-- Top Badge -->
     <rect x="108" y="8" width="230" height="34" rx="17" fill="#312e81" stroke="#6366f1" stroke-width="1.5" />
-    <text x="223" y="31" font-size="14" fill="#a5b4fc" text-anchor="middle" class="subtitle">HỆ THỐNG TOÁN TRỰC TUYẾN</text>
+    <text x="223" y="31" font-size="14" fill="#a5b4fc" text-anchor="middle" class="subtitle">MATSUDA AI • TOÁN THCS</text>
 
     <text x="108" y="74" font-size="20" fill="#94a3b8" class="text">Lớp 6 • Lớp 7 • Lớp 8 • Lớp 9</text>
   </g>
@@ -78,10 +78,10 @@
   <!-- Main Title -->
   <g transform="translate(120, 265)">
     <text x="0" y="0" font-size="58" fill="url(#accentGrad)" class="title">
-      TOÁN THCS – LUYỆN THI &amp; KIỂM TRA
+      SỐ HÓA ĐỀ • CHẤM TỪNG BƯỚC
     </text>
     <text x="0" y="52" font-size="25" fill="#cbd5e1" class="subtitle">
-      Nền tảng giao bài tập, tự chấm điểm thông minh &amp; chống gian lận
+      PDF / Ảnh / Word / LaTeX → lỗi gốc → luyện cá nhân
     </text>
   </g>
 
@@ -92,7 +92,7 @@
       <rect width="260" height="54" rx="27" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5" />
       <circle cx="28" cy="27" r="14" fill="#0284c7" />
       <text x="28" y="32" font-size="16" fill="#ffffff" text-anchor="middle">⚡</text>
-      <text x="54" y="34" font-size="16" fill="#f0f9ff" class="subtitle">Tự chấm điểm tức thì</text>
+      <text x="54" y="34" font-size="16" fill="#f0f9ff" class="subtitle">Tách đề đa định dạng</text>
     </g>
 
     <!-- Pill 2: Anti-Cheat -->
@@ -100,7 +100,7 @@
       <rect width="280" height="54" rx="27" fill="#1e293b" stroke="#818cf8" stroke-width="1.5" />
       <circle cx="28" cy="27" r="14" fill="#4f46e5" />
       <text x="28" y="32" font-size="16" fill="#ffffff" text-anchor="middle">🛡️</text>
-      <text x="54" y="34" font-size="16" fill="#e0e7ff" class="subtitle">Giám sát thi Anti-Cheat</text>
+      <text x="54" y="34" font-size="16" fill="#e0e7ff" class="subtitle">Chẩn đoán lỗi gốc</text>
     </g>
 
     <!-- Pill 3: Trộn đề Shuffle -->
@@ -108,7 +108,7 @@
       <rect width="260" height="54" rx="27" fill="#1e293b" stroke="#c084fc" stroke-width="1.5" />
       <circle cx="28" cy="27" r="14" fill="#9333ea" />
       <text x="28" y="32" font-size="16" fill="#ffffff" text-anchor="middle">🔀</text>
-      <text x="54" y="34" font-size="16" fill="#fae8ff" class="subtitle">Trộn đề ngẫu nhiên</text>
+      <text x="54" y="34" font-size="16" fill="#fae8ff" class="subtitle">GV duyệt điểm AI</text>
     </g>
   </g>
 
@@ -116,7 +116,7 @@
   <g transform="translate(120, 515)">
     <line x1="0" y1="0" x2="840" y2="0" stroke="#ffffff" stroke-opacity="0.1" stroke-width="1" />
     <text x="0" y="30" font-size="16" fill="#64748b" class="text">
-      ✅ Đầy đủ SGK Kết nối tri thức, Cánh diều, Chân trời sáng tạo • Quét mã QR vào phòng thi ngay
+      ✅ Giáo viên kiểm soát • AI hỗ trợ • Học sinh luyện từ lỗi sai
     </text>
   </g>
 </svg>
