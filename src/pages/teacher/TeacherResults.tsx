@@ -75,6 +75,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   const [sortBy, setSortBy] = useState<'name' | 'score' | 'time' | 'submittedAt'>('score');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [searchStudent, setSearchStudent] = useState('');
+  const [submissionReviewFilter, setSubmissionReviewFilter] = useState<'all' | 'pending' | 'final'>('all');
   const [selectedSubmissionDetail, setSelectedSubmissionDetail] = useState<Submission | null>(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showSimilarExamModal, setShowSimilarExamModal] = useState(false);
@@ -130,6 +131,10 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     ? getPendingReviewCount(selectedSubmissionDetail)
     : 0;
 
+  const pendingSubmissionCount = currentAssignment
+    ? safeSubmissions.filter(s => s.assignmentId === currentAssignment.id && getPendingReviewCount(s) > 0).length
+    : 0;
+
   // Filter submissions for current assignment
   const currentSubmissions = useMemo(() => {
     return safeSubmissions.filter(s => s.assignmentId === currentAssignment?.id);
@@ -173,6 +178,12 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       list = list.filter(s => s.studentName.toLowerCase().includes(searchStudent.toLowerCase()));
     }
 
+    if (submissionReviewFilter === 'pending') {
+      list = list.filter(s => getPendingReviewCount(s) > 0);
+    } else if (submissionReviewFilter === 'final') {
+      list = list.filter(s => getPendingReviewCount(s) === 0 && s.gradingStatus === 'graded' && !s.isProvisional);
+    }
+
     list.sort((a, b) => {
       let res = 0;
       if (sortBy === 'name') {
@@ -188,7 +199,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     });
 
     return list;
-  }, [currentSubmissions, searchStudent, sortBy, sortOrder]);
+  }, [currentSubmissions, searchStudent, submissionReviewFilter, sortBy, sortOrder]);
 
   const handleSort = (field: 'name' | 'score' | 'time' | 'submittedAt') => {
     if (sortBy === field) {
@@ -964,7 +975,10 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                         }
 
                         return (
-                          <tr key={sub.id} className="hover:bg-slate-50 transition-colors">
+                          <tr
+                        key={sub.id}
+                        className={`transition-colors ${getPendingReviewCount(sub) > 0 ? 'bg-amber-50/40 hover:bg-amber-50' : 'hover:bg-slate-50'}`}
+                      >
                             <td className="py-3 px-3 text-center">{rankBadge}</td>
                             <td className="py-3 px-4 font-bold text-slate-800">
                               <div>{sub.studentName}</div>
@@ -1006,7 +1020,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                                 className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors inline-flex items-center gap-1 text-xs font-bold"
                               >
                                 <Eye className="w-3.5 h-3.5" />
-                                <span>Xem bài</span>
+                                <span>{getPendingReviewCount(sub) > 0 ? 'Duyệt bài' : 'Xem bài'}</span>
                               </button>
                             </td>
                           </tr>
@@ -1237,32 +1251,96 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
         </div>
       )}
 
+      {/* Hàng đợi duyệt điểm cấp lớp */}
+      {pendingSubmissionCount > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-black text-amber-900">
+              {pendingSubmissionCount} bài đang chờ giáo viên duyệt
+            </div>
+            <div className="text-[11px] text-amber-800 mt-0.5">
+              Lọc các bài cần duyệt để chốt điểm chính thức nhanh hơn.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('submissions');
+              setSubmissionReviewFilter('pending');
+            }}
+            className="px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold"
+          >
+            Mở hàng đợi duyệt
+          </button>
+        </div>
+      )}
+
       {/* TAB 3: SUBMISSIONS TABLE */}
       {activeTab === 'submissions' && (
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={searchStudent}
-                onChange={(e) => setSearchStudent(e.target.value)}
-                placeholder="Tìm học sinh theo tên..."
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchStudent}
+                  onChange={(e) => setSearchStudent(e.target.value)}
+                  placeholder="Tìm học sinh theo tên..."
+                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <span className="text-xs text-slate-400">
+                Nhấp vào tiêu đề cột để sắp xếp
+              </span>
             </div>
-            <span className="text-xs text-slate-400">
-              Nhấp vào tiêu đề cột để sắp xếp
-            </span>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {[
+                ['all', `Tất cả (${currentSubmissions.length})`],
+                ['pending', `Cần duyệt (${pendingSubmissionCount})`],
+                ['final', `Đã chốt (${currentSubmissions.filter(s => getPendingReviewCount(s) === 0 && s.gradingStatus === 'graded' && !s.isProvisional).length})`]
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setSubmissionReviewFilter(value as 'all' | 'pending' | 'final')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                    submissionReviewFilter === value
+                      ? value === 'pending'
+                        ? 'bg-amber-100 border-amber-300 text-amber-900'
+                        : 'bg-indigo-100 border-indigo-300 text-indigo-800'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {sortedSubmissions.length === 0 ? (
-            <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-              <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm font-semibold text-slate-700">Chưa có bài nộp</p>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Chia sẻ mã bài tập <strong>{currentAssignment.assignmentCode}</strong> để học sinh làm bài.
-              </p>
+            <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+              {submissionReviewFilter === 'pending' ? (
+                <>
+                  <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
+                  <p className="text-sm font-semibold text-slate-700">Không còn bài cần duyệt</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Tất cả bài hiện tại đã được xử lý.</p>
+                </>
+              ) : submissionReviewFilter === 'final' ? (
+                <>
+                  <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm font-semibold text-slate-700">Chưa có bài đã chốt</p>
+                </>
+              ) : (
+                <>
+                  <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm font-semibold text-slate-700">Chưa có bài nộp</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Chia sẻ mã bài tập <strong>{currentAssignment.assignmentCode}</strong> để học sinh làm bài.
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
