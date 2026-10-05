@@ -234,9 +234,11 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
 
       setMessages((prev) => [...prev, modelMessage]);
       onHintRequested?.(level);
-      try {
-        useLearningProgressStore.getState().recordSocraticHintUsed(context.questionId || 'q_socratic', level);
-      } catch {}
+      if (!context.readOnly) {
+        try {
+          useLearningProgressStore.getState().recordSocraticHintUsed(context.questionId || 'q_socratic', level);
+        } catch {}
+      }
     } catch (err: any) {
       setErrorMessage('Không thể nhận phản hồi từ Gia sư lúc này. Em hãy bấm thử lại nhé!');
     } finally {
@@ -292,9 +294,11 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
 
       setMessages((prev) => [...prev, modelMessage]);
       onChatUsed?.();
-      try {
-        useLearningProgressStore.getState().recordSocraticChatUsed(context.questionId || 'q_socratic');
-      } catch {}
+      if (!context.readOnly) {
+        try {
+          useLearningProgressStore.getState().recordSocraticChatUsed(context.questionId || 'q_socratic');
+        } catch {}
+      }
     } catch (err: any) {
       setErrorMessage('Có sự cố kết nối khi gửi tin nhắn. Em hãy thử lại nhé!');
     } finally {
@@ -313,9 +317,11 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
     setIsVerifyingScratchpad(true);
     setScratchpadEvalResult(null);
 
-    try {
-      useLearningProgressStore.getState().recordStudentSubmittedCorrection(context.questionId || 'q_socratic', context.firstErrorStep || 1);
-    } catch {}
+    if (!context.readOnly) {
+      try {
+        useLearningProgressStore.getState().recordStudentSubmittedCorrection(context.questionId || 'q_socratic', context.firstErrorStep || 1);
+      } catch {}
+    }
 
     try {
       const result = await stepGradingService.verifyCorrection({
@@ -347,13 +353,15 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
 
       setMessages((prev) => [...prev, evalMsg]);
 
-      // Ghi nhận tiến bộ vào useLearningProgressStore
-      try {
-        useLearningProgressStore.getState().recordCorrectionVerified(context.questionId || 'q_socratic', result.isCorrect, result.isProgress);
-      } catch {}
+      // Ghi nhận tiến bộ chỉ khi không ở chế độ xem/demo.
+      if (!context.readOnly) {
+        try {
+          useLearningProgressStore.getState().recordCorrectionVerified(context.questionId || 'q_socratic', result.isCorrect, result.isProgress);
+        } catch {}
+      }
 
       // Nếu mở từ một MistakeRecord, ghi nhận practice attempt vào Sổ tay câu sai!
-      if (context.mistakeRecordId) {
+      if (!context.readOnly && context.mistakeRecordId) {
         try {
           useMistakeVaultStore.getState().recordPracticeAttempt(context.mistakeRecordId, result.isCorrect, {
             type: 'socratic_correction',
