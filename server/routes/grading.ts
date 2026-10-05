@@ -368,9 +368,62 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
     let needsTeacherReview = hasUncertainStep;
     let computedScore: number;
 
-    const aiProposedScore = typeof resultJson.score === 'number' ? Math.min(maxPoints, Math.max(0, resultJson.score)) : null;
+    const hasRubric = typeof rubric === 'string' && rubric.trim().length > 0;
+    const rawScoreBreakdown: any[] = Array.isArray(resultJson.scoreBreakdown) ? resultJson.scoreBreakdown : [];
+    const normalizedScoreBreakdown: ScoreBreakdownItem[] = rawScoreBreakdown
+      .map((item: any) => {
+        const max = typeof item?.maxPoints === 'number' ? Math.max(0, item.maxPoints) : 0;
+        const earned = typeof item?.earnedPoints === 'number'
+          ? Math.min(max, Math.max(0, item.earnedPoints))
+          : 0;
+        const rawBreakdownStatus = String(item?.status || '').toLowerCase();
+        const status: ScoreBreakdownItem['status'] =
+          rawBreakdownStatus === 'met' ||
+          rawBreakdownStatus === 'partial' ||
+          rawBreakdownStatus === 'not_met' ||
+          rawBreakdownStatus === 'uncertain'
+            ? rawBreakdownStatus as ScoreBreakdownItem['status']
+            : undefined;
 
-    if (isAllCorrect) {
+        return {
+          criterion: sanitizeMathData(item?.criterion || ''),
+          maxPoints: max,
+          earnedPoints: earned,
+          reason: sanitizeMathData(item?.reason || ''),
+          status
+        };
+      })
+      .filter((item: ScoreBreakdownItem) => item.criterion.length > 0 && item.maxPoints > 0);
+
+    const breakdownMax = normalizedScoreBreakdown.reduce((sum, item) => sum + item.maxPoints, 0);
+    const breakdownEarned = normalizedScoreBreakdown.reduce((sum, item) => sum + item.earnedPoints, 0);
+    const hasUsableRubricBreakdown = hasRubric && normalizedScoreBreakdown.length > 0 && breakdownMax > 0;
+    const scoringMethod: 'rubric' | 'step_fallback' = hasUsableRubricBreakdown ? 'rubric' : 'step_fallback';
+
+    if (normalizedScoreBreakdown.some(item => item.status === 'uncertain')) {
+      needsTeacherReview = true;
+    }
+    if (hasRubric && !hasUsableRubricBreakdown) {
+      // Có barem nhưng AI không trả được breakdown đáng tin cậy: fallback được phép nhưng bắt buộc GV rà soát.
+      needsTeacherReview = true;
+    }
+
+    const aiProposedScore = typeof resultJson.score === 'number'
+      ? Math.min(maxPoints, Math.max(0, resultJson.score))
+      : null;
+
+    if (hasUsableRubricBreakdown) {
+      // Rubric là nguồn điểm chính. Nếu tổng barem lệch maxPoints, scale theo tỉ lệ và gắn cờ GV rà soát.
+      const scale = breakdownMax > 0 ? maxPoints / breakdownMax : 1;
+      computedScore = Math.round(Math.min(maxPoints, Math.max(0, breakdownEarned * scale)) * 4) / 4;
+      if (Math.abs(breakdownMax - maxPoints) > 0.01) {
+        needsTeacherReview = true;
+      }
+      // Nếu chẩn đoán bước và barem mâu thuẫn, không tự sửa bằng heuristic.
+      if ((hasRealError && computedScore >= maxPoints) || (isAllCorrect && computedScore < maxPoints)) {
+        needsTeacherReview = true;
+      }
+    } else if (isAllCorrect) {
       computedScore = maxPoints;
     } else if (hasRealError) {
       if (aiProposedScore !== null) {
@@ -415,6 +468,8 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
       maxScore: maxPoints,
       feedback: feedbackText,
       needsTeacherReview,
+      scoreBreakdown: normalizedScoreBreakdown.length > 0 ? normalizedScoreBreakdown : undefined,
+      scoringMethod,
       referenceSolution: resultJson.referenceSolution ? {
         steps: Array.isArray(resultJson.referenceSolution.steps)
           ? resultJson.referenceSolution.steps.map((st: any) => ({
@@ -646,6 +701,7 @@ function generateRuleBasedGrading(req: StepGradingRequest): StepGradingResponse 
     maxScore: maxPoints,
     feedback: 'Bài làm đã được tiếp nhận an toàn. Do AI đang gián đoạn hoặc chưa đủ căn cứ phân tích tự động, câu hỏi này được chuyển sang chế độ Giáo viên thẩm định để chấm điểm trực tiếp.',
     needsTeacherReview: true,
+    scoringMethod: 'unavailable',
     analysisSource: 'rule',
   };
 }
