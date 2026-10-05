@@ -105,36 +105,29 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* Welcome Banner - Modern Minimalist Clean UI */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 text-slate-900 dark:text-white shadow-sm border border-slate-200/90 dark:border-slate-800 relative overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 text-slate-900 dark:text-white shadow-sm border border-slate-200/90 dark:border-slate-800 relative overflow-hidden">
         {/* Subtle geometric background glow & accents */}
         <div className="absolute right-0 top-0 w-80 h-80 bg-gradient-to-br from-blue-100/60 to-indigo-100/40 dark:from-indigo-950/40 dark:to-blue-950/20 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
         
-        {/* Geometric Accent Icon in Top Right */}
-        <div className="hidden md:flex absolute right-8 top-1/2 -translate-y-1/2 w-28 h-28 rounded-3xl bg-gradient-to-br from-indigo-50 to-blue-50/60 dark:from-slate-800/80 dark:to-slate-800/40 border border-indigo-100/80 dark:border-slate-700/60 items-center justify-center shadow-xs pointer-events-none rotate-3">
-          <div className="w-16 h-16 rounded-2xl bg-indigo-600/10 dark:bg-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400 -rotate-3">
-            <BookOpen className="w-8 h-8 stroke-[2.2]" />
-          </div>
-        </div>
-
         <div className="relative z-10 max-w-2xl">
           {/* Refined Badge */}
-          <div className="inline-flex items-center space-x-1.5 bg-blue-50 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60 text-[11px] font-bold px-3 py-1 rounded-full mb-3 shadow-2xs">
-            <Sparkles className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-            <span>Matsuda AI • Trợ lý AI cho Giáo viên Toán THCS</span>
+          <div className="inline-flex items-center space-x-1.5 text-blue-700 dark:text-blue-300 text-[11px] font-bold mb-2">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Matsuda AI • Toán THCS</span>
           </div>
 
           {/* Main Heading without slash */}
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">
-            Từ một bài làm sai → thành một lộ trình học cá nhân
+            Giao bài • Chấm từng bước • Học từ lỗi sai
           </h1>
           
           {/* Subtitle */}
           <p className="text-slate-600 dark:text-slate-300 text-xs sm:text-sm mt-2 font-medium">
-            PDF / Ảnh / Word / LaTeX → giao bài → chấm từng bước → tìm lỗi gốc → luyện lại.
+            Bắt đầu từ tài liệu có sẵn hoặc mở demo AI 3 phút.
           </p>
 
           {/* Action Buttons */}
-          <div className="flex flex-wrap gap-3 mt-6">
+          <div className="flex flex-wrap gap-2 mt-4">
             <button
               onClick={() => document.getElementById('judge-demo')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
               className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl shadow-xs hover:shadow-md transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
@@ -149,107 +142,61 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
               className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl shadow-xs hover:shadow-md transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
-              <span>Tách đề / Tạo bài</span>
+              <span>Tạo bài</span>
             </button>
 
             {/* Nút Kho Đề Mẫu */}
             <button
               onClick={() => onNavigate('exam_bank')}
-              className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 bg-violet-600 hover:bg-violet-700 text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl shadow-xs hover:shadow-md transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3.5 py-2.5 rounded-xl transition-all text-xs cursor-pointer"
             >
               <Layers className="w-4 h-4" />
-              <span>📚 Kho đề mẫu</span>
+              <span>Kho đề</span>
             </button>
 
           </div>
         </div>
       </div>
 
-      {/* ĐỢT 8A: AI LEARNING LOOP - trình bày rõ giá trị khác biệt của hệ thống */}
-      <section className="bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-indigo-950/30 dark:via-slate-900 dark:to-emerald-950/20 rounded-3xl p-4 sm:p-5 border border-indigo-200/70 dark:border-indigo-900/60 shadow-sm">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
-          <div>
-            <div className="inline-flex items-center gap-1.5 bg-indigo-100/80 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider mb-1.5">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Chu trình AI</span>
-            </div>
-            <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
-              Từ tài liệu có sẵn đến luyện tập cá nhân
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2 shrink-0">
-            <div className="bg-white/90 dark:bg-slate-900 rounded-xl border border-blue-200 dark:border-blue-900 px-3 py-2 text-center">
-              <div className="text-lg font-black text-blue-700 dark:text-blue-300">{aiAnalyzedAnswers}</div>
-              <div className="text-[9px] font-bold text-slate-500 uppercase">Lượt AI phân tích</div>
-            </div>
-            <div className="bg-white/90 dark:bg-slate-900 rounded-xl border border-amber-200 dark:border-amber-900 px-3 py-2 text-center">
-              <div className="text-lg font-black text-amber-700 dark:text-amber-300">{rootErrorsDetected}</div>
-              <div className="text-[9px] font-bold text-slate-500 uppercase">Lỗi gốc</div>
-            </div>
-            <div className="bg-white/90 dark:bg-slate-900 rounded-xl border border-violet-200 dark:border-violet-900 px-3 py-2 text-center">
-              <div className="text-lg font-black text-violet-700 dark:text-violet-300">{pendingTeacherReviews}</div>
-              <div className="text-[9px] font-bold text-slate-500 uppercase">Chờ GV duyệt</div>
-            </div>
+      <section className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h2 className="text-sm font-black text-slate-900 dark:text-white">Chu trình học từ lỗi sai</h2>
+          <div className="flex items-center gap-3 text-[10px] font-bold text-slate-500">
+            <span>AI: {aiAnalyzedAnswers}</span>
+            <span>Lỗi gốc: {rootErrorsDetected}</span>
+            <span>Chờ duyệt: {pendingTeacherReviews}</span>
           </div>
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
           {[
-            ['1', 'Tách đề', 'PDF / Ảnh / Word / LaTeX'],
-            ['2', 'Duyệt & giao', 'QR / mã bài'],
-            ['3', 'Chấm từng bước', 'Step Analysis'],
-            ['4', 'Tìm lỗi gốc', 'Lỗi gốc / kéo theo'],
-            ['5', 'Luyện cá nhân', 'Bài tương tự + Socratic'],
-            ['6', 'Theo dõi', 'Làm lại → làm chủ']
-          ].map(([index, title, desc], idx) => (
-            <React.Fragment key={index}>
-              <div className="bg-white/90 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-3 relative">
-                <div className="w-7 h-7 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-black mb-2">
-                  {index}
-                </div>
-                <div className="text-xs font-black text-slate-900 dark:text-white">{title}</div>
-                <div className="hidden xl:block text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1">{desc}</div>
-                {idx < 5 && (
-                  <ArrowRight className="hidden lg:block absolute -right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400 z-10" />
-                )}
-              </div>
-            </React.Fragment>
+            ['1','Tách đề'],
+            ['2','GV duyệt & giao'],
+            ['3','AI chấm'],
+            ['4','Lỗi gốc'],
+            ['5','Luyện lại']
+          ].map(([n, label]) => (
+            <div key={n} className="rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2.5 py-2 flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-black flex items-center justify-center shrink-0">{n}</span>
+              <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{label}</span>
+            </div>
           ))}
         </div>
       </section>
       {/* ĐỢT 8B: KỊCH BẢN DEMO NHANH 3–5 PHÚT */}
-      <section id="judge-demo" className="scroll-mt-28 rounded-3xl border-2 border-dashed border-fuchsia-200 dark:border-fuchsia-900 bg-gradient-to-r from-fuchsia-50 via-white to-indigo-50 dark:from-fuchsia-950/20 dark:via-slate-900 dark:to-indigo-950/20 p-5 sm:p-6 shadow-sm">
+      <section id="judge-demo" className="scroll-mt-28 rounded-2xl border border-dashed border-fuchsia-200 dark:border-fuchsia-900 bg-gradient-to-r from-fuchsia-50 via-white to-indigo-50 dark:from-fuchsia-950/20 dark:via-slate-900 dark:to-indigo-950/20 p-4 sm:p-5 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
           <div className="max-w-xl">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-fuchsia-100 dark:bg-fuchsia-950 text-fuchsia-700 dark:text-fuchsia-300 text-[10px] font-black uppercase tracking-wider mb-2">
               <Play className="w-3.5 h-3.5" />
-              <span className="leading-tight text-center">Demo trọng tâm cho giám khảo • khoảng 3 phút</span>
+              <span>Demo 3 phút</span>
             </div>
             <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
-              5 bước demo • Bước 4 là trọng tâm
+              5 bước demo • trọng tâm: AI chấm & lỗi gốc
             </h2>
 
-            <div className="mt-4 rounded-2xl bg-white/90 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="text-[10px] font-black uppercase text-slate-400">Hồ sơ AI dùng cho bước 4</div>
-                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${isUsingShowcaseFallback ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                  {isUsingShowcaseFallback ? 'DỮ LIỆU MINH HỌA DỰ PHÒNG' : 'DỮ LIỆU THẬT ĐÃ CÓ'}
-                </span>
-              </div>
-              <div className="font-black text-sm text-slate-900 dark:text-white mt-1">{analysisDemoAssignment.title}</div>
-              <div className="text-xs text-slate-500 mt-1">
-                Lớp {analysisDemoAssignment.grade} • {analysisDemoAssignment.topic || 'Toán THCS'} • {analysisDemoSubmission.studentName}
-              </div>
-              {isUsingShowcaseFallback && (
-                <div className="text-[10px] text-amber-700 mt-1.5">
-                  Dữ liệu minh họa an toàn • không ghi vào dữ liệu thật.
-                </div>
-              )}
-            </div>
-          </div>
+   </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 flex-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 flex-1">
             <button
               onClick={() => onNavigate('create', { autoOpenImport: true })}
               className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-violet-200 dark:border-violet-900 p-3.5 hover:shadow-md transition-all"
@@ -386,15 +333,6 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
           <div className="text-xl sm:text-2xl font-extrabold text-slate-900">{totalAssignments}</div>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
-          <div className="flex items-center justify-between text-emerald-600 mb-2">
-            <span className="text-xs font-bold text-slate-500 uppercase">Đang giao</span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
-              <FileText className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-xl sm:text-2xl font-extrabold text-slate-900">{activeAssignments}</div>
-        </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs col-span-2 sm:col-span-1">
           <div className="flex items-center justify-between text-amber-600 mb-2">
@@ -435,9 +373,15 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
             <tbody className="divide-y divide-slate-100">
               {safeAssignments.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-10 text-center text-slate-500 font-medium">
-                    <p className="text-sm">Chưa có bài tập nào.</p>
-                    <p className="text-xs text-slate-400 mt-1">Thầy Cô có thể bấm "Tạo bài tập mới" hoặc giao bài nhanh từ "Kho đề mẫu".</p>
+                  <td colSpan={6} className="py-8 text-center text-slate-500 font-medium">
+                    <p className="text-sm font-bold text-slate-700">Chưa có bài tập</p>
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('create', { autoOpenImport: true })}
+                      className="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl"
+                    >
+                      Tạo bài
+                    </button>
                   </td>
                 </tr>
               ) : (
