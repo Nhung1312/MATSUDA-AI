@@ -13,7 +13,10 @@ import {
   Sparkles,
   Layers,
   Edit3,
-  Settings
+  Settings,
+  Play,
+  Eye,
+  QrCode
 } from 'lucide-react';
 
 interface TeacherOverviewProps {
@@ -22,6 +25,8 @@ interface TeacherOverviewProps {
   submissions: Submission[];
   onNavigate: (tab: string, params?: any) => void;
   onOpenShare: (assignment: Assignment) => void;
+  onTestAssignment: (assignment: Assignment) => void;
+  onPreviewSubmission: (assignment: Assignment, submission: Submission) => void;
 }
 
 export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
@@ -29,7 +34,9 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
   assignments = [],
   submissions = [],
   onNavigate,
-  onOpenShare
+  onOpenShare,
+  onTestAssignment,
+  onPreviewSubmission
 }) => {
   const safeClasses = Array.isArray(classes) ? classes.filter((c): c is ClassRoom => Boolean(c && typeof c === 'object')) : [];
   const safeAssignments = Array.isArray(assignments) ? assignments.filter((a): a is Assignment => Boolean(a && typeof a === 'object')) : [];
@@ -59,6 +66,27 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
       : 0),
     0
   );
+
+  // Đợt 8B: tự chọn dữ liệu demo tốt nhất.
+  // Ưu tiên bài đã có Step Analysis/lỗi gốc để người xem thấy ngay giá trị AI.
+  const demoCandidates = safeAssignments.map(assignment => {
+    const assignmentSubmissions = safeSubmissions.filter(s => s.assignmentId === assignment.id);
+    const richSubmission = assignmentSubmissions.find(s =>
+      Array.isArray(s.answers) && s.answers.some(a =>
+        !!a.stepGradingResponse ||
+        (a.stepAnalysis && a.stepAnalysis.length > 0) ||
+        (a.firstErrorStep !== undefined && a.firstErrorStep !== null)
+      )
+    );
+    return {
+      assignment,
+      submission: richSubmission || assignmentSubmissions[0],
+      quality: richSubmission ? 3 : assignmentSubmissions.length > 0 ? 2 : assignment.isPublished ? 1 : 0
+    };
+  }).sort((a, b) => b.quality - a.quality);
+  const demoTarget = demoCandidates[0];
+  const demoAssignment = demoTarget?.assignment;
+  const demoSubmission = demoTarget?.submission;
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
       {/* Welcome Banner - Modern Minimalist Clean UI */}
@@ -184,6 +212,97 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
               </div>
             </React.Fragment>
           ))}
+        </div>
+      </section>
+      {/* ĐỢT 8B: KỊCH BẢN DEMO NHANH 3–5 PHÚT */}
+      <section className="rounded-3xl border-2 border-dashed border-fuchsia-200 dark:border-fuchsia-900 bg-gradient-to-r from-fuchsia-50 via-white to-indigo-50 dark:from-fuchsia-950/20 dark:via-slate-900 dark:to-indigo-950/20 p-5 sm:p-6 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
+          <div className="max-w-xl">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-fuchsia-100 dark:bg-fuchsia-950 text-fuchsia-700 dark:text-fuchsia-300 text-[10px] font-black uppercase tracking-wider mb-2">
+              <Play className="w-3.5 h-3.5" />
+              <span>Demo nhanh 3–5 phút</span>
+            </div>
+            <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
+              Đi theo 4 bước này để trình diễn toàn bộ giá trị cốt lõi
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+              Hệ thống tự chọn bài có dữ liệu phù hợp nhất để giảm thao tác và tránh phải chờ AI xử lý lại trong lúc thuyết trình.
+            </p>
+
+            {demoAssignment ? (
+              <div className="mt-4 rounded-2xl bg-white/90 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-3">
+                <div className="text-[10px] font-black uppercase text-slate-400">Bài demo đang chọn</div>
+                <div className="font-black text-sm text-slate-900 dark:text-white mt-0.5">{demoAssignment.title}</div>
+                <div className="text-xs text-slate-500 mt-1">
+                  Lớp {demoAssignment.grade} • {demoAssignment.topic || 'Toán THCS'}
+                  {demoSubmission ? ` • Có bài nộp của ${demoSubmission.studentName}` : ' • Chưa có bài nộp sẵn'}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-800">
+                Chưa có đề để demo. Hãy tạo hoặc lấy một đề từ Kho đề mẫu trước.
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 flex-1">
+            <button
+              disabled={!demoAssignment}
+              onClick={() => demoAssignment && onOpenShare(demoAssignment)}
+              className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-900 p-3.5 hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <span className="w-7 h-7 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-black">1</span>
+                <QrCode className="w-4 h-4 text-indigo-500" />
+              </div>
+              <div className="font-black text-xs text-slate-900 dark:text-white mt-2">Giao bài</div>
+              <div className="text-[10px] text-slate-500 mt-1">Mở QR + link để cho thấy cách học sinh nhận bài.</div>
+            </button>
+
+            <button
+              disabled={!demoAssignment}
+              onClick={() => demoAssignment && onTestAssignment(demoAssignment)}
+              className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-900 p-3.5 hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <span className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-black">2</span>
+                <Play className="w-4 h-4 text-blue-500" />
+              </div>
+              <div className="font-black text-xs text-slate-900 dark:text-white mt-2">Làm thử như học sinh</div>
+              <div className="text-[10px] text-slate-500 mt-1">Nếu cần, minh họa nhanh trải nghiệm làm và nộp bài.</div>
+            </button>
+
+            <button
+              disabled={!demoAssignment || !demoSubmission}
+              onClick={() => demoAssignment && demoSubmission && onPreviewSubmission(demoAssignment, demoSubmission)}
+              className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-fuchsia-200 dark:border-fuchsia-900 p-3.5 hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <span className="w-7 h-7 rounded-full bg-fuchsia-600 text-white flex items-center justify-center text-xs font-black">3</span>
+                <Eye className="w-4 h-4 text-fuchsia-500" />
+              </div>
+              <div className="font-black text-xs text-slate-900 dark:text-white mt-2">Xem AI chấm & lỗi gốc</div>
+              <div className="text-[10px] text-slate-500 mt-1">Mở ngay bài đã chấm: Step Analysis → lỗi gốc → luyện lại.</div>
+            </button>
+
+            <button
+              disabled={!demoAssignment}
+              onClick={() => demoAssignment && onNavigate('results', { assignmentId: demoAssignment.id })}
+              className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900 p-3.5 hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <span className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-black">4</span>
+                <BarChart3 className="w-4 h-4 text-emerald-500" />
+              </div>
+              <div className="font-black text-xs text-slate-900 dark:text-white mt-2">Kết quả lớp</div>
+              <div className="text-[10px] text-slate-500 mt-1">Chốt demo bằng thống kê, bài cần duyệt và tiến bộ học tập.</div>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2">
+          <Sparkles className="w-3.5 h-3.5 text-fuchsia-500" />
+          <span><strong className="text-slate-700 dark:text-slate-200">Mẹo demo:</strong> nếu thời gian ngắn, bỏ qua Bước 2 và mở thẳng Bước 3 để cho thấy khác biệt AI trong khoảng 2 phút.</span>
         </div>
       </section>
       {/* Top Stat Cards */}
