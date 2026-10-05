@@ -41,6 +41,7 @@ function AppContent() {
     className?: string;
     submission?: Submission;
     previewFromTeacher?: boolean;
+    showcasePreview?: boolean;
   }>(() => {
     try {
       const saved = sessionStorage.getItem('toan_thcs_exam_session');
@@ -384,7 +385,8 @@ function AppContent() {
       studentName: submission.studentName || 'Học sinh',
       classId: submission.classId || assignment.classId,
       className: submission.className || assignment.className || 'Tất cả học sinh',
-      previewFromTeacher: true
+      previewFromTeacher: true,
+      showcasePreview: assignment.id.startsWith('showcase_')
     });
     navigate('/result');
   };
@@ -487,6 +489,7 @@ function AppContent() {
                   submission={examSession.submission}
                   assignment={examSession.assignment}
                   onRetake={handleRetakeExam}
+                  isDemoPreview={!!examSession.showcasePreview}
                   onGoHome={() => {
                     const shouldReturnToTeacher = !!examSession.previewFromTeacher;
                     updateExamSession({});
