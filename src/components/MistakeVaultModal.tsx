@@ -238,7 +238,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
     }
   };
 
-  // Generate Remedial Exercise (Isomorphic Problem)
+  // Generate Remedial Exercise (Bài tương tự)
   const handleGenerateRemedialForMistake = async (m: MistakeRecord) => {
     setGeneratingRemedialByMistake(prev => ({ ...prev, [m.id]: true }));
     try {
@@ -300,7 +300,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
       useLearningProgressStore.getState().recordRemedialExerciseCompleted(ex.id, true);
       setRemedialResultByMistake(prev => ({
         ...prev,
-        [m.id]: { tested: true, isCorrect: true, feedback: '🎉 Hoàn toàn chính xác! Em đã làm chủ dạng bài này.' }
+        [m.id]: { tested: true, isCorrect: true, feedback: 'Đúng rồi! Em đã làm được bài tương tự.' }
       }));
     } else {
       soundEffects.playFlag();
@@ -312,7 +312,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
       useLearningProgressStore.getState().recordRemedialExerciseCompleted(ex.id, false);
       setRemedialResultByMistake(prev => ({
         ...prev,
-        [m.id]: { tested: true, isCorrect: false, feedback: '💡 Đáp số chưa khớp. Em hãy bấm "Xem gợi ý phương pháp" để đối chiếu nhé!' }
+        [m.id]: { tested: true, isCorrect: false, feedback: 'Chưa khớp. Hãy mở Gợi ý để đối chiếu.' }
       }));
     }
   };
@@ -350,7 +350,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
       firstErrorExplanation: m.firstErrorExplanation || undefined,
       firstErrorType: m.firstErrorType || undefined,
       studentWork: remedialAnswerByMistake[m.id] || '',
-      detectedError: `Học sinh đang luyện bài tập tương tự bổ trợ (Isomorphic Problem). Lỗi gốc ở câu trước: ${m.firstErrorExplanation || m.firstErrorType || 'Chưa rõ'}. Cần gợi mở phương pháp tư duy giải bài tương tự này.`,
+      detectedError: `Học sinh đang luyện bài tập tương tự bổ trợ (Bài tương tự). Lỗi gốc ở câu trước: ${m.firstErrorExplanation || m.firstErrorType || 'Chưa rõ'}. Cần gợi mở phương pháp tư duy giải bài tương tự này.`,
     });
   };
 
@@ -362,21 +362,21 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
         return (
           <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-            <span>✓ Đã nắm vững</span>
+            <span>Đã nắm</span>
           </span>
         );
       case 'improving':
         return (
           <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-200 border border-blue-300 dark:border-blue-800">
             <Sparkles className="w-3.5 h-3.5 text-blue-600 animate-pulse" />
-            <span>↗ Đang tiến bộ ({m.consecutiveCorrectCount || 1}/2)</span>
+            <span>Tiến bộ {m.consecutiveCorrectCount || 1}/2</span>
           </span>
         );
       case 'practicing':
         return (
           <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-800">
             <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
-            <span>⏳ Đang luyện tập</span>
+            <span>Đang luyện</span>
           </span>
         );
       case 'needs_practice':
@@ -384,7 +384,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
         return (
           <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
             <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-            <span>⚠️ Cần luyện lại</span>
+            <span>Cần luyện</span>
           </span>
         );
     }
@@ -404,7 +404,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
     return (
       <div
         key={m.id}
-        className={`rounded-2xl border p-4 sm:p-5 transition-all shadow-xs ${
+        className={`rounded-2xl border p-3.5 sm:p-4 transition-all shadow-xs ${
           m.mastered
             ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/80'
             : m.masteryStatus === 'improving'
@@ -420,7 +420,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
             </span>
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-black text-slate-800 dark:text-slate-200">
               <FileText className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-              <span>Đề: {m.assignmentTitle || 'Đề kiểm tra chung'}</span>
+              <span>{m.assignmentTitle || 'Đề kiểm tra'}</span>
             </div>
             {m.question.topicHint && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200/60">
@@ -443,7 +443,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
               title="Luyện tập lại các câu sai của đề này"
             >
               <PlayCircle className="w-3.5 h-3.5" />
-              <span>Luyện lại đề này</span>
+              <span>Luyện cả đề</span>
             </button>
           </div>
 
@@ -456,7 +456,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
               title="Xóa câu này khỏi sổ tay"
             >
               <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-              <span className="text-[11px]">Xóa</span>
+              <span className="sr-only">Xóa</span>
             </button>
           </div>
         </div>
@@ -490,11 +490,11 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
             <div className="font-extrabold flex flex-wrap items-center justify-between gap-1.5 text-rose-800 dark:text-rose-300">
               <div className="flex items-center gap-1.5">
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                <span>Nút thắt lỗi gốc: Bước {m.firstErrorStep} {m.firstErrorType ? `(${m.firstErrorType})` : ''}</span>
+                <span>Lỗi gốc • Bước {m.firstErrorStep}{m.firstErrorType ? ` • ${m.firstErrorType}` : ''}</span>
               </div>
               {m.cascadingStepsCount && m.cascadingStepsCount > 0 ? (
                 <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-950/80 border border-purple-200 dark:border-purple-800 px-2 py-0.5 rounded-md">
-                  ↳ {m.cascadingStepsCount} bước phía sau kéo theo (không tính lỗi mới)
+                  {m.cascadingStepsCount} bước kéo theo
                 </span>
               ) : null}
             </div>
@@ -511,12 +511,12 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
           <div className="flex items-center space-x-2">
             <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
             <span>
-              Lần làm trước: <strong>{m.studentAnswer}</strong> (Chưa đạt tối đa). Hãy thử làm lại:
+              Lần trước: <strong>{m.studentAnswer}</strong>
             </span>
           </div>
           {m.practiceCount > 0 && (
             <span className="text-[11px] text-slate-400 font-mono">
-              Đã thử: {m.practiceCount} lần
+              {m.practiceCount} lượt
             </span>
           )}
         </div>
@@ -573,14 +573,14 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
               <>
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span>
-                  🎉 Chính xác! Bạn đã giải đúng câu này ({m.consecutiveCorrectCount || 1}/2 lần để nắm vững).
+                  Đúng • {m.consecutiveCorrectCount || 1}/2 lần liên tiếp
                 </span>
               </>
             ) : (
               <>
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                 <span>
-                  Đáp án vừa chọn vẫn chưa đúng. Bạn hãy bấm "Gia sư AI – Sửa lỗi này" để được hướng dẫn tư duy nhé!
+                  Chưa đúng • thử Gợi ý hoặc Gia sư AI
                 </span>
               </>
             )}
@@ -596,7 +596,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                 className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-transform active:scale-95 cursor-pointer"
               >
                 <Check className="w-3.5 h-3.5" />
-                <span>Kiểm tra đáp án</span>
+                <span>Kiểm tra</span>
               </button>
             )}
 
@@ -606,7 +606,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
               className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 rounded-xl text-xs font-bold border border-amber-200 dark:border-amber-800/80 transition-colors cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
-              <span>{isAiLoading ? 'AI đang phân tích...' : m.aiHint ? 'Xem lại gợi ý AI' : 'Gợi ý bước giải AI'}</span>
+              <span>{isAiLoading ? 'Đang tạo...' : m.aiHint ? 'Gợi ý AI' : 'Gợi ý AI'}</span>
             </button>
 
             {/* Nút sinh bài tương tự cùng dạng (Mục 4 & 5) */}
@@ -621,7 +621,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
               ) : (
                 <Target className="w-3.5 h-3.5 text-amber-300" />
               )}
-              <span>{m.remedialExercise ? 'Đổi bài tương tự khác' : '🎯 Luyện bài tương tự cùng dạng'}</span>
+              <span>{m.remedialExercise ? 'Đổi bài' : 'Bài tương tự'}</span>
             </button>
 
             {/* Nút Gia sư AI Socratic (Mục 6) */}
@@ -632,7 +632,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
               title="Nhờ Gia sư Socratic AI dẫn dắt tư duy"
             >
               <Bot className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              <span>Gia sư AI – Sửa lỗi này</span>
+              <span>Gia sư AI</span>
             </button>
           </div>
 
@@ -643,7 +643,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
             }}
             className="text-xs text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 font-semibold transition-colors cursor-pointer"
           >
-            {m.mastered ? '✓ Đã nắm vững' : 'Đánh dấu đã hiểu bài'}
+            {m.mastered ? 'Đã nắm' : 'Đánh dấu đã nắm'}
           </button>
         </div>
 
@@ -656,7 +656,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                 <span>{m.remedialExercise.title}</span>
               </div>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-200 dark:bg-purple-900 text-purple-800 dark:text-purple-200">
-                Isomorphic Problem
+                Bài tương tự
               </span>
             </div>
 
@@ -670,7 +670,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                 type="text"
                 value={remedialAnswerByMistake[m.id] || ''}
                 onChange={(e) => setRemedialAnswerByMistake(prev => ({ ...prev, [m.id]: e.target.value }))}
-                placeholder="Nhập đáp số hoặc bước biến đổi của em (VD: x = 5)..."
+                placeholder="Nhập đáp số hoặc bước biến đổi..."
                 className="flex-1 px-3 py-2 bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
               <button
@@ -678,7 +678,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                 onClick={() => handleCheckRemedialForMistake(m)}
                 className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs sm:text-sm shadow-xs transition-transform active:scale-95 cursor-pointer shrink-0"
               >
-                Kiểm tra bài làm
+                Kiểm tra
               </button>
             </div>
 
@@ -701,7 +701,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                 className="font-bold text-amber-700 dark:text-amber-400 hover:underline cursor-pointer flex items-center gap-1"
               >
                 <Lightbulb className="w-3.5 h-3.5" />
-                <span>{showRemHint ? 'Ẩn gợi ý' : 'Xem gợi ý phương pháp'}</span>
+                <span>{showRemHint ? 'Ẩn gợi ý' : 'Gợi ý'}</span>
               </button>
               <span>•</span>
               <button
@@ -710,7 +710,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                 className="font-bold text-indigo-700 dark:text-indigo-400 hover:underline cursor-pointer flex items-center gap-1"
               >
                 <BookOpen className="w-3.5 h-3.5" />
-                <span>{showRemSol ? 'Ẩn lời giải' : 'Xem lời giải mẫu'}</span>
+                <span>{showRemSol ? 'Ẩn lời giải' : 'Lời giải'}</span>
               </button>
               <span>•</span>
               <button
@@ -720,7 +720,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
                 title="Nhờ Gia sư AI hướng dẫn tư duy bài tương tự này"
               >
                 <Bot className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                <span>Gia sư AI – Hướng dẫn bài này</span>
+                <span>Gia sư AI</span>
               </button>
             </div>
 
@@ -732,10 +732,10 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
 
             {showRemSol && (
               <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800 text-slate-800 dark:text-slate-200 text-xs space-y-1.5">
-                <div className="font-bold text-purple-700 dark:text-purple-300">Lời giải chi tiết:</div>
+                <div className="font-bold text-purple-700 dark:text-purple-300">Lời giải</div>
                 <MathDisplay content={m.remedialExercise.solutionLatex} />
                 <div className="font-bold text-emerald-600 dark:text-emerald-400 pt-1">
-                  Đáp số chuẩn: <MathDisplay content={m.remedialExercise.finalAnswer} />
+                  Đáp số: <MathDisplay content={m.remedialExercise.finalAnswer} />
                 </div>
               </div>
             )}
@@ -747,7 +747,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
           <div className="mt-3 p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-amber-200 dark:border-amber-900/60 space-y-2 text-xs text-slate-800 dark:text-slate-200">
             <div className="flex items-center space-x-1.5 font-bold text-amber-700 dark:text-amber-400 text-xs">
               <Lightbulb className="w-4 h-4" />
-              <span>Hướng dẫn tư duy từng bước từ Trợ Lý AI:</span>
+              <span>Gợi ý AI</span>
             </div>
             
             <div className="whitespace-pre-line leading-relaxed font-sans">
@@ -757,7 +757,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
             {m.question.explanation && (
               <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
                 <span className="font-bold text-slate-600 dark:text-slate-400">
-                  Đáp án chuẩn của Thầy/Cô:
+                  Đáp án:
                 </span>{' '}
                 <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
                   {m.question.correctAnswer}
@@ -776,12 +776,12 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
             <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1.5 font-semibold">
               <span className="flex items-center gap-1.5">
                 <RotateCcw className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Lịch sử luyện tập ({m.practiceAttempts.length} lượt):</span>
+                <span>Lịch sử ({m.practiceAttempts.length})</span>
               </span>
               <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
                 {m.consecutiveCorrectCount && m.consecutiveCorrectCount > 0
-                  ? `🔥 Chuỗi đúng liên tiếp: ${m.consecutiveCorrectCount}/2`
-                  : 'Cần đúng 2 lần liên tiếp để nắm vững'}
+                  ? `Chuỗi đúng: ${m.consecutiveCorrectCount}/2`
+                  : 'Cần đúng 2 lần liên tiếp'}
               </span>
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -1086,7 +1086,7 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
               </div>
             )}
             <div className="text-[11px] text-slate-500 dark:text-slate-400">
-              💡 Bấm <strong>"Luyện lại đề này"</strong> để làm lại các câu sai của bài thi đó!
+              💡 Bấm <strong>"Luyện cả đề"</strong> để làm lại các câu sai của bài thi đó!
             </div>
           </div>
         </div>
