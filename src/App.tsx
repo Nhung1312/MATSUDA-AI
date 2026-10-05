@@ -40,6 +40,7 @@ function AppContent() {
     classId?: string;
     className?: string;
     submission?: Submission;
+    previewFromTeacher?: boolean;
   }>(() => {
     try {
       const saved = sessionStorage.getItem('toan_thcs_exam_session');
@@ -374,6 +375,20 @@ function AppContent() {
     navigate('/exam');
   };
 
+  // Đợt 8B: mở ngay một bài nộp đã có ở đúng giao diện học sinh để demo
+  // chu trình AI mà không phải chờ làm bài/chờ API chấm lại.
+  const handlePreviewSubmissionFromTeacher = (assignment: Assignment, submission: Submission) => {
+    updateExamSession({
+      assignment,
+      submission,
+      studentName: submission.studentName || 'Học sinh',
+      classId: submission.classId || assignment.classId,
+      className: submission.className || assignment.className || 'Tất cả học sinh',
+      previewFromTeacher: true
+    });
+    navigate('/result');
+  };
+
   // Check if we are inside an ongoing active exam (to hide progress bar during test for distraction-free)
   const isTakingExam = location.pathname === '/exam' || location.pathname.endsWith('/exam');
 
@@ -473,8 +488,9 @@ function AppContent() {
                   assignment={examSession.assignment}
                   onRetake={handleRetakeExam}
                   onGoHome={() => {
+                    const shouldReturnToTeacher = !!examSession.previewFromTeacher;
                     updateExamSession({});
-                    navigate('/');
+                    navigate(shouldReturnToTeacher ? '/teacher' : '/');
                   }}
                 />
               ) : (
@@ -501,6 +517,7 @@ function AppContent() {
                   onRefreshData={refreshAllData}
                   onOpenShare={(asg) => setShareAssignment(asg)}
                   onTestAssignment={handleTestAssignmentFromTeacher}
+                  onPreviewSubmission={handlePreviewSubmissionFromTeacher}
                   onResetData={handleResetData}
                   onClearDemoData={handleClearDemoData}
                 />
