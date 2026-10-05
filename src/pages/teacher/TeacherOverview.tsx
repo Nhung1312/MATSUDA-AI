@@ -7,7 +7,6 @@ import {
   FileText, 
   CheckCircle2, 
   PlusCircle, 
-  TrendingUp, 
   Share2, 
   BarChart3, 
   ArrowRight,
