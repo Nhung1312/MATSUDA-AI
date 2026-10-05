@@ -370,6 +370,63 @@ export class HybridAIService implements IAIService {
   }
 
   /**
+   * Failover RIÊNG cho tác vụ CHẤM ĐIỂM.
+   * Không cho phép Flash Lite hoặc model chất lượng thấp âm thầm chốt điểm.
+   */
+  async generateWithGradingFailover(
+    ai: GoogleGenAI,
+    preferredModel: string,
+    contents: any,
+    config?: any,
+    maxRetriesPerModel: number = 2
+  ): Promise<{ response: any; modelUsed: string }> {
+    const allowedGradingModels = [
+      'gemini-3.8-flash',
+      'gemini-flash-latest',
+      'gemini-3.1-pro-preview'
+    ];
+    const candidateModels = [
+      allowedGradingModels.includes(preferredModel) ? preferredModel : '',
+      ...allowedGradingModels
+    ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
+
+    let lastError: any = null;
+
+    for (const modelName of candidateModels) {
+      for (let attempt = 1; attempt <= maxRetriesPerModel; attempt++) {
+        try {
+          const params: any = { model: modelName, contents };
+          if (config) params.config = config;
+          const response = await ai.models.generateContent(params);
+          return { response, modelUsed: modelName };
+        } catch (err: any) {
+          lastError = err;
+          const errStr = String(err?.message || err);
+
+          if (errStr.includes('404') || errStr.includes('not found') || errStr.includes('no longer available')) {
+            break;
+          }
+
+          if (errStr.includes('quota') || errStr.includes('GenerateRequestsPerDay') || (errStr.includes('429') && errStr.includes('RESOURCE_EXHAUSTED'))) {
+            console.warn(`[Grading AI] Model ${modelName} hết quota; chuyển model chấm phù hợp tiếp theo.`);
+            break;
+          }
+
+          if (errStr.includes('503') || errStr.includes('high demand') || errStr.includes('UNAVAILABLE') || errStr.includes('429')) {
+            console.warn(`[Grading AI] Model ${modelName} quá tải; thử lại lần ${attempt}.`);
+            await new Promise(r => setTimeout(r, attempt * 2000));
+            continue;
+          }
+
+          throw err;
+        }
+      }
+    }
+
+    throw lastError || new Error('Không còn model chấm điểm phù hợp khả dụng.');
+  }
+
+  /**
    * Kiểm tra kết nối API Key và Model cụ thể với Gemini API
    * - Chỉ gửi một request cực ngắn (ping) để kiểm tra, không gửi bài toán
    * - Tuyệt đối KHÔNG tự động chuyển sang Flash Lite khi model được chọn bị lỗi/hết quota
@@ -568,7 +625,7 @@ Trả về duy nhất định dạng JSON (không có ký tự ngoài JSON) theo
           }
         }
 
-        const { response } = await this.generateWithFailover(
+        const { response, modelUsed } = await this.generateWithGradingFailover(
           ai,
           model,
           contentsPayload,
@@ -592,7 +649,11 @@ Trả về duy nhất định dạng JSON (không có ký tự ngoài JSON) theo
             feedback: parsed.feedback || 'Bài làm đã được Gemini AI phân tích và chấm điểm chi tiết.',
             strengths: Array.isArray(parsed.strengths) && parsed.strengths.length > 0 ? parsed.strengths : ['Trình bày có bố cục rõ ràng'],
             improvements: Array.isArray(parsed.improvements) ? parsed.improvements : [],
-            stepByStepCorrection: parsed.stepByStepCorrection || ''
+            stepByStepCorrection: parsed.stepByStepCorrection || '',
+            needsTeacherReview: false,
+            isProvisional: false,
+            aiGradingError: false,
+            modelUsed
           };
         }
       } catch (geminiError: any) {
@@ -621,7 +682,10 @@ Trả về duy nhất định dạng JSON (không có ký tự ngoài JSON) theo
         feedback: 'Học sinh chưa nhập câu trả lời hoặc chưa đính kèm ảnh bài làm cho câu hỏi tự luận này.',
         strengths: [],
         improvements: ['Cần đọc kỹ đề bài và hoàn thiện các bước giải toán.'],
-        stepByStepCorrection: 'Hãy xác định công thức liên quan, giải từng bước và đối chiếu kết quả.'
+        stepByStepCorrection: 'Hãy xác định công thức liên quan, giải từng bước và đối chiếu kết quả.',
+        needsTeacherReview: false,
+        isProvisional: false,
+        aiGradingError: false
       };
     }
 
@@ -633,7 +697,10 @@ Trả về duy nhất định dạng JSON (không có ký tự ngoài JSON) theo
       feedback: `Hệ thống đã ghi nhận an toàn bài làm của học sinh${hasImages ? ` (kèm ${essayImages.length} ảnh bài làm)` : ''}. Do AI chưa phân tích tự động được bài này, điểm số được giữ nguyên ở trạng thái chờ Giáo viên thẩm định để chấm điểm trực tiếp theo barem.`,
       strengths: ['Bài làm và các bước giải đã được tiếp nhận đầy đủ'],
       improvements: ['Chờ giáo viên trực tiếp chấm và nhận xét chi tiết'],
-      stepByStepCorrection: 'Giáo viên sẽ xem xét từng bước bài giải và chấm điểm trực tiếp.'
+      stepByStepCorrection: 'Giáo viên sẽ xem xét từng bước bài giải và chấm điểm trực tiếp.',
+      needsTeacherReview: true,
+      isProvisional: true,
+      aiGradingError: true
     };
   }
 

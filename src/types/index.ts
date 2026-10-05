@@ -128,6 +128,10 @@ export interface EssayGradingResult {
   strengths: string[];
   improvements: string[];
   stepByStepCorrection?: string;
+  needsTeacherReview?: boolean;
+  isProvisional?: boolean;
+  aiGradingError?: boolean;
+  modelUsed?: string;
 }
 
 export interface Submission {

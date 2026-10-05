@@ -156,7 +156,19 @@ export class GradingService {
     violationEvents?: ViolationEvent[];
     isShuffled?: boolean;
     attemptNumber?: number;
-    aiFeedbacks?: Record<string, { score?: number; feedback?: string; graded?: boolean }>;
+    aiFeedbacks?: Record<string, {
+      score?: number;
+      feedback?: string;
+      graded?: boolean;
+      needsTeacherReview?: boolean;
+      isProvisional?: boolean;
+      aiGradingError?: boolean;
+      stepGradingResponse?: StepGradingResponse;
+      stepAnalysis?: StepAnalysis[];
+      firstErrorStep?: number | null;
+      firstErrorType?: StepErrorType | null;
+      firstErrorExplanation?: string | null;
+    }>;
   }): ContestSubmission {
     const {
       contest,
@@ -203,10 +215,14 @@ export class GradingService {
       if (isEssay) {
         hasEssay = true;
         if (aiEval && typeof aiEval.score === 'number') {
+          const stepRes = aiEval.stepGradingResponse;
+          const needsReview = !!(aiEval.needsTeacherReview || aiEval.isProvisional || aiEval.aiGradingError || stepRes?.needsTeacherReview || stepRes?.analysisSource === 'rule' || stepRes?.analysisSource === 'unavailable');
           pointsEarned = Math.min(questionPoints, Math.max(0, aiEval.score));
-          const stepRes = (aiEval as any).stepGradingResponse;
-          const hasError = !!(aiEval as any).firstErrorStep || !!stepRes?.firstErrorStep || (stepRes?.analysis || []).some((s: any) => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
-          if (stepRes && typeof stepRes.isAllCorrect === 'boolean') {
+          const hasError = !!aiEval.firstErrorStep || !!stepRes?.firstErrorStep || (stepRes?.analysis || []).some((s: any) => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
+          if (needsReview) {
+            isEssayGraded = false;
+            isCorrect = false;
+          } else if (stepRes && typeof stepRes.isAllCorrect === 'boolean') {
             isCorrect = stepRes.isAllCorrect && !hasError;
           } else if (hasError) {
             isCorrect = false;
@@ -240,8 +256,19 @@ export class GradingService {
       earnedTotalPoints += pointsEarned;
       maxPointsTotal += questionPoints;
 
+      const answerNeedsReview = isEssay && !!(
+        aiEval?.needsTeacherReview ||
+        aiEval?.isProvisional ||
+        aiEval?.aiGradingError ||
+        aiEval?.stepGradingResponse?.needsTeacherReview ||
+        aiEval?.stepGradingResponse?.analysisSource === 'rule' ||
+        aiEval?.stepGradingResponse?.analysisSource === 'unavailable' ||
+        ((solutionText || images.length > 0 || selected) && !aiEval)
+      );
       if (isUnanswered) {
         unansweredCount++;
+      } else if (answerNeedsReview) {
+        // Chưa chấm chính thức: không tính là câu sai.
       } else if (isCorrect) {
         correctCount++;
       } else {
@@ -260,7 +287,11 @@ export class GradingService {
         maxPoints: questionPoints,
         aiFeedback: aiEval?.feedback,
         aiScore: aiEval?.score,
-        aiGraded: aiEval?.graded
+        aiGraded: aiEval?.graded,
+        needsTeacherReview: answerNeedsReview,
+        isProvisional: answerNeedsReview,
+        aiGradingError: !!aiEval?.aiGradingError,
+        stepGradingResponse: aiEval?.stepGradingResponse
       };
     });
 
@@ -319,7 +350,19 @@ export class GradingService {
     tabSwitchCount?: number;
     violationEvents?: ViolationEvent[];
     isShuffled?: boolean;
-    aiFeedbacks?: Record<string, { score?: number; feedback?: string; graded?: boolean }>;
+    aiFeedbacks?: Record<string, {
+      score?: number;
+      feedback?: string;
+      graded?: boolean;
+      needsTeacherReview?: boolean;
+      isProvisional?: boolean;
+      aiGradingError?: boolean;
+      stepGradingResponse?: StepGradingResponse;
+      stepAnalysis?: StepAnalysis[];
+      firstErrorStep?: number | null;
+      firstErrorType?: StepErrorType | null;
+      firstErrorExplanation?: string | null;
+    }>;
   }): Submission {
     const { 
       assignment, 
@@ -369,10 +412,13 @@ export class GradingService {
         maxEssayPoints += q.points;
         // Với câu tự luận: nếu đã có điểm AI chấm
         if (aiEval && typeof aiEval.score === 'number') {
+          const stepRes = aiEval.stepGradingResponse;
+          const needsReview = !!(aiEval.needsTeacherReview || aiEval.isProvisional || aiEval.aiGradingError || stepRes?.needsTeacherReview || stepRes?.analysisSource === 'rule' || stepRes?.analysisSource === 'unavailable');
           pointsEarned = Math.min(q.points, Math.max(0, aiEval.score));
-          const stepRes = (aiEval as any).stepGradingResponse;
-          const hasError = !!(aiEval as any).firstErrorStep || !!stepRes?.firstErrorStep || (stepRes?.analysis || []).some((s: any) => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
-          if (stepRes && typeof stepRes.isAllCorrect === 'boolean') {
+          const hasError = !!aiEval.firstErrorStep || !!stepRes?.firstErrorStep || (stepRes?.analysis || []).some((s: any) => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
+          if (needsReview) {
+            isCorrect = false;
+          } else if (stepRes && typeof stepRes.isAllCorrect === 'boolean') {
             isCorrect = stepRes.isAllCorrect && !hasError;
           } else if (hasError) {
             isCorrect = false;
@@ -412,8 +458,11 @@ export class GradingService {
       earnedPointsTotal += pointsEarned;
       maxPointsTotal += q.points;
 
+      const answerNeedsReview = isEssay && !!(aiEval?.needsTeacherReview || aiEval?.isProvisional || aiEval?.aiGradingError || aiEval?.stepGradingResponse?.needsTeacherReview || aiEval?.stepGradingResponse?.analysisSource === 'rule' || aiEval?.stepGradingResponse?.analysisSource === 'unavailable' || ((solutionText || images.length > 0 || selected) && !aiEval));
       if (isUnanswered) {
         unansweredCount++;
+      } else if (answerNeedsReview) {
+        // Chưa chấm chính thức: không tính là câu sai.
       } else if (isCorrect) {
         correctCount++;
       } else {
@@ -436,9 +485,11 @@ export class GradingService {
         stepAnalysis: (aiEval as any)?.stepAnalysis || (aiEval as any)?.stepGradingResponse?.analysis,
         firstErrorStep: (aiEval as any)?.firstErrorStep !== undefined ? (aiEval as any)?.firstErrorStep : (aiEval as any)?.stepGradingResponse?.firstErrorStep,
         firstErrorType: (aiEval as any)?.firstErrorType || (aiEval as any)?.stepGradingResponse?.firstErrorType,
-        firstErrorExplanation: (aiEval as any)?.firstErrorExplanation || (aiEval as any)?.stepGradingResponse?.firstErrorExplanation,
-        needsTeacherReview: (aiEval as any)?.needsTeacherReview !== undefined ? (aiEval as any)?.needsTeacherReview : (aiEval as any)?.stepGradingResponse?.needsTeacherReview,
-        stepGradingResponse: (aiEval as any)?.stepGradingResponse
+        firstErrorExplanation: aiEval?.firstErrorExplanation || aiEval?.stepGradingResponse?.firstErrorExplanation,
+        needsTeacherReview: answerNeedsReview,
+        isProvisional: answerNeedsReview,
+        aiGradingError: !!aiEval?.aiGradingError,
+        stepGradingResponse: aiEval?.stepGradingResponse
       };
     });
 
@@ -450,6 +501,8 @@ export class GradingService {
     const startTime = new Date(startedAt).getTime();
     const endTime = new Date(submittedAt).getTime();
     const timeSpentSeconds = Math.max(1, Math.round((endTime - startTime) / 1000));
+
+    const provisionalCount = answers.filter(a => a.needsTeacherReview && a.teacherScore === undefined).length;
 
     return {
       id: `sub_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -463,7 +516,10 @@ export class GradingService {
       totalScore: finalScore,
       maxScore: 10,
       hasEssayQuestions,
-      gradingStatus: hasEssayQuestions ? 'pending_teacher_grading' : 'graded',
+      gradingStatus: provisionalCount > 0 ? 'needs_review' : (hasEssayQuestions ? 'pending_teacher_grading' : 'graded'),
+      needsTeacherReview: provisionalCount > 0,
+      isProvisional: provisionalCount > 0,
+      ungradedCount: provisionalCount,
       mcqScore,
       mcqPoints: Math.round(earnedMcqPoints * 10) / 10,
       maxMcqPoints: Math.round(maxMcqPoints * 10) / 10,
@@ -511,6 +567,7 @@ export class GradingService {
     const questionAnalyses: QuestionAnalysis[] = assignment.questions.map((q) => {
       let correctCount = 0;
       let wrongCount = 0;
+      let gradedResponses = 0;
       const optionDistribution: Record<string, number> = { A: 0, B: 0, C: 0, D: 0 };
 
       submissions.forEach(sub => {
@@ -520,17 +577,23 @@ export class GradingService {
             const opt = studentAns.selectedAnswer.toUpperCase();
             optionDistribution[opt] = (optionDistribution[opt] || 0) + 1;
           }
+          if (studentAns.needsTeacherReview && studentAns.teacherScore === undefined) {
+            // Chưa có kết luận chính thức: loại khỏi mẫu số đúng/sai để không làm sai thống kê lớp.
+            return;
+          }
+          gradedResponses++;
           if (studentAns.isCorrect) {
             correctCount++;
           } else {
             wrongCount++;
           }
         } else {
+          gradedResponses++;
           wrongCount++;
         }
       });
 
-      const totalResponses = submissions.length;
+      const totalResponses = gradedResponses;
       const accuracyRate = totalResponses > 0 ? Math.round((correctCount / totalResponses) * 100) : 0;
 
       return {
@@ -682,13 +745,18 @@ export class GradingService {
 
         const scoreEarned = Math.min(maxPoints, Math.max(0, stepRes.score));
         const hasStepError = !!stepRes.firstErrorStep || (stepRes.analysis || []).some(s => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
-        const isCorrect = !hasStepError && (stepRes.isAllCorrect === true || ((stepRes.analysis || []).length > 0 && (stepRes.analysis || []).every(s => s.status === 'correct') && scoreEarned >= maxPoints));
+        const needsReview = !!stepRes.needsTeacherReview || stepRes.analysisSource === 'rule' || stepRes.analysisSource === 'unavailable';
+        const isCorrect = !needsReview && !hasStepError && (stepRes.isAllCorrect === true || ((stepRes.analysis || []).length > 0 && (stepRes.analysis || []).every(s => s.status === 'correct') && scoreEarned >= maxPoints));
 
-        if (isCorrect) correctCnt++; else wrongCnt++;
+        if (needsReview) {
+          overallNeedsReview = true;
+          // Chưa chấm chính thức: không tăng correctCnt/wrongCnt.
+        } else if (isCorrect) {
+          correctCnt++;
+        } else {
+          wrongCnt++;
+        }
         totalEarned += scoreEarned;
-
-        const needsReview = !!stepRes.needsTeacherReview;
-        if (needsReview) overallNeedsReview = true;
 
         if (stepRes.firstErrorStep) {
           totalErrorsCount++;
@@ -709,7 +777,7 @@ export class GradingService {
           isCorrect,
           pointsEarned: scoreEarned,
           maxPoints,
-          teacherScore: scoreEarned,
+          teacherScore: needsReview ? undefined : scoreEarned,
           teacherFeedback: `[Gemini AI]: ${stepRes.feedback}`,
           aiScore: scoreEarned,
           aiFeedback: stepRes.feedback,
@@ -719,6 +787,8 @@ export class GradingService {
           firstErrorType: stepRes.firstErrorType,
           firstErrorExplanation: stepRes.firstErrorExplanation,
           needsTeacherReview: needsReview,
+          isProvisional: needsReview,
+          aiGradingError: stepRes.analysisSource === 'rule' || stepRes.analysisSource === 'unavailable',
           stepGradingResponse: stepRes
         });
       } catch (err: any) {
@@ -726,13 +796,14 @@ export class GradingService {
         const hasTeacherGraded = existingAns?.teacherScore !== undefined;
         const fallbackScore = hasTeacherGraded ? existingAns.teacherScore! : (existingAns?.pointsEarned ?? 0);
         totalEarned += fallbackScore;
-        // AI LỖI KHÔNG ĐƯỢC COI LÀ HỌC SINH SAI: chỉ tăng correctCnt nếu đã có điểm đúng, KHÔNG tự ý tăng wrongCnt
-        if (existingAns?.isCorrect) {
-          correctCnt++;
-        } else if (hasTeacherGraded && fallbackScore === 0) {
-          wrongCnt++;
+
+        if (hasTeacherGraded) {
+          // Điểm GV đã có là điểm chính thức; lỗi AI không được hạ trạng thái bài xuống "chờ duyệt".
+          if (existingAns?.isCorrect) correctCnt++; else wrongCnt++;
+        } else {
+          // AI lỗi khi chưa có điểm GV: chưa chấm chính thức, không tính đúng/sai.
+          overallNeedsReview = true;
         }
-        overallNeedsReview = true;
 
         updatedAnswers.push({
           ...(existingAns || { questionId: q.id, selectedAnswer: '' }),
@@ -740,10 +811,12 @@ export class GradingService {
           isCorrect: existingAns?.isCorrect ?? false,
           pointsEarned: fallbackScore,
           maxPoints,
-          needsTeacherReview: true,
+          needsTeacherReview: !hasTeacherGraded,
           isProvisional: !hasTeacherGraded,
-          aiGradingError: true,
-          aiFeedback: `AI chưa thể chấm câu này (${err?.message || 'Lỗi kết nối/ảnh không đọc được'}). Câu này CHƯA CÓ ĐIỂM chính thức và đang chờ Giáo viên duyệt.`
+          aiGradingError: !hasTeacherGraded,
+          aiFeedback: hasTeacherGraded
+            ? 'AI tạm thời không khả dụng; giữ nguyên điểm Giáo viên đã chấm.'
+            : `AI chưa thể chấm câu này (${err?.message || 'Lỗi kết nối/ảnh không đọc được'}). Câu này CHƯA CÓ ĐIỂM chính thức và đang chờ Giáo viên duyệt.`
         });
       }
     }

@@ -254,6 +254,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
         });
         scoreVal = res.score;
         feedbackVal = res.feedback;
+        needsReviewVal = !!(res.needsTeacherReview || res.isProvisional || res.aiGradingError);
       }
 
       let isCorrect = false;
@@ -270,9 +271,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
           return {
             ...a,
             pointsEarned: scoreVal,
-            teacherScore: scoreVal,
+            teacherScore: needsReviewVal ? undefined : scoreVal,
             teacherFeedback: `[Gemini AI]: ${feedbackVal}`,
-            isCorrect,
+            isCorrect: needsReviewVal ? false : isCorrect,
             aiScore: scoreVal,
             aiFeedback: feedbackVal,
             aiGraded: true,
@@ -281,6 +282,8 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
             firstErrorType: firstErrorTypeVal,
             firstErrorExplanation: firstErrorExplVal,
             needsTeacherReview: needsReviewVal,
+            isProvisional: needsReviewVal,
+            aiGradingError: !!(stepResp && (stepResp.analysisSource === 'rule' || stepResp.analysisSource === 'unavailable')),
             stepGradingResponse: stepResp
           };
         }
@@ -297,17 +300,28 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
         const max = q ? q.points : (a.maxPoints || 1);
         totalMax += max;
         totalEarned += (a.teacherScore !== undefined ? a.teacherScore : a.pointsEarned);
-        if (a.isCorrect) correctCnt++; else wrongCnt++;
+        if (a.needsTeacherReview && a.teacherScore === undefined) {
+          // Chưa có điểm chính thức: không tính đúng/sai.
+        } else if (a.isCorrect) {
+          correctCnt++;
+        } else {
+          wrongCnt++;
+        }
       });
       const rawScore = totalMax > 0 ? (totalEarned / totalMax) * 10 : 0;
       const totalScore = Math.round(rawScore * 10) / 10;
 
+      const pendingReviewCount = updatedAnswers.filter(a => a.needsTeacherReview && a.teacherScore === undefined).length;
       const updatedSubmission: Submission = {
         ...selectedSubmissionDetail,
         answers: updatedAnswers,
         totalScore,
         correctCount: correctCnt,
-        wrongCount: wrongCnt
+        wrongCount: wrongCnt,
+        needsTeacherReview: pendingReviewCount > 0,
+        isProvisional: pendingReviewCount > 0,
+        ungradedCount: pendingReviewCount,
+        gradingStatus: pendingReviewCount > 0 ? 'needs_review' : 'graded'
       };
 
       setSelectedSubmissionDetail(updatedSubmission);
@@ -318,7 +332,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
 
       StorageService.saveSubmission(updatedSubmission);
       FirestoreService.saveResult(updatedSubmission).catch(() => {});
-      alert(`AI đã phân tích và chấm xong: ${scoreVal}/${question.points} điểm.`);
+      alert(needsReviewVal
+        ? 'AI đã phân tích nhưng kết quả này cần Giáo viên duyệt trước khi trở thành điểm chính thức.'
+        : `AI đã phân tích và chấm xong: ${scoreVal}/${question.points} điểm.`);
     } catch (e: any) {
       alert('Lỗi chấm bài bằng AI: ' + (e?.message || String(e)));
     } finally {
