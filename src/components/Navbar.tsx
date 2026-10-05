@@ -122,7 +122,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
               }`}
             >
               <Trophy className="w-3.5 h-3.5 text-amber-500" />
-              <span>Thi Online</span>
+              <span>Thi online</span>
             </Link>
 
             <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 my-auto mx-0.5" />
@@ -136,7 +136,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
               }`}
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>AI Ôn Tập</span>
+              <span>AI ôn tập</span>
             </Link>
           </div>
           )}
@@ -162,10 +162,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
               )}
             </button>
 
-            {/* Sổ tay câu sai (Mistake Vault) */}
+            {/* Câu cần luyện (Mistake Vault) */}
             {!isHomePage && !isStudentEntryPage && <button
               onClick={() => setShowMistakeVault(true)}
-              title="Mở Sổ tay câu sai (Luyện lại các câu làm chưa đúng)"
+              title="Mở Câu cần luyện"
               className={`inline-flex items-center space-x-1 sm:space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 unmasteredCount > 0
                   ? 'bg-rose-50 dark:bg-rose-950/80 hover:bg-rose-100 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 shadow-2xs'
@@ -173,7 +173,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onResetData, onClearDemoData }) 
               }`}
             >
               <BookmarkCheck className={`w-3.5 h-3.5 ${unmasteredCount > 0 ? 'text-rose-500' : 'text-slate-400'}`} />
-              <span className="hidden lg:inline">Sổ tay câu sai</span>
+              <span className="hidden lg:inline">Câu cần luyện</span>
               {unmasteredCount > 0 && (
                 <span className="px-1.5 py-0.2 rounded-full bg-rose-600 text-white font-mono text-[10px] font-black">
                   {unmasteredCount}
