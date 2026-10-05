@@ -1179,20 +1179,28 @@ export const MistakeVaultModal: React.FC<MistakeVaultModalProps> = ({ isOpen, on
           /* MAIN LIST CONTENT */
           <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
             {filteredMistakes.length === 0 ? (
-              <div className="text-center py-16 px-4 bg-slate-50 dark:bg-slate-800/40 rounded-3xl border border-dashed border-slate-200 dark:border-slate-700">
-                <div className="w-16 h-16 rounded-3xl bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-3 shadow-inner">
-                  <CheckCircle2 className="w-8 h-8" />
-                </div>
-                <h3 className="text-base sm:text-lg font-black text-slate-800 dark:text-white">
-                  {mistakes.length === 0
-                    ? 'Chưa có câu cần luyện'
-                    : 'Không có câu hỏi nào khớp với bộ lọc'}
+              <div className="text-center py-10 px-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+                <CheckCircle2 className="w-9 h-9 text-emerald-400 mx-auto mb-2" />
+                <h3 className="text-base font-black text-slate-800 dark:text-white">
+                  {mistakes.length === 0 ? 'Chưa có câu cần luyện' : 'Không có câu phù hợp'}
                 </h3>
-                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto mt-1">
-                  {mistakes.length === 0
-                    ? 'Các câu cần củng cố sẽ xuất hiện ở đây.'
-                    : 'Hãy thử chọn khối lớp khác hoặc chuyển sang xem các câu đã nắm vững.'}
+                <p className="text-xs text-slate-400 mt-1">
+                  {mistakes.length === 0 ? 'Câu cần củng cố sẽ xuất hiện sau khi làm bài.' : 'Đổi bộ lọc để xem thêm câu.'}
                 </p>
+                {mistakes.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedGrade('all');
+                      setSelectedExamTitle('all');
+                      setStatusFilter('all');
+                      setSearchQuery('');
+                    }}
+                    className="mt-3 px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold rounded-xl"
+                  >
+                    Xóa bộ lọc
+                  </button>
+                )}
               </div>
             ) : viewGrouping === 'by_exam' ? (
               <div className="space-y-4">
