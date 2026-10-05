@@ -49,13 +49,33 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
         {/* 1. HERO AREA: COMPACT TITLE, SEARCH BAR & 2 USER ROLE ACTION CARDS        */}
         {/* ========================================================================= */}
         <div className="max-w-2xl mx-auto text-center space-y-2">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-[10px] sm:text-[11px] font-black uppercase tracking-wider">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Matsuda AI • Toán THCS</span>
+          </div>
+
           {/* Main Heading */}
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-600 to-teal-600 dark:from-blue-400 dark:via-indigo-400 dark:to-teal-300 tracking-tight leading-tight">
-            Ôn tập &amp; Kiểm tra Toán THCS
+            Giao bài • Chấm từng bước • Học từ lỗi sai
           </h1>
-          <p className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 max-w-xl mx-auto">
-            Làm bài trực tiếp, chấm điểm tức thì &amp; xem lời giải chi tiết.
+          <p className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+            AI hỗ trợ giáo viên phát hiện lỗi gốc, tạo bài luyện cá nhân và theo dõi tiến bộ; giáo viên luôn giữ quyền duyệt điểm.
           </p>
+
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900 text-[10px] font-bold text-blue-700 dark:text-blue-300">
+              <FileCheck className="w-3 h-3" />
+              Chấm theo từng bước
+            </span>
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-900 text-[10px] font-bold text-amber-700 dark:text-amber-300">
+              <Sparkles className="w-3 h-3" />
+              Tìm lỗi gốc
+            </span>
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-900 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+              <BarChart3 className="w-3 h-3" />
+              Theo dõi tiến bộ
+            </span>
+          </div>
 
           {/* Search / Enter Assignment Code Box */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-2 sm:p-2.5 shadow-md border border-indigo-100 dark:border-slate-800 text-left mt-2">
@@ -115,7 +135,7 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
                   <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                  Tạo đề, xuất PDF, quản lý lớp &amp; điểm
+                  Giao bài, AI chấm từng bước &amp; theo dõi lỗi sai
                 </p>
               </div>
             </Link>
