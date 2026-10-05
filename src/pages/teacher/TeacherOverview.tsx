@@ -44,7 +44,6 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
 
   const totalStudents = safeClasses.reduce((acc, c) => acc + (Array.isArray(c?.students) ? c.students.length : 0), 0);
   const totalAssignments = safeAssignments.length;
-  const activeAssignments = safeAssignments.filter(a => Boolean(a && a.isPublished)).length;
   const totalSubmissions = safeSubmissions.length;
 
   // Đợt 8A: số liệu tóm tắt cho chu trình AI khép kín trên dashboard.
@@ -89,7 +88,6 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
   const richRealTarget = demoCandidates.find(item => item.quality === 3);
   const analysisDemoAssignment = richRealTarget?.assignment || SHOWCASE_DEMO_ASSIGNMENT;
   const analysisDemoSubmission = richRealTarget?.submission || SHOWCASE_DEMO_SUBMISSION;
-  const isUsingShowcaseFallback = !richRealTarget;
 
   // 8I: khi quay lại từ hồ sơ học sinh, trở đúng khối demo rồi xóa hash
   // để những lần vào Dashboard sau không bị tự động cuộn ngoài ý muốn.
@@ -103,7 +101,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
   }, []);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
+    <div className="space-y-4 animate-in fade-in duration-200">
       {/* Welcome Banner - Modern Minimalist Clean UI */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 text-slate-900 dark:text-white shadow-sm border border-slate-200/90 dark:border-slate-800 relative overflow-hidden">
         {/* Subtle geometric background glow & accents */}
@@ -196,7 +194,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
 
    </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 flex-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 flex-1">
             <button
               onClick={() => onNavigate('create', { autoOpenImport: true })}
               className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-violet-200 dark:border-violet-900 p-3.5 hover:shadow-md transition-all"
@@ -302,7 +300,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
 
       </section>
       {/* Top Stat Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 sm:gap-4">
         <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
           <div className="flex items-center justify-between text-indigo-600 mb-2">
             <span className="text-xs font-bold text-slate-500 uppercase">Số lớp học</span>
@@ -346,7 +344,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
       </div>
 
       {/* Recent Assignments Table */}
-      <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3 mb-4">
           <h2 className="text-lg font-bold text-slate-900">Bài tập gần đây</h2>
           <button
