@@ -143,19 +143,15 @@ export const ExamBankView: React.FC<ExamBankViewProps> = ({
       {loading ? (
         <div className="text-center py-12 text-slate-500">Đang tải danh sách kho đề...</div>
       ) : templates.length === 0 ? (
-        <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 space-y-4">
-          <div className="w-16 h-16 bg-violet-50 text-violet-600 rounded-2xl flex items-center justify-center mx-auto">
-            <BookOpen className="w-8 h-8" />
-          </div>
-          <h3 className="text-lg font-bold text-slate-900">Kho đề của bạn đang trống</h3>
-          <p className="text-xs text-slate-500 max-w-md mx-auto">
-            Hãy tải lên các đề thi PDF để lưu trữ và giao bài nhanh chóng cho học sinh.
-          </p>
+        <div className="bg-white rounded-2xl p-8 text-center border border-dashed border-slate-200">
+          <BookOpen className="w-9 h-9 text-violet-300 mx-auto mb-2" />
+          <h3 className="text-base font-bold text-slate-900">Chưa có đề trong kho</h3>
+          <p className="text-xs text-slate-400 mt-1">Thêm PDF đầu tiên để lưu và dùng lại.</p>
           <button
-            onClick={() => onNavigate('create', { initialMode: 'pdf' })}
-            className="px-5 py-2.5 bg-violet-600 text-white font-bold text-xs rounded-xl shadow-sm hover:bg-violet-700"
+            onClick={() => onNavigate('create', { initialMode: 'pdf', autoOpenImport: true })}
+            className="mt-3 px-4 py-2 bg-violet-600 text-white font-bold text-xs rounded-xl hover:bg-violet-700"
           >
-            Tạo đề mẫu đầu tiên
+            Thêm đề PDF
           </button>
         </div>
       ) : (
