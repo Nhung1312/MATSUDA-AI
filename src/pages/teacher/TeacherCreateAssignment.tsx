@@ -673,6 +673,24 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
               ? `Chỉnh sửa nội dung đề bài, đáp án đúng, thang điểm và các câu hỏi của bài tập.`
               : 'Soạn đề linh hoạt: nhập tay hoặc tách câu hỏi từ PDF, ảnh chụp, Word, LaTeX, Excel/JSON.'}
           </p>
+          {!isEditing && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-black uppercase text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-2.5 py-1">
+                Không cần soạn lại từ đầu
+              </span>
+              {['PDF', 'Ảnh chụp', 'Word', 'LaTeX'].map((format) => (
+                <span
+                  key={format}
+                  className="text-[10px] font-bold text-slate-600 bg-white border border-slate-200 rounded-lg px-2 py-1"
+                >
+                  {format}
+                </span>
+              ))}
+              <span className="text-[10px] text-slate-500">
+                → tách câu hỏi → giáo viên kiểm tra → giao bài
+              </span>
+            </div>
+          )}
         </div>
         <div className="flex items-center space-x-2">
           <button
