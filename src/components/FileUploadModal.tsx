@@ -422,6 +422,22 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       alert('Vui lòng chọn ít nhất 1 câu hỏi để thêm vào đề kiểm tra.');
       return;
     }
+
+    const itemsNeedReview = selectedItems.filter(item => {
+      if (item.category !== 'trac_nghiem') return false;
+      const optionIds = (item.options || []).map(opt => String(opt.id || '').toUpperCase());
+      const correct = String(item.correctAnswer || '').toUpperCase();
+      const hasBlankOption = (item.options || []).some(opt => !String(opt.text || '').trim());
+      return (item.options || []).length < 2 || !optionIds.includes(correct) || hasBlankOption;
+    });
+
+    if (itemsNeedReview.length > 0) {
+      const shouldContinue = window.confirm(
+        `Có ${itemsNeedReview.length} câu trắc nghiệm cần Giáo viên kiểm tra lại đáp án/phương án trước khi giao.\n\nVẫn thêm các câu đã chọn vào đề để chỉnh sửa tiếp?`
+      );
+      if (!shouldContinue) return;
+    }
+
     const converted = FileParserService.convertToQuestions(selectedItems);
     onImportQuestions(converted);
     onClose();
@@ -435,6 +451,15 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     : [];
 
   const selectedCount = parseResult?.items.filter(i => i.selected).length || 0;
+  const reviewCount = parseResult
+    ? parseResult.items.filter(item => {
+        if (item.category !== 'trac_nghiem') return false;
+        const optionIds = (item.options || []).map(opt => String(opt.id || '').toUpperCase());
+        const correct = String(item.correctAnswer || '').toUpperCase();
+        const hasBlankOption = (item.options || []).some(opt => !String(opt.text || '').trim());
+        return (item.options || []).length < 2 || !optionIds.includes(correct) || hasBlankOption;
+      }).length
+    : 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
@@ -1069,6 +1094,24 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                 >
                   Bóc tách tệp / ảnh khác
                 </button>
+              </div>
+
+              <div className={`rounded-2xl px-4 py-3 border text-xs flex items-start gap-2 ${reviewCount > 0 ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900'}`}>
+                {reviewCount > 0 ? (
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                )}
+                <div>
+                  <div className="font-black">
+                    {reviewCount > 0
+                      ? `Có ${reviewCount} câu cần kiểm tra lại trước khi giao bài`
+                      : 'Cấu trúc câu hỏi đã qua lớp kiểm tra sơ bộ'}
+                  </div>
+                  <div className="mt-0.5 opacity-80">
+                    Giáo viên vẫn là bước duyệt cuối: kiểm tra công thức, hình vẽ, thứ tự câu và đáp án trước khi xuất bản.
+                  </div>
+                </div>
               </div>
 
               {/* Filter Tabs & Selection Control */}
