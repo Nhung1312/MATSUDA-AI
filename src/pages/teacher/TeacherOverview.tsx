@@ -14,7 +14,6 @@ import {
   Sparkles,
   Layers,
   Edit3,
-  Settings,
   Play,
   Eye,
   QrCode
@@ -104,9 +103,9 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
   }, []);
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-200">
+    <div className="space-y-6 animate-in fade-in duration-200">
       {/* Welcome Banner - Modern Minimalist Clean UI */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 text-slate-900 dark:text-white shadow-sm hover:shadow-md border border-slate-200/90 dark:border-slate-800 relative overflow-hidden transition-all">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 text-slate-900 dark:text-white shadow-sm border border-slate-200/90 dark:border-slate-800 relative overflow-hidden">
         {/* Subtle geometric background glow & accents */}
         <div className="absolute right-0 top-0 w-80 h-80 bg-gradient-to-br from-blue-100/60 to-indigo-100/40 dark:from-indigo-950/40 dark:to-blue-950/20 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
         
@@ -130,28 +129,9 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
           </h1>
           
           {/* Subtitle */}
-          <p className="text-slate-600 dark:text-slate-300 text-xs sm:text-sm mt-2 leading-relaxed font-medium">
-            Từ PDF, ảnh chụp, Word hay LaTeX, Matsuda AI giúp giáo viên số hóa đề, giao bài, chấm tự luận theo từng bước, tìm lỗi gốc và tạo vòng luyện lại để học sinh tiến bộ — thay vì chỉ dừng ở một con điểm.
+          <p className="text-slate-600 dark:text-slate-300 text-xs sm:text-sm mt-2 font-medium">
+            PDF / Ảnh / Word / LaTeX → giao bài → chấm từng bước → tìm lỗi gốc → luyện lại.
           </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mt-4 max-w-3xl">
-            <div className="rounded-xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-900 px-3 py-2">
-              <div className="text-[10px] font-black uppercase text-sky-700 dark:text-sky-300">Đầu vào</div>
-              <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">PDF • Ảnh • Word • LaTeX → đề số hóa.</div>
-            </div>
-            <div className="rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 px-3 py-2">
-              <div className="text-[10px] font-black uppercase text-blue-700 dark:text-blue-300">Vấn đề</div>
-              <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">GV khó chấm sâu từng bài và theo dõi lỗi lặp lại.</div>
-            </div>
-            <div className="rounded-xl bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-900 px-3 py-2">
-              <div className="text-[10px] font-black uppercase text-violet-700 dark:text-violet-300">AI hỗ trợ</div>
-              <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">Phân tích bước giải, tìm lỗi gốc, chấm theo barem.</div>
-            </div>
-            <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 px-3 py-2">
-              <div className="text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-300">Kết quả</div>
-              <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">Lỗi sai trở thành bài luyện và dữ liệu tiến bộ.</div>
-            </div>
-          </div>
 
           {/* Action Buttons */}
           <div className="flex flex-wrap gap-3 mt-6">
@@ -169,7 +149,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
               className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl shadow-xs hover:shadow-md transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
-              <span>Tạo bài tập mới</span>
+              <span>Tách đề / Tạo bài</span>
             </button>
 
             {/* Nút Kho Đề Mẫu */}
@@ -181,41 +161,21 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
               <span>📚 Kho đề mẫu</span>
             </button>
 
-            {/* Secondary Outline Action Button */}
-            <button
-              onClick={() => onNavigate('classes')}
-              className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 font-bold px-4 sm:px-5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 shadow-2xs transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
-            >
-              <Users className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-              <span>Quản lý lớp học</span>
-            </button>
-
-            {/* Quick Settings & Backup Button */}
-            <button
-              onClick={() => onNavigate('settings')}
-              className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold px-4 sm:px-5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 shadow-2xs transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
-            >
-              <Settings className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              <span>⚙️ Cài đặt & Sao lưu</span>
-            </button>
           </div>
         </div>
       </div>
 
       {/* ĐỢT 8A: AI LEARNING LOOP - trình bày rõ giá trị khác biệt của hệ thống */}
-      <section className="bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-indigo-950/30 dark:via-slate-900 dark:to-emerald-950/20 rounded-3xl p-5 sm:p-6 border border-indigo-200/70 dark:border-indigo-900/60 shadow-sm">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5">
-          <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-1.5 bg-indigo-100/80 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider mb-2">
+      <section className="bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-indigo-950/30 dark:via-slate-900 dark:to-emerald-950/20 rounded-3xl p-4 sm:p-5 border border-indigo-200/70 dark:border-indigo-900/60 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
+          <div>
+            <div className="inline-flex items-center gap-1.5 bg-indigo-100/80 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider mb-1.5">
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Chu trình AI khép kín</span>
+              <span>Chu trình AI</span>
             </div>
-            <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
-              AI không dừng ở việc cho điểm — mỗi lỗi sai trở thành một lộ trình học tập
+            <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+              Từ tài liệu có sẵn đến luyện tập cá nhân
             </h2>
-            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1">
-              Tài liệu có sẵn được tách thành câu hỏi số hóa, giáo viên duyệt rồi giao bài; sau đó hệ thống hỗ trợ chấm từng bước, tìm lỗi gốc, tạo bài luyện cá nhân và ghi nhận tiến bộ.
-            </p>
           </div>
 
           <div className="grid grid-cols-3 gap-2 shrink-0">
@@ -236,12 +196,12 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
           {[
-            ['1', 'Tách đề nguồn', 'PDF / Ảnh / Word / LaTeX'],
-            ['2', 'Giáo viên duyệt & giao', 'Kiểm tra câu hỏi → QR / mã bài'],
-            ['3', 'AI chấm từng bước', 'Điểm + Step Analysis'],
-            ['4', 'Phát hiện lỗi gốc', 'First / cascading / independent'],
-            ['5', 'Luyện cá nhân', 'Sổ tay câu sai + bài tương tự + Socratic'],
-            ['6', 'Theo dõi tiến bộ', 'Làm lại → AI kiểm tra → làm chủ']
+            ['1', 'Tách đề', 'PDF / Ảnh / Word / LaTeX'],
+            ['2', 'Duyệt & giao', 'QR / mã bài'],
+            ['3', 'Chấm từng bước', 'Step Analysis'],
+            ['4', 'Tìm lỗi gốc', 'Lỗi gốc / kéo theo'],
+            ['5', 'Luyện cá nhân', 'Bài tương tự + Socratic'],
+            ['6', 'Theo dõi', 'Làm lại → làm chủ']
           ].map(([index, title, desc], idx) => (
             <React.Fragment key={index}>
               <div className="bg-white/90 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-3 relative">
@@ -249,7 +209,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                   {index}
                 </div>
                 <div className="text-xs font-black text-slate-900 dark:text-white">{title}</div>
-                <div className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1">{desc}</div>
+                <div className="hidden xl:block text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1">{desc}</div>
                 {idx < 5 && (
                   <ArrowRight className="hidden lg:block absolute -right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400 z-10" />
                 )}
@@ -267,11 +227,8 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
               <span className="leading-tight text-center">Demo trọng tâm cho giám khảo • khoảng 3 phút</span>
             </div>
             <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
-              Đi theo 5 bước này để trình diễn toàn bộ giá trị cốt lõi
+              5 bước demo • Bước 4 là trọng tâm
             </h2>
-            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
-              Hệ thống tự chọn bài có dữ liệu phù hợp nhất để giảm thao tác và tránh phải chờ AI xử lý lại trong lúc thuyết trình.
-            </p>
 
             <div className="mt-4 rounded-2xl bg-white/90 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-3">
               <div className="flex flex-wrap items-center gap-2">
@@ -285,13 +242,8 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 Lớp {analysisDemoAssignment.grade} • {analysisDemoAssignment.topic || 'Toán THCS'} • {analysisDemoSubmission.studentName}
               </div>
               {isUsingShowcaseFallback && (
-                <div className="text-[10px] text-amber-700 mt-2">
-                  Hồ sơ này được tính sẵn để demo ổn định, không ghi vào Firestore và không thay đổi dữ liệu học sinh thật.
-                </div>
-              )}
-              {liveDemoAssignment && liveDemoAssignment.id !== analysisDemoAssignment.id && (
-                <div className="text-[10px] text-slate-500 mt-2">
-                  Bước 2, 3 và 5 vẫn dùng đề thật hiện có: <strong>{liveDemoAssignment.title}</strong>.
+                <div className="text-[10px] text-amber-700 mt-1.5">
+                  Dữ liệu minh họa an toàn • không ghi vào dữ liệu thật.
                 </div>
               )}
             </div>
@@ -308,7 +260,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
               </div>
               <div className="mt-2 inline-flex px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 text-[9px] font-black">0:00–0:35</div>
               <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">Tách đề nguồn</div>
-              <div className="text-[10px] text-slate-500 mt-1">PDF / ảnh / Word / LaTeX → câu hỏi để giáo viên duyệt.</div>
+              <div className="text-[10px] text-slate-500 mt-1">PDF / Ảnh / Word / LaTeX</div>
             </button>
 
             <button
@@ -322,7 +274,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
               </div>
               <div className="mt-2 inline-flex px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[9px] font-black">0:35–1:00</div>
               <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">GV duyệt & giao bài</div>
-              <div className="text-[10px] text-slate-500 mt-1">Giáo viên kiểm tra câu hỏi rồi phát QR/link; AI không tự xuất bản thay giáo viên.</div>
+              <div className="text-[10px] text-slate-500 mt-1">Duyệt câu hỏi → QR / link</div>
             </button>
 
             <button
@@ -336,7 +288,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
               </div>
               <div className="mt-2 inline-flex px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[9px] font-black">1:00–1:20</div>
               <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">HS làm & nộp</div>
-              <div className="text-[10px] text-slate-500 mt-1">Minh họa trải nghiệm học sinh làm bài trên điện thoại hoặc máy tính.</div>
+              <div className="text-[10px] text-slate-500 mt-1">Làm thử như học sinh</div>
             </button>
 
             <button
@@ -353,7 +305,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 <span className="inline-flex px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-black">TRỌNG TÂM</span>
               </div>
               <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">Xem AI chấm & lỗi gốc</div>
-              <div className="text-[10px] text-slate-500 mt-1">Mở ngay bài đã chấm: Step Analysis → lỗi gốc → luyện lại.</div>
+              <div className="text-[10px] text-slate-500 mt-1">Step Analysis → lỗi gốc</div>
             </button>
 
             <button
@@ -367,14 +319,9 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
               </div>
               <div className="mt-2 inline-flex px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[9px] font-black">2:35–3:00</div>
               <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">Kết quả lớp</div>
-              <div className="text-[10px] text-slate-500 mt-1">Chốt demo bằng thống kê, bài cần duyệt và tiến bộ học tập.</div>
+              <div className="text-[10px] text-slate-500 mt-1">Thống kê & bài cần duyệt</div>
             </button>
           </div>
-        </div>
-
-        <div className="mt-4 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2">
-          <Sparkles className="w-3.5 h-3.5 text-fuchsia-500" />
-          <span><strong className="text-slate-700 dark:text-slate-200">Mẹo demo:</strong> nếu thời gian ngắn, chỉ mở Bước 1 và Bước 4 để cho thấy hai điểm khác biệt mạnh nhất: số hóa đề nguồn và chẩn đoán lỗi từng bước.</span>
         </div>
 
         <details className="mt-3 rounded-2xl bg-slate-950 text-slate-100 border border-slate-800 overflow-hidden">
@@ -406,97 +353,64 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
           </div>
         </details>
 
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-2.5">
-          <div className="rounded-2xl bg-white/90 dark:bg-slate-900 border border-sky-200 dark:border-sky-900 p-3.5">
-            <div className="text-[10px] font-black uppercase text-sky-700 dark:text-sky-300">Thông điệp 1</div>
-            <div className="text-xs font-black text-slate-900 dark:text-white mt-1">Tận dụng tài liệu giáo viên đang có</div>
-            <div className="text-[10px] leading-relaxed text-slate-500 mt-1">
-              Không phải soạn lại từ đầu: PDF, ảnh, Word, LaTeX được đưa về một cấu trúc câu hỏi để giáo viên duyệt.
-            </div>
-          </div>
-          <div className="rounded-2xl bg-white/90 dark:bg-slate-900 border border-fuchsia-200 dark:border-fuchsia-900 p-3.5">
-            <div className="text-[10px] font-black uppercase text-fuchsia-700 dark:text-fuchsia-300">Thông điệp 2</div>
-            <div className="text-xs font-black text-slate-900 dark:text-white mt-1">AI không chỉ cho một con điểm</div>
-            <div className="text-[10px] leading-relaxed text-slate-500 mt-1">
-              Hệ thống phân tích từng bước, tìm lỗi gốc và phân biệt lỗi kéo theo để phản hồi đúng chỗ học sinh vướng.
-            </div>
-          </div>
-          <div className="rounded-2xl bg-white/90 dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900 p-3.5">
-            <div className="text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-300">Thông điệp 3</div>
-            <div className="text-xs font-black text-slate-900 dark:text-white mt-1">Giáo viên vẫn là người quyết định</div>
-            <div className="text-[10px] leading-relaxed text-slate-500 mt-1">
-              AI hỗ trợ số hóa và chấm; câu chưa chắc chắn được đưa về trạng thái chờ duyệt, không tự biến thành điểm chính thức.
-            </div>
-          </div>
-        </div>
       </section>
       {/* Top Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
           <div className="flex items-center justify-between text-indigo-600 mb-2">
             <span className="text-xs font-bold text-slate-500 uppercase">Số lớp học</span>
             <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
               <Users className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-slate-900">{safeClasses.length}</div>
-          <span className="text-xs text-slate-400 mt-1 block">Lớp đang quản lý</span>
+          <div className="text-xl sm:text-2xl font-extrabold text-slate-900">{safeClasses.length}</div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
           <div className="flex items-center justify-between text-blue-600 mb-2">
             <span className="text-xs font-bold text-slate-500 uppercase">Học sinh</span>
             <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
               <Users className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-slate-900">{totalStudents}</div>
-          <span className="text-xs text-slate-400 mt-1 block">Học sinh trong danh sách</span>
+          <div className="text-xl sm:text-2xl font-extrabold text-slate-900">{totalStudents}</div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
           <div className="flex items-center justify-between text-violet-600 mb-2">
             <span className="text-xs font-bold text-slate-500 uppercase">Tổng bài tập</span>
             <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
               <BookOpen className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-slate-900">{totalAssignments}</div>
-          <span className="text-xs text-slate-400 mt-1 block">Đề thi & bài luyện</span>
+          <div className="text-xl sm:text-2xl font-extrabold text-slate-900">{totalAssignments}</div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
           <div className="flex items-center justify-between text-emerald-600 mb-2">
             <span className="text-xs font-bold text-slate-500 uppercase">Đang giao</span>
             <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
               <FileText className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-slate-900">{activeAssignments}</div>
-          <span className="text-xs text-slate-400 mt-1 block">Bài tập có hiệu lực</span>
+          <div className="text-xl sm:text-2xl font-extrabold text-slate-900">{activeAssignments}</div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs col-span-2 sm:col-span-1">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs col-span-2 sm:col-span-1">
           <div className="flex items-center justify-between text-amber-600 mb-2">
             <span className="text-xs font-bold text-slate-500 uppercase">Bài đã nộp</span>
             <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
               <CheckCircle2 className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-slate-900">{totalSubmissions}</div>
-          <span className="text-xs text-slate-400 mt-1 block">Lượt nộp đã tự chấm</span>
+          <div className="text-xl sm:text-2xl font-extrabold text-slate-900">{totalSubmissions}</div>
         </div>
       </div>
 
       {/* Recent Assignments Table */}
       <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3 mb-4">
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">Danh sách bài tập gần đây</h2>
-            <p className="text-xs text-slate-500">
-              Theo dõi tiến độ làm bài, mã bài tập và kết quả chấm điểm của học sinh.
-            </p>
-          </div>
+          <h2 className="text-lg font-bold text-slate-900">Bài tập gần đây</h2>
           <button
             onClick={() => onNavigate('assignments')}
             className="inline-flex items-center text-xs font-bold text-indigo-600 hover:text-indigo-800"
@@ -527,7 +441,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                   </td>
                 </tr>
               ) : (
-                safeAssignments.slice(0, 10).map((asg) => {
+                safeAssignments.slice(0, 5).map((asg) => {
                   if (!asg) return null;
                   const asgSubmissions = safeSubmissions.filter(s => s && s.assignmentId === asg.id);
                   const targetClass = safeClasses.find(c => c && c.id === asg.classId);
