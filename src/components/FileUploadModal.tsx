@@ -7,14 +7,12 @@ import {
   X, 
   CheckCircle2, 
   AlertCircle, 
-  Check, 
   Trash2, 
   FileCheck, 
   Sparkles,
   ArrowLeft,
   ArrowRight,
   Camera,
-  Key,
   ExternalLink
 } from 'lucide-react';
 import { FileParserService, ParsedItem, ParseResult } from '../services/fileParserService';
@@ -666,10 +664,10 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                             ? 'bg-white text-indigo-700 shadow-xs'
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
-                        title="Bóc tách đề thi PDF bằng AI Gemini (Cần API Key)"
+                        title="Dùng AI để đọc PDF scan, nhiều cột và công thức"
                       >
                         <Sparkles className="w-3 h-3 text-amber-500" />
-                        <span>⚡ Dùng AI Gemini</span>
+                        <span>AI</span>
                       </button>
                       <button
                         type="button"
@@ -679,10 +677,10 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                             ? 'bg-white text-emerald-700 shadow-xs'
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
-                        title="Đọc nội dung PDF bằng bộ xử lý thông thường (Miễn phí 100% không cần API Key)"
+                        title="Đọc lớp văn bản có sẵn trong PDF, không cần API Key"
                       >
                         <FileText className="w-3 h-3 text-emerald-600" />
-                        <span>📄 PDF Thông thường</span>
+                        <span>Văn bản</span>
                       </button>
                     </div>
                   </div>
@@ -729,43 +727,24 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                     <div className="inline-block px-3 py-1 rounded-full text-[11px] font-black uppercase mb-2 tracking-wider ${
                       pdfParseMode === 'ai' ? 'bg-indigo-100 text-indigo-800' : 'bg-emerald-100 text-emerald-800'
                     }">
-                      {pdfParseMode === 'ai' ? '⚡ Chế độ AI Gemini (Cần API Key)' : '📄 Chế độ Thông thường (Miễn phí 100% - Không cần Key)'}
+                      {pdfParseMode === 'ai' ? 'AI' : 'PDF văn bản'}
                     </div>
 
                     <h3 className="text-base sm:text-lg font-black text-slate-800 mb-1">
-                      Kéo thả file Đề thi PDF vào đây hoặc bấm để chọn tệp
+                      Kéo thả PDF hoặc bấm để chọn
                     </h3>
                     <p className="text-xs text-slate-500 max-w-md mx-auto mb-4">
-                      {pdfParseMode === 'ai' 
-                        ? 'Sử dụng Gemini AI để đọc nhận diện công thức LaTeX, đề scan, 2 cột và bảng đáp án.'
-                        : 'Đọc trực tiếp nội dung văn bản trong file PDF bằng bộ đọc nội bộ. Hoàn toàn miễn phí, không tốn token, không cần API Key!'}
+                      {pdfParseMode === 'ai'
+                        ? 'Phù hợp PDF scan, nhiều cột và công thức.'
+                        : 'Đọc lớp văn bản có sẵn, không cần API Key.'}
                     </p>
 
                     <div className="inline-flex items-center space-x-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all active:scale-95">
                       <UploadCloud className="w-4 h-4" />
-                      <span>Chọn file PDF từ máy tính</span>
+                      <span>Chọn PDF</span>
                     </div>
                   </div>
 
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs space-y-1.5 text-slate-600">
-                    <div className="font-black text-slate-800 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>{pdfParseMode === 'ai' ? 'Ưu điểm của chế độ AI Gemini:' : 'Đặc điểm của chế độ PDF thông thường:'}</span>
-                    </div>
-                    {pdfParseMode === 'ai' ? (
-                      <>
-                        <p>• Nhận diện được cả PDF scan (ảnh chụp trang in), PDF chia 2 cột, bảng biểu đáp án.</p>
-                        <p>{'• Công thức toán được bọc chuẩn KaTeX: phân số $\\frac{a}{b}$, căn bậc hai $\\sqrt{x}$, số mũ $x^2$, hệ phương trình.'}</p>
-                        <p>• Tự động suy luận và kiểm tra đáp án đúng nếu đề chưa có đáp án sẵn.</p>
-                      </>
-                    ) : (
-                      <>
-                        <p>• <strong>100% Miễn phí & Offline:</strong> Xử lý trực tiếp trên trình duyệt, không cần API Key, không mất phí.</p>
-                        <p>• <strong>Tốc độ tức thì:</strong> Bóc tách ngay lập tức đối với file PDF xuất từ Word, Docs hoặc LaTeX.</p>
-                        <p>• Thầy/Cô có thể chuyển sang chế độ <strong>"⚡ Dùng AI Gemini"</strong> ở góc trên bất cứ lúc nào nếu file PDF là dạng ảnh scan.</p>
-                      </>
-                    )}
-                  </div>
                 </div>
               )}
 
