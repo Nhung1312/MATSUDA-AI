@@ -724,13 +724,18 @@ export class GradingService {
 
         const scoreEarned = Math.min(maxPoints, Math.max(0, stepRes.score));
         const hasStepError = !!stepRes.firstErrorStep || (stepRes.analysis || []).some(s => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
-        const isCorrect = !hasStepError && (stepRes.isAllCorrect === true || ((stepRes.analysis || []).length > 0 && (stepRes.analysis || []).every(s => s.status === 'correct') && scoreEarned >= maxPoints));
+        const needsReview = !!stepRes.needsTeacherReview || stepRes.analysisSource === 'rule' || stepRes.analysisSource === 'unavailable';
+        const isCorrect = !needsReview && !hasStepError && (stepRes.isAllCorrect === true || ((stepRes.analysis || []).length > 0 && (stepRes.analysis || []).every(s => s.status === 'correct') && scoreEarned >= maxPoints));
 
-        if (isCorrect) correctCnt++; else wrongCnt++;
+        if (needsReview) {
+          overallNeedsReview = true;
+          // Chưa chấm chính thức: không tăng correctCnt/wrongCnt.
+        } else if (isCorrect) {
+          correctCnt++;
+        } else {
+          wrongCnt++;
+        }
         totalEarned += scoreEarned;
-
-        const needsReview = !!stepRes.needsTeacherReview;
-        if (needsReview) overallNeedsReview = true;
 
         if (stepRes.firstErrorStep) {
           totalErrorsCount++;
@@ -751,7 +756,7 @@ export class GradingService {
           isCorrect,
           pointsEarned: scoreEarned,
           maxPoints,
-          teacherScore: scoreEarned,
+          teacherScore: needsReview ? undefined : scoreEarned,
           teacherFeedback: `[Gemini AI]: ${stepRes.feedback}`,
           aiScore: scoreEarned,
           aiFeedback: stepRes.feedback,
@@ -761,6 +766,8 @@ export class GradingService {
           firstErrorType: stepRes.firstErrorType,
           firstErrorExplanation: stepRes.firstErrorExplanation,
           needsTeacherReview: needsReview,
+          isProvisional: needsReview,
+          aiGradingError: stepRes.analysisSource === 'rule' || stepRes.analysisSource === 'unavailable',
           stepGradingResponse: stepRes
         });
       } catch (err: any) {
