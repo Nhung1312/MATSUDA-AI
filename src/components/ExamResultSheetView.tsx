@@ -152,7 +152,25 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
           }
           #result-sheet-print table { page-break-inside: auto; }
           #result-sheet-print tr { page-break-inside: avoid; page-break-after: auto; }
+          #result-sheet-print td, #result-sheet-print th {
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            vertical-align: middle;
+          }
           #result-sheet-print .avoid-break { page-break-inside: avoid; }
+          #result-sheet-print .katex-block-wrapper {
+            overflow: visible !important;
+            white-space: normal !important;
+            margin: 0.1rem 0 !important;
+          }
+          #result-sheet-print .katex-display {
+            margin: 0.15rem 0 !important;
+            overflow: visible !important;
+          }
+          #result-sheet-print .katex {
+            font-size: 0.95em !important;
+            max-width: 100%;
+          }
         `}
       </style>
 
@@ -336,10 +354,10 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
                     <tr key={ans.questionId || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
                       <td className="py-2 px-2 text-center font-black">{question?.order || idx + 1}</td>
                       <td className="py-2 px-2 text-center font-bold text-slate-700">
-                        {getStudentAnswerLabel(ans, question)}
+                        <MathDisplay text={getStudentAnswerLabel(ans, question)} />
                       </td>
                       <td className="py-2 px-2 text-center text-slate-600">
-                        {pending ? 'Chờ duyệt' : getCorrectAnswerLabel(question)}
+                        {pending ? 'Chờ duyệt' : <MathDisplay text={getCorrectAnswerLabel(question)} />}
                       </td>
                       <td className="py-2 px-2 text-center font-bold">
                         {pending
@@ -369,7 +387,12 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
             ) : improvementItems.length > 0 ? (
               <ul className="space-y-1 text-[11px] text-slate-600">
                 {improvementItems.map((item, idx) => (
-                  <li key={idx}>• {item}</li>
+                  <li key={idx} className="flex items-start gap-1">
+                    <span>•</span>
+                    <div className="min-w-0 flex-1">
+                      <MathDisplay text={item} />
+                    </div>
+                  </li>
                 ))}
               </ul>
             ) : hasPendingReview ? (
@@ -381,9 +404,9 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
 
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
             <h3 className="text-xs font-black text-slate-800 mb-2">Nhận xét giáo viên</h3>
-            <p className="text-[11px] text-slate-600 whitespace-pre-line">
-              {teacherFeedback || (hasPendingReview ? 'Chưa có nhận xét chính thức.' : '—')}
-            </p>
+            <div className="text-[11px] text-slate-600 whitespace-pre-line">
+              <MathDisplay text={teacherFeedback || (hasPendingReview ? 'Chưa có nhận xét chính thức.' : '—')} />
+            </div>
           </div>
         </div>
       </div>
