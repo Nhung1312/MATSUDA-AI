@@ -147,6 +147,38 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     [currentSubmissions, currentAssignment]
   );
 
+  // Ma trận chẩn đoán lớp: chỉ ĐỌC dữ liệu submission hiện có.
+  // Không ghi vào Mistake Vault, không thay đổi grading/review/persistence.
+  const classErrorMatrix = useMemo(() => {
+    if (!currentAssignment) return { rows: [], wrongByQuestion: new Map<string, number>() };
+
+    const wrongByQuestion = new Map<string, number>();
+    currentAssignment.questions.forEach(q => wrongByQuestion.set(q.id, 0));
+
+    const rows = currentSubmissions.map(submission => {
+      let wrongCount = 0;
+      const cells = currentAssignment.questions.map(question => {
+        const answer = submission.answers.find(ans => ans.questionId === question.id);
+        if (!answer) return { questionId: question.id, status: 'unanswered' as const };
+
+        const pending = isAnswerPendingTeacherReview(submission, answer);
+        if (pending) return { questionId: question.id, status: 'pending' as const };
+
+        if (answer.isCorrect === false) {
+          wrongCount += 1;
+          wrongByQuestion.set(question.id, (wrongByQuestion.get(question.id) || 0) + 1);
+          return { questionId: question.id, status: 'wrong' as const };
+        }
+
+        return { questionId: question.id, status: 'correct' as const };
+      });
+
+      return { submission, cells, wrongCount };
+    });
+
+    return { rows, wrongByQuestion };
+  }, [currentAssignment, currentSubmissions]);
+
   const nextPendingSubmission = selectedSubmissionDetail
     ? pendingReviewSubmissions.find(s => s.id !== selectedSubmissionDetail.id) || null
     : pendingReviewSubmissions[0] || null;
@@ -1248,6 +1280,118 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Ma trận HS × câu: đọc trực tiếp từ submissions, không tác động dữ liệu chấm */}
+          <div className="bg-white rounded-3xl p-4 sm:p-6 border border-slate-200 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+              <div>
+                <h3 className="font-bold text-base text-slate-900">Ma trận câu cần xem lại của lớp</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Xem chính xác học sinh nào sai câu nào. Câu chờ giáo viên duyệt được tách riêng, không tính là câu sai.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
+                <span className="px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">✓ Đúng</span>
+                <span className="px-2 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-200">× Sai</span>
+                <span className="px-2 py-1 rounded-md bg-amber-50 text-amber-700 border border-amber-200">… Chờ duyệt</span>
+                <span className="px-2 py-1 rounded-md bg-slate-50 text-slate-500 border border-slate-200">– Chưa có</span>
+              </div>
+            </div>
+
+            {classErrorMatrix.rows.length === 0 ? (
+              <div className="py-8 text-center rounded-2xl border border-dashed border-slate-200 bg-slate-50">
+                <p className="font-semibold text-sm text-slate-700">Chưa có bài nộp để lập ma trận.</p>
+                <p className="text-xs text-slate-500 mt-1">Ma trận sẽ xuất hiện khi học sinh nộp bài.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                <table className="w-full min-w-max text-xs">
+                  <thead className="bg-slate-50 text-slate-600">
+                    <tr>
+                      <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2.5 text-left font-bold min-w-[150px]">Học sinh</th>
+                      {currentAssignment.questions.map((q, index) => (
+                        <th key={q.id} className="px-2 py-2.5 text-center font-bold min-w-[54px]" title={q.question || `Câu ${index + 1}`}>
+                          C{q.order || index + 1}
+                        </th>
+                      ))}
+                      <th className="px-3 py-2.5 text-center font-bold min-w-[70px]">Tổng sai</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {classErrorMatrix.rows.map(({ submission, cells, wrongCount }) => (
+                      <tr key={submission.id} className="hover:bg-slate-50/70">
+                        <td className="sticky left-0 z-10 bg-white px-3 py-2.5 font-semibold text-slate-800">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSubmissionDetail(submission)}
+                            className="text-left hover:text-indigo-700"
+                            title="Xem bài làm của học sinh"
+                          >
+                            {submission.studentName}
+                          </button>
+                        </td>
+                        {cells.map(cell => {
+                          const styles =
+                            cell.status === 'wrong'
+                              ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                              : cell.status === 'pending'
+                              ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                              : cell.status === 'correct'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-slate-50 text-slate-400 border-slate-200';
+                          const label =
+                            cell.status === 'wrong' ? '×' :
+                            cell.status === 'pending' ? '…' :
+                            cell.status === 'correct' ? '✓' : '–';
+                          const canOpen = cell.status === 'wrong' || cell.status === 'pending';
+
+                          return (
+                            <td key={cell.questionId} className="px-2 py-2 text-center">
+                              <button
+                                type="button"
+                                disabled={!canOpen}
+                                onClick={() => canOpen && setSelectedSubmissionDetail(submission)}
+                                className={`w-8 h-8 rounded-lg border font-black transition-colors ${styles} ${canOpen ? 'cursor-pointer' : 'cursor-default'}`}
+                                title={
+                                  cell.status === 'wrong' ? 'Sai — bấm để xem bài làm và lỗi chi tiết' :
+                                  cell.status === 'pending' ? 'Chờ GV duyệt — bấm để xem' :
+                                  cell.status === 'correct' ? 'Đúng' : 'Chưa có câu trả lời'
+                                }
+                              >
+                                {label}
+                              </button>
+                            </td>
+                          );
+                        })}
+                        <td className="px-3 py-2 text-center">
+                          <span className={`inline-flex min-w-8 justify-center rounded-lg px-2 py-1 font-black ${wrongCount > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                            {wrongCount}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-slate-50 border-t border-slate-200">
+                    <tr>
+                      <td className="sticky left-0 z-10 bg-slate-50 px-3 py-2.5 font-bold text-slate-700">HS sai/câu</td>
+                      {currentAssignment.questions.map(q => (
+                        <td key={q.id} className="px-2 py-2.5 text-center font-black text-rose-700">
+                          {classErrorMatrix.wrongByQuestion.get(q.id) || 0}
+                        </td>
+                      ))}
+                      <td className="px-3 py-2.5 text-center font-black text-slate-700">
+                        {classErrorMatrix.rows.reduce((sum, row) => sum + row.wrongCount, 0)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+
+            <p className="text-[11px] text-slate-500">
+              Bấm vào ô × hoặc … để mở đúng bài của học sinh. Trong chi tiết bài, giáo viên có thể xem đáp án, bài làm, phân tích từng bước và lỗi gốc nếu dữ liệu chấm có sẵn.
+            </p>
           </div>
 
           {/* Full Question By Question Analytics Table */}
