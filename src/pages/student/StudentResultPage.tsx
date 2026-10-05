@@ -191,7 +191,9 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         const max = q ? q.points : (a.maxPoints || 1);
         totalMax += max;
         totalEarned += (a.teacherScore !== undefined ? a.teacherScore : a.pointsEarned);
-        const isPendingReview = a.needsTeacherReview && a.teacherScore === undefined;
+        const isPendingReview =
+          a.teacherScore === undefined &&
+          Boolean(a.needsTeacherReview || a.isProvisional || a.aiGradingError);
         if (isPendingReview) {
           // Giữ điểm hiển thị ở trạng thái tạm tính nhưng không biến câu chờ duyệt thành câu sai.
         } else if (a.isCorrect) {
@@ -203,7 +205,9 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
       const rawScore = totalMax > 0 ? (totalEarned / totalMax) * 10 : 0;
       const totalScore = Math.round(rawScore * 10) / 10;
 
-      const pendingReviewCount = updatedAnswers.filter(a => a.needsTeacherReview && a.teacherScore === undefined).length;
+      const pendingReviewCount = updatedAnswers.filter(
+        a => a.teacherScore === undefined && Boolean(a.needsTeacherReview || a.isProvisional || a.aiGradingError)
+      ).length;
       const updatedSub: Submission = {
         ...submission,
         answers: updatedAnswers,
