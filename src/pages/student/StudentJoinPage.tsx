@@ -6,23 +6,12 @@ import { Assignment, ClassRoom } from '../../types';
 import { StudentAiPracticeView } from '../../components/StudentAiPracticeView';
 import { 
   ArrowRight, 
-  Clock, 
-  HelpCircle, 
   CheckCircle2, 
   AlertCircle, 
-  Sparkles, 
   BookOpen,
   Search,
-  Filter,
-  Calculator,
-  Shapes,
-  PieChart,
-  Moon,
   ChevronRight,
-  Zap,
-  GraduationCap,
   Loader2,
-  UserCheck
 } from 'lucide-react';
 
 interface StudentJoinPageProps {
