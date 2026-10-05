@@ -316,6 +316,7 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
             initialTitle={tabParams.initialTitle}
             initialGrade={tabParams.initialGrade}
             initialMode={tabParams.initialMode} // MỚI: Truyền mode PDF hoặc Text sang từ Kho Đề
+            autoOpenImport={!!tabParams.autoOpenImport}
             initialFilter={tabParams.initialFilter} // MỚI: Lọc sẵn câu thiếu hình nếu bấm từ ngoài danh sách đề
             onSaveSuccess={(savedAssignment) => {
               onRefreshData();
