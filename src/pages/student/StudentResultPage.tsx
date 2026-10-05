@@ -49,6 +49,7 @@ interface StudentResultPageProps {
   onRetake: () => void;
   onGoHome: () => void;
   isDemoPreview?: boolean;
+  isTeacherPreview?: boolean;
 }
 
 export const StudentResultPage: React.FC<StudentResultPageProps> = ({
@@ -56,10 +57,13 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   assignment,
   onRetake,
   onGoHome,
-  isDemoPreview = false
+  isDemoPreview = false,
+  isTeacherPreview = false
 }) => {
   const [submission, setSubmission] = useState<Submission>(initialSubmission);
-  const [resultViewMode, setResultViewMode] = useState<'sheet' | 'detailed'>('sheet');
+  const [resultViewMode, setResultViewMode] = useState<'sheet' | 'detailed'>(
+    isTeacherPreview ? 'detailed' : 'sheet'
+  );
   const [filterType, setFilterType] = useState<'all' | 'wrong' | 'correct'>('all');
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
   
@@ -144,20 +148,28 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
       const updatedAnswers: StudentAnswer[] = submission.answers.map(a => {
         if (a.questionId === question.id) {
           const hasError = !!res.firstErrorStep || (res.analysis || []).some(s => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
-          const isCorrect = !hasError && (res.isAllCorrect === true || ((res.analysis || []).length > 0 && (res.analysis || []).every(s => s.status === 'correct') && res.score >= question.points));
+          const resNeedsReview = !!res.needsTeacherReview || res.analysisSource === 'rule' || res.analysisSource === 'unavailable';
+          const hasTeacherScore = a.teacherScore !== undefined;
+          const answerNeedsReview = !hasTeacherScore && resNeedsReview;
+          const computedIsCorrect = !answerNeedsReview && !hasError && (
+            res.isAllCorrect === true ||
+            ((res.analysis || []).length > 0 && (res.analysis || []).every(s => s.status === 'correct') && res.score >= question.points)
+          );
           return {
             ...a,
             stepAnalysis: res.analysis,
             firstErrorStep: res.firstErrorStep,
             firstErrorType: res.firstErrorType,
             firstErrorExplanation: res.firstErrorExplanation,
-            needsTeacherReview: res.needsTeacherReview,
+            needsTeacherReview: answerNeedsReview,
+            isProvisional: answerNeedsReview,
+            aiGradingError: answerNeedsReview && (res.analysisSource === 'rule' || res.analysisSource === 'unavailable'),
             stepGradingResponse: res,
-            pointsEarned: a.teacherScore !== undefined ? a.teacherScore : res.score,
+            pointsEarned: hasTeacherScore ? a.teacherScore! : res.score,
             aiScore: res.score,
             aiFeedback: res.feedback,
             aiGraded: true,
-            isCorrect
+            isCorrect: hasTeacherScore ? a.isCorrect : computedIsCorrect
           };
         }
         return a;
@@ -173,17 +185,29 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         const max = q ? q.points : (a.maxPoints || 1);
         totalMax += max;
         totalEarned += (a.teacherScore !== undefined ? a.teacherScore : a.pointsEarned);
-        if (a.isCorrect) correctCnt++; else wrongCnt++;
+        const isPendingReview = a.needsTeacherReview && a.teacherScore === undefined;
+        if (isPendingReview) {
+          // Giữ điểm hiển thị ở trạng thái tạm tính nhưng không biến câu chờ duyệt thành câu sai.
+        } else if (a.isCorrect) {
+          correctCnt++;
+        } else {
+          wrongCnt++;
+        }
       });
       const rawScore = totalMax > 0 ? (totalEarned / totalMax) * 10 : 0;
       const totalScore = Math.round(rawScore * 10) / 10;
 
+      const pendingReviewCount = updatedAnswers.filter(a => a.needsTeacherReview && a.teacherScore === undefined).length;
       const updatedSub: Submission = {
         ...submission,
         answers: updatedAnswers,
         totalScore,
         correctCount: correctCnt,
-        wrongCount: wrongCnt
+        wrongCount: wrongCnt,
+        needsTeacherReview: pendingReviewCount > 0 || submission.needsTeacherReview,
+        isProvisional: pendingReviewCount > 0 || submission.isProvisional,
+        ungradedCount: Math.max(pendingReviewCount, submission.ungradedCount || 0),
+        gradingStatus: pendingReviewCount > 0 ? 'needs_review' : submission.gradingStatus
       };
 
       setSubmission(updatedSub);
@@ -283,7 +307,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   const toggleExpand = (questionId: string) => {
     setExpandedCards(prev => ({
       ...prev,
-      [questionId]: prev[questionId] === undefined ? false : !prev[questionId]
+      [questionId]: !(prev[questionId] ?? false)
     }));
   };
 
