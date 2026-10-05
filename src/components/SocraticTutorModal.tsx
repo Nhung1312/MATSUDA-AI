@@ -14,14 +14,9 @@ import {
   AlertCircle,
   HelpCircle,
   PenTool,
-  Info,
   CheckCircle2,
   Image as ImageIcon,
-  Zap,
   Target,
-  ArrowRight,
-  Eye,
-  EyeOff
 } from 'lucide-react';
 import {
   SocraticContext,
@@ -122,14 +117,8 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
         setMessages(savedMessages);
       } else {
         const welcomeText = context.firstErrorStep
-          ? `Chào em! Thầy/Cô đã đối chiếu bài làm của em.\n\n` +
-            `✅ Các bước trước đó em đã làm rất chính xác và logic.\n` +
-            `⚠️ Ở **Bước ${context.firstErrorStep}** có một nút thắt cần gỡ${context.errorType ? ` (*${context.errorType}*)` : ''}.\n\n` +
-            `🎯 **Thầy/Cô sẽ đồng hành cùng em sửa đúng từ chính bước này, không giải lại từ đầu.**\n\n` +
-            `👉 Em hãy bấm **Gợi ý 1** để nhớ lại công thức/quy tắc liên quan, hoặc thử viết lại bước đúng vào khung **"Thử sửa bước này"** ở bên trái nhé!`
-          : `Chào em! Thầy/Cô là **Gia sư Socratic AI**.\n\n` +
-            `Thầy/Cô sẽ đồng hành cùng em tìm ra phương pháp giải câu hỏi này từng bước một, **không giải hộ để em tự mình rèn luyện tư duy**.\n\n` +
-            `👉 Em hãy bấm **Gợi ý 1** để nhớ lại công thức nền tảng, hoặc gõ thắc mắc cụ thể vào khung trò chuyện nhé!`;
+          ? `Bắt đầu từ **Bước ${context.firstErrorStep}** — đây là chỗ em cần sửa${context.errorType ? ` (*${context.errorType}*)` : ''}.\n\nHãy chọn **Gợi ý 1** hoặc thử viết lại bước đúng ở khung **Thử sửa bước này**.`
+          : `Mình sẽ gợi mở từng bước, không giải hộ.\n\nHãy chọn **Gợi ý 1** hoặc hỏi trực tiếp điều em chưa hiểu.`;
 
         const welcomeMessage: SocraticMessage = {
           id: 'welcome_' + Date.now(),
@@ -437,9 +426,9 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
     const isCorrect = normStudent.includes(normCorrect) || normCorrect.includes(normStudent);
 
     if (isCorrect) {
-      setRemedialFeedback('🎉 Hoàn toàn chính xác! Em đã làm chủ dạng bài và vượt qua hoàn toàn lỗ hổng kiến thức.');
+      setRemedialFeedback('Đúng rồi! Em đã làm được bài tương tự.');
     } else {
-      setRemedialFeedback('💡 Đáp số của em chưa khớp. Em hãy bấm "Xem gợi ý phương pháp" hoặc "Xem lời giải chi tiết" để đối chiếu nhé!');
+      setRemedialFeedback('Chưa khớp. Hãy mở Gợi ý hoặc Lời giải để đối chiếu.');
     }
 
     try {
@@ -475,15 +464,12 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <h3 className="font-extrabold text-sm sm:text-base tracking-tight flex items-center gap-1.5">
-                  Gia sư AI – Sửa lỗi này
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-slate-950 uppercase tracking-wider">
-                    Socratic Scaffolding
-                  </span>
+                <h3 className="font-extrabold text-sm sm:text-base tracking-tight">
+                  Gia sư AI
                 </h3>
               </div>
               <p className="text-[11px] sm:text-xs text-indigo-100/90 font-medium">
-                Dẫn dắt tư duy từng bước • Tháo gỡ từ bước sai đầu tiên • Không giải bài hộ
+                Gợi mở từng bước • Không giải hộ
               </p>
             </div>
           </div>
@@ -504,14 +490,14 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
           
           {/* LEFT PANEL: QUESTION CONTEXT, FIRST ERROR & SCRATCHPAD   */}
-          <div className="w-full lg:w-[42%] border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/60 p-3 sm:p-4 overflow-y-auto space-y-3 shrink-0">
+          <div className="w-full lg:w-[38%] border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/60 p-3 sm:p-4 overflow-y-auto space-y-3 shrink-0">
             
             {/* Question Card */}
             <div className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
               <div className="flex items-center justify-between text-xs font-bold text-indigo-600 dark:text-indigo-400 pb-1.5 border-b border-slate-100 dark:border-slate-800">
                 <span className="flex items-center gap-1">
                   <HelpCircle className="w-3.5 h-3.5" />
-                  <span>Đề bài câu hỏi</span>
+                  <span>Đề bài</span>
                 </span>
                 {context.grade && (
                   <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/80 text-[10px] font-black text-indigo-700 dark:text-indigo-300">
@@ -527,7 +513,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
               {/* Multiple Choice Options if available */}
               {context.answerOptions && context.answerOptions.length > 0 && (
                 <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Các phương án:</div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Phương án</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs">
                     {context.answerOptions.map((opt) => (
                       <div
@@ -555,7 +541,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                 <div className="p-3 rounded-xl bg-rose-50/80 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200 text-xs space-y-1.5">
                   <div className="font-extrabold flex items-center gap-1.5 text-rose-700 dark:text-rose-300">
                     <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                    <span>Nút thắt cần gỡ: Bước {context.firstErrorStep}</span>
+                    <span>Bước cần sửa: {context.firstErrorStep}</span>
                     {context.errorType && (
                       <span className="px-2 py-0.5 rounded text-[10px] bg-rose-100 dark:bg-rose-900 text-rose-800 dark:text-rose-200 font-bold">
                         {context.errorType}
@@ -577,7 +563,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                 <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <div className="min-w-0">
-                    <span className="font-bold">Nhận xét bài làm:</span> {context.detectedError}
+                    <span className="font-bold">Nhận xét:</span> {context.detectedError}
                   </div>
                 </div>
               ) : null}
@@ -592,7 +578,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                   className="flex items-center gap-1.5 text-xs font-black text-indigo-700 dark:text-indigo-300 hover:text-indigo-800 cursor-pointer"
                 >
                   <PenTool className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  <span>Thử sửa bước này (Bảng nháp tại chỗ)</span>
+                  <span>Thử sửa bước này</span>
                 </button>
                 <span className="text-[11px] text-slate-400 font-medium">
                   {isScratchpadOpen ? '▾ Thu gọn' : '▸ Mở rộng'}
@@ -601,44 +587,44 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
 
               {isScratchpadOpen && (
                 <div className="space-y-2.5">
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Em hãy thử viết lại bước biến đổi đúng hoặc giải thích cách làm mới:
-                  </p>
 
-                  {/* Math Quick Keys Bar (Từ Matsuda) */}
-                  <div className="flex flex-wrap gap-1 p-1.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
-                    {[
-                      { label: '+', val: ' + ' },
-                      { label: '-', val: ' - ' },
-                      { label: '·', val: ' \\cdot ' },
-                      { label: 'a/b', val: ' \\frac{a}{b} ' },
-                      { label: '√x', val: ' \\sqrt{x} ' },
-                      { label: 'x²', val: '^2 ' },
-                      { label: '≤', val: ' \\le ' },
-                      { label: '≥', val: ' \\ge ' },
-                      { label: '±', val: ' \\pm ' },
-                      { label: 'Δ', val: ' \\Delta ' },
-                      { label: '⇔', val: ' \\iff ' },
-                      { label: '⇒', val: ' \\implies ' },
-                      { label: '(', val: '(' },
-                      { label: ')', val: ')' },
-                    ].map((sym, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => handleInsertMathSymbol(sym.val)}
-                        className="px-2 py-1 bg-white dark:bg-slate-700 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-slate-700 dark:text-slate-200 text-xs font-mono font-bold rounded-md border border-slate-200 dark:border-slate-600 transition-colors shadow-2xs cursor-pointer"
-                      >
-                        {sym.label}
-                      </button>
-                    ))}
-                  </div>
+
+                  <details className="text-[11px]">
+                    <summary className="cursor-pointer font-bold text-slate-500 hover:text-indigo-600">Ký hiệu Toán</summary>
+                    <div className="mt-1.5 flex flex-wrap gap-1 p-1.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+                      {[
+                        { label: '+', val: ' + ' },
+                        { label: '-', val: ' - ' },
+                        { label: '·', val: ' \\cdot ' },
+                        { label: 'a/b', val: ' \\frac{a}{b} ' },
+                        { label: '√x', val: ' \\sqrt{x} ' },
+                        { label: 'x²', val: '^2 ' },
+                        { label: '≤', val: ' \\le ' },
+                        { label: '≥', val: ' \\ge ' },
+                        { label: '±', val: ' \\pm ' },
+                        { label: 'Δ', val: ' \\Delta ' },
+                        { label: '⇔', val: ' \\iff ' },
+                        { label: '⇒', val: ' \\implies ' },
+                        { label: '(', val: '(' },
+                        { label: ')', val: ')' },
+                      ].map((sym, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleInsertMathSymbol(sym.val)}
+                          className="px-2 py-1 bg-white dark:bg-slate-700 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-slate-700 dark:text-slate-200 text-xs font-mono font-bold rounded-md border border-slate-200 dark:border-slate-600 transition-colors shadow-2xs cursor-pointer"
+                        >
+                          {sym.label}
+                        </button>
+                      ))}
+                    </div>
+                  </details>
 
                   <textarea
                     rows={3}
                     value={scratchpadText}
                     onChange={(e) => setScratchpadText(e.target.value)}
-                    placeholder={`Gõ bước sửa lại của em tại đây (VD: 2x - 6 = 0 => 2x = 6 => x = 3)...`}
+                    placeholder="Viết bước sửa của em..."
                     className="w-full text-xs font-mono p-3 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100 placeholder:font-sans placeholder:text-slate-400 resize-none"
                   />
 
@@ -657,7 +643,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                       className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-400 hover:text-indigo-600 cursor-pointer"
                     >
                       <ImageIcon className="w-3.5 h-3.5 text-indigo-500" />
-                      <span>{scratchpadImageName ? `✓ ${scratchpadImageName}` : 'Hoặc tải ảnh giấy nháp'}</span>
+                      <span>{scratchpadImageName ? `✓ ${scratchpadImageName}` : 'Tải ảnh nháp'}</span>
                     </button>
 
                     {scratchpadImageBase64 && (
@@ -684,12 +670,12 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                     {isVerifyingScratchpad ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin text-white" />
-                        <span>AI đang phân tích bước sửa...</span>
+                        <span>Đang kiểm tra...</span>
                       </>
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4 text-amber-300" />
-                        <span>🎯 Chấm bước sửa này</span>
+                        <span>Kiểm tra bước sửa</span>
                       </>
                     )}
                   </button>
@@ -732,7 +718,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                   <Target className="w-4 h-4 text-indigo-600" />
-                  <span>Bài tập rèn luyện củng cố</span>
+                  <span>Bài tương tự</span>
                 </span>
                 {!remedialExercise && (
                   <button
@@ -746,7 +732,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                     ) : (
                       <Sparkles className="w-3 h-3" />
                     )}
-                    <span>Tạo bài tương tự</span>
+                    <span>Tạo bài</span>
                   </button>
                 )}
               </div>
@@ -765,7 +751,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                       type="text"
                       value={studentRemedialInput}
                       onChange={(e) => setStudentRemedialInput(e.target.value)}
-                      placeholder="Nhập đáp số (VD: x = 5)..."
+                      placeholder="Nhập đáp số..."
                       className="flex-1 px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
                     />
                     <button
@@ -788,7 +774,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                       onClick={() => setShowRemedialHint(!showRemedialHint)}
                       className="text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
                     >
-                      {showRemedialHint ? 'Ẩn gợi ý' : '💡 Xem gợi ý'}
+                      {showRemedialHint ? 'Ẩn gợi ý' : 'Gợi ý'}
                     </button>
                     <span>•</span>
                     <button
@@ -796,7 +782,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                       onClick={() => setShowRemedialSolution(!showRemedialSolution)}
                       className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
                     >
-                      {showRemedialSolution ? 'Ẩn lời giải' : '📖 Lời giải chi tiết'}
+                      {showRemedialSolution ? 'Ẩn lời giải' : 'Lời giải'}
                     </button>
                   </div>
 
@@ -836,7 +822,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                 } disabled:opacity-50`}
               >
                 <Lightbulb className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                <span className="truncate">Gợi ý 1 (Nhẹ)</span>
+                <span className="truncate">Gợi ý 1</span>
               </button>
 
               <button
@@ -850,7 +836,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                 } disabled:opacity-50`}
               >
                 <Search className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                <span className="truncate">Gợi ý 2 (Vừa)</span>
+                <span className="truncate">Gợi ý 2</span>
               </button>
 
               <button
@@ -864,7 +850,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                 } disabled:opacity-50`}
               >
                 <BookOpen className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                <span className="truncate">Gợi ý 3 (Sâu)</span>
+                <span className="truncate">Gợi ý 3</span>
               </button>
             </div>
 
@@ -893,9 +879,9 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                     {/* Badge for Hint Level */}
                     {msg.level && msg.level !== 'chat' && msg.role === 'model' && (
                       <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60">
-                        {msg.level === 'hint1' && '💡 Gợi ý 1: Công thức & Định lý'}
-                        {msg.level === 'hint2' && '🔍 Gợi ý 2: Nút thắt tư duy'}
-                        {msg.level === 'hint3' && '📘 Gợi ý 3: Dẫn dắt chi tiết'}
+                        {msg.level === 'hint1' && 'Gợi ý 1'}
+                        {msg.level === 'hint2' && 'Gợi ý 2'}
+                        {msg.level === 'hint3' && 'Gợi ý 3'}
                       </div>
                     )}
 
@@ -903,7 +889,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                     {msg.isFallback && msg.role === 'model' && (
                       <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
                         <AlertCircle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                        <span>Chế độ Sư phạm Ngoại tuyến (Server AI tạm gián đoạn)</span>
+                        <span>AI tạm gián đoạn • dùng gợi ý dự phòng</span>
                       </div>
                     )}
 
@@ -929,7 +915,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                           ) : (
                             <>
                               <Copy className="w-3 h-3" />
-                              <span>Sao chép</span>
+                              <span>Chép</span>
                             </>
                           )}
                         </button>
@@ -981,7 +967,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                   value={inputMsg}
                   onChange={(e) => setInputMsg(e.target.value)}
                   disabled={isLoading}
-                  placeholder="Hỏi Gia sư AI (VD: Tại sao bước này lại đổi dấu vậy Thầy/Cô?)..."
+                  placeholder="Hỏi về bước em chưa hiểu..."
                   className="flex-1 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 disabled:opacity-50"
                 />
                 <button
