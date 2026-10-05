@@ -407,7 +407,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   const masteredCount = currentAssignmentMistakes.filter(m => m.mastered || m.masteryStatus === 'mastered').length;
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-16">
-      <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+      <div className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-8 space-y-4 sm:space-y-6">
         
         {isTeacherPreview && !isDemoPreview && (
           <div className="print:hidden bg-sky-50 border-2 border-sky-200 rounded-3xl p-4 text-left flex items-start gap-3">
@@ -455,7 +455,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         )}
 
         {/* HERO SCORE SUMMARY CARD */}
-        <div className={`${resultViewMode === 'sheet' ? 'print:hidden' : ''} bg-white rounded-3xl p-6 sm:p-10 shadow-xl border border-slate-200/80 text-center relative overflow-hidden`}>
+        <div className={`${resultViewMode === 'sheet' ? 'print:hidden' : ''} bg-white rounded-3xl p-4 sm:p-10 shadow-xl border border-slate-200/80 text-center relative overflow-hidden`}>
           <div className={`absolute top-0 left-0 right-0 h-3 bg-gradient-to-r ${ratingColor}`} />
 
           <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-indigo-50 text-indigo-600 font-black mb-4 shadow-inner border border-indigo-100">
@@ -476,7 +476,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
           {/* Big Score Display */}
           <div className="my-6">
             {isAwaitingReview ? (
-              <div className="inline-flex flex-col items-center space-y-2 bg-gradient-to-br from-amber-50 to-indigo-50 dark:from-amber-950/40 dark:to-indigo-950/40 px-8 py-5 rounded-3xl border-2 border-amber-200 dark:border-amber-800 shadow-sm max-w-md mx-auto">
+              <div className="inline-flex flex-col items-center space-y-2 bg-gradient-to-br from-amber-50 to-indigo-50 dark:from-amber-950/40 dark:to-indigo-950/40 px-4 sm:px-8 py-5 rounded-3xl border-2 border-amber-200 dark:border-amber-800 shadow-sm max-w-md mx-auto">
                 <span className="px-3 py-1 rounded-full bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 font-black text-xs uppercase tracking-wider flex items-center gap-1">
                   <Clock className="w-3.5 h-3.5 text-amber-700" />
                   <span>Điểm tạm tính • Đang chờ Thầy/Cô duyệt</span>
@@ -493,7 +493,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 </p>
               </div>
             ) : hasPendingTeacherGrading ? (
-              <div className="inline-flex flex-col items-center space-y-2 bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-950/40 dark:to-indigo-950/40 px-8 py-5 rounded-3xl border-2 border-purple-200 dark:border-purple-800 shadow-sm max-w-md mx-auto">
+              <div className="inline-flex flex-col items-center space-y-2 bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-950/40 dark:to-indigo-950/40 px-4 sm:px-8 py-5 rounded-3xl border-2 border-purple-200 dark:border-purple-800 shadow-sm max-w-md mx-auto">
                 <span className="px-3 py-1 rounded-full bg-purple-200/80 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 font-black text-xs uppercase tracking-wider">
                   ⏳ Đang chờ Giáo viên chấm tự luận
                 </span>
@@ -510,7 +510,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
               </div>
             ) : (
               <>
-                <div className="inline-flex items-baseline space-x-2 bg-gradient-to-br from-indigo-50 to-purple-50 px-8 py-4 rounded-3xl border-2 border-indigo-100 shadow-sm">
+                <div className="inline-flex items-baseline space-x-2 bg-gradient-to-br from-indigo-50 to-purple-50 px-4 sm:px-8 py-4 rounded-3xl border-2 border-indigo-100 shadow-sm">
                   <span className="text-5xl sm:text-6xl font-black text-indigo-600 tracking-tight">
                     {score.toFixed(1)}
                   </span>
@@ -570,7 +570,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
           {/* Anti-Cheat & Monitoring Verification Card */}
           <div className="mt-6 max-w-2xl mx-auto text-left">
             {(submission.tabSwitchCount ?? 0) === 0 ? (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center justify-between gap-3">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center space-x-3">
                   <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0">
                     <ShieldCheck className="w-6 h-6" />
@@ -670,11 +670,11 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
           )}
 
           {/* Quick Actions */}
-          <div className="flex flex-wrap items-center justify-center gap-3 mt-8">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-center gap-2 sm:gap-3 mt-6 sm:mt-8">
             {!isDemoPreview && !isTeacherPreview && (
               <button
                 onClick={() => setShowMistakeVault(true)}
-                className="inline-flex items-center space-x-2 px-5 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-5 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
               >
                 <BookOpen className="w-4 h-4" />
                 <span>Sổ tay câu sai {submission.wrongCount > 0 ? `(${submission.wrongCount})` : ''}</span>
@@ -683,7 +683,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
             {!isDemoPreview && !isTeacherPreview && (
               <button
                 onClick={onRetake}
-                className="inline-flex items-center space-x-2 px-5 py-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-sm transition-colors border border-indigo-200 shadow-xs cursor-pointer"
+                className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-5 py-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-sm transition-colors border border-indigo-200 shadow-xs cursor-pointer"
               >
                 <RotateCcw className="w-4 h-4" />
                 <span>Luyện tập lại đề này</span>
@@ -691,7 +691,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
             )}
             <button
               onClick={handlePrint}
-              className="inline-flex items-center space-x-2 px-5 py-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-sm transition-colors border border-slate-300 shadow-xs cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-5 py-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-sm transition-colors border border-slate-300 shadow-xs cursor-pointer"
             >
               <Printer className="w-4 h-4 text-slate-500" />
               <span>In phiếu điểm</span>
@@ -731,7 +731,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
             )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
             <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-3">
               <div className="w-7 h-7 rounded-full bg-blue-600 text-white text-xs font-black flex items-center justify-center mb-2">1</div>
               <div className="font-black text-xs text-blue-950">AI chấm từng bước</div>

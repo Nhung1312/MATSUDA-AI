@@ -134,7 +134,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
             Từ PDF, ảnh chụp, Word hay LaTeX, Matsuda AI giúp giáo viên số hóa đề, giao bài, chấm tự luận theo từng bước, tìm lỗi gốc và tạo vòng luyện lại để học sinh tiến bộ — thay vì chỉ dừng ở một con điểm.
           </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 mt-4 max-w-3xl">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mt-4 max-w-3xl">
             <div className="rounded-xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-900 px-3 py-2">
               <div className="text-[10px] font-black uppercase text-sky-700 dark:text-sky-300">Đầu vào</div>
               <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">PDF • Ảnh • Word • LaTeX → đề số hóa.</div>
@@ -157,7 +157,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
           <div className="flex flex-wrap gap-3 mt-6">
             <button
               onClick={() => document.getElementById('judge-demo')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-              className="inline-flex items-center space-x-2 bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl shadow-xs hover:shadow-md transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl shadow-xs hover:shadow-md transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
             >
               <Play className="w-4 h-4" />
               <span>Xem demo AI 3 phút</span>
@@ -166,7 +166,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
             {/* Primary Action Button */}
             <button
               onClick={() => onNavigate('create', { autoOpenImport: true })}
-              className="inline-flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl shadow-xs hover:shadow-md transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl shadow-xs hover:shadow-md transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
               <span>Tạo bài tập mới</span>
@@ -175,7 +175,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
             {/* Nút Kho Đề Mẫu */}
             <button
               onClick={() => onNavigate('exam_bank')}
-              className="inline-flex items-center space-x-2 bg-violet-600 hover:bg-violet-700 text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl shadow-xs hover:shadow-md transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 bg-violet-600 hover:bg-violet-700 text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl shadow-xs hover:shadow-md transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
             >
               <Layers className="w-4 h-4" />
               <span>📚 Kho đề mẫu</span>
@@ -184,7 +184,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
             {/* Secondary Outline Action Button */}
             <button
               onClick={() => onNavigate('classes')}
-              className="inline-flex items-center space-x-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 font-bold px-4 sm:px-5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 shadow-2xs transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 font-bold px-4 sm:px-5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 shadow-2xs transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
             >
               <Users className="w-4 h-4 text-slate-500 dark:text-slate-400" />
               <span>Quản lý lớp học</span>
@@ -193,7 +193,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
             {/* Quick Settings & Backup Button */}
             <button
               onClick={() => onNavigate('settings')}
-              className="inline-flex items-center space-x-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold px-4 sm:px-5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 shadow-2xs transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold px-4 sm:px-5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 shadow-2xs transition-all active:scale-95 text-xs sm:text-sm cursor-pointer"
             >
               <Settings className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
               <span>⚙️ Cài đặt & Sao lưu</span>
@@ -251,7 +251,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 <div className="text-xs font-black text-slate-900 dark:text-white">{title}</div>
                 <div className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400 mt-1">{desc}</div>
                 {idx < 5 && (
-                  <ArrowRight className="hidden sm:block absolute -right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400 z-10" />
+                  <ArrowRight className="hidden lg:block absolute -right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400 z-10" />
                 )}
               </div>
             </React.Fragment>
@@ -264,7 +264,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
           <div className="max-w-xl">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-fuchsia-100 dark:bg-fuchsia-950 text-fuchsia-700 dark:text-fuchsia-300 text-[10px] font-black uppercase tracking-wider mb-2">
               <Play className="w-3.5 h-3.5" />
-              <span>Demo trọng tâm cho giám khảo • khoảng 3 phút</span>
+              <span className="leading-tight text-center">Demo trọng tâm cho giám khảo • khoảng 3 phút</span>
             </div>
             <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
               Đi theo 5 bước này để trình diễn toàn bộ giá trị cốt lõi
@@ -299,7 +299,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 flex-1">
             <button
-              onClick={() => onNavigate('create')}
+              onClick={() => onNavigate('create', { autoOpenImport: true })}
               className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-violet-200 dark:border-violet-900 p-3.5 hover:shadow-md transition-all"
             >
               <div className="flex items-center justify-between">

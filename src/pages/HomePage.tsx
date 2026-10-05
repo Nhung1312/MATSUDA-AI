@@ -79,7 +79,7 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
 
           {/* Search / Enter Assignment Code Box */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-2 sm:p-2.5 shadow-md border border-indigo-100 dark:border-slate-800 text-left mt-2">
-            <form onSubmit={handleStartWithCode} className="flex items-center gap-2">
+            <form onSubmit={handleStartWithCode} className="flex flex-col sm:flex-row sm:items-center gap-2">
               <div className="relative flex-1">
                 <input
                   type="text"
@@ -94,7 +94,7 @@ export const HomePage: React.FC<HomePageProps> = ({ assignments }) => {
               </div>
               <button
                 type="submit"
-                className="py-2 px-4 sm:px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl shadow-xs transition-all active:scale-95 text-xs sm:text-sm flex items-center justify-center space-x-1.5 shrink-0 cursor-pointer"
+                className="w-full sm:w-auto py-2.5 sm:py-2 px-4 sm:px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl shadow-xs transition-all active:scale-95 text-xs sm:text-sm flex items-center justify-center space-x-1.5 shrink-0 cursor-pointer"
               >
                 <span>VÀO THI</span>
                 <ArrowRight className="w-3.5 h-3.5" />

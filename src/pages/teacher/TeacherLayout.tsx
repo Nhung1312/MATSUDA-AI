@@ -105,9 +105,9 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
       {/* Subnav Navigation Bar for Teacher */}
       <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-16 z-20 shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between py-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-2.5">
             {/* Tabs List */}
-            <div className="flex items-center space-x-1 sm:space-x-2 overflow-x-auto no-scrollbar">
+            <div className="w-full sm:w-auto flex-1 flex items-center space-x-1 sm:space-x-2 overflow-x-auto no-scrollbar">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
@@ -145,7 +145,7 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
             </div>
 
             {/* Right Controls: Always-Visible Settings & Subscription Badge */}
-            <div className="flex items-center space-x-2 pl-2 shrink-0 border-l border-slate-200 dark:border-slate-800">
+            <div className="w-full sm:w-auto flex items-center justify-end space-x-2 pt-2 sm:pt-0 sm:pl-2 shrink-0 border-t sm:border-t-0 sm:border-l border-slate-200 dark:border-slate-800">
               {/* Pinned Settings Button */}
               <button
                 type="button"
@@ -158,7 +158,7 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
                 }`}
               >
                 <Settings className={`w-3.5 h-3.5 ${activeTab === 'settings' ? 'text-white' : 'text-slate-600 dark:text-slate-400'}`} />
-                <span>Cài đặt</span>
+                <span className="hidden sm:inline">Cài đặt</span>
               </button>
 
               {!BILLING_ENABLED ? (
@@ -241,7 +241,7 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
       )}
 
       {/* Main Content View */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
         {activeTab === 'overview' && (
           <TeacherOverview
             classes={safeClasses}
