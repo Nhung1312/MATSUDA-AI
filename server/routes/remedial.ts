@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { Type } from '@google/genai';
 import {
   AI_CONFIG,
-  getSystemGeminiClient,
+  getSupportGeminiClients,
   sanitizeMathData
 } from '../aiConfig.js';
 import {
@@ -69,11 +69,11 @@ remedialRouter.post(['/generate', '/reroll'], async (req: Request, res: Response
     const timestamp = new Date().toISOString();
     const exerciseId = 'remedial_' + Date.now();
 
-    let ai;
+    let aiClients: ReturnType<typeof getSupportGeminiClients>;
     try {
-      ai = getSystemGeminiClient();
+      aiClients = getSupportGeminiClients();
     } catch (err: any) {
-      console.warn('[Remedial Router] GEMINI_API_KEY không khả dụng, sử dụng bộ sinh bài mẫu chuẩn sư phạm:', err?.message);
+      console.warn('[Remedial Router] Không có Gemini server key, sử dụng bộ sinh bài mẫu chuẩn sư phạm:', err?.message);
       const fallbackExercise = generateFallbackRemedialExercise(body, exerciseId, timestamp);
       return res.status(200).json({
         success: true,
@@ -106,24 +106,26 @@ YÊU CẦU: Hãy tạo 01 bài toán mới cùng dạng để học sinh luyện
     };
 
     let resultJson: any = null;
-    for (const m of AI_CONFIG.models) {
-      try {
-        const resp = await ai.models.generateContent({
-          model: m,
-          contents: promptText,
-          config: {
-            systemInstruction: REMEDIAL_SYSTEM_PROMPT,
-            responseMimeType: 'application/json',
-            responseSchema,
-            temperature: 0.35,
+    outer: for (const { tier, client } of aiClients) {
+      for (const m of AI_CONFIG.models) {
+        try {
+          const resp = await client.models.generateContent({
+            model: m,
+            contents: promptText,
+            config: {
+              systemInstruction: REMEDIAL_SYSTEM_PROMPT,
+              responseMimeType: 'application/json',
+              responseSchema,
+              temperature: 0.35,
+            }
+          });
+          if (resp.text && resp.text.trim()) {
+            resultJson = JSON.parse(resp.text);
+            break outer;
           }
-        });
-        if (resp.text && resp.text.trim()) {
-          resultJson = JSON.parse(resp.text);
-          break;
+        } catch (err: any) {
+          console.warn(`[Remedial Router] ${tier}/${m} failed:`, err?.message);
         }
-      } catch (err: any) {
-        console.warn(`[Remedial Router] Model ${m} failed:`, err?.message);
       }
     }
 
