@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import {
   AI_CONFIG,
-  getSystemGeminiClient,
+  getSupportGeminiClients,
   SOCRATIC_SYSTEM_PROMPT,
   sanitizeMathData
 } from '../aiConfig.js';
@@ -39,15 +39,15 @@ socraticRouter.post(['/', '/socratic'], async (req: Request, res: Response) => {
       });
     }
 
-    let ai;
+    let aiClients: ReturnType<typeof getSupportGeminiClients>;
     try {
-      ai = getSystemGeminiClient();
+      aiClients = getSupportGeminiClients();
     } catch (keyErr: any) {
       return res.status(503).json({
         success: false,
         level,
         reply: '',
-        message: keyErr?.message || 'Máy chủ chưa được cấu hình GEMINI_API_KEY.',
+        message: keyErr?.message || 'Máy chủ chưa được cấu hình Gemini API key.',
       });
     }
 
@@ -120,27 +120,28 @@ YÊU CẦU: Hãy đưa ra GỢI Ý 3 (Sâu: Dẫn dắt chi tiết từng bướ
     let usedModel = AI_CONFIG.defaultModel;
     let lastError: any = null;
 
-    // Failover sequence across supported flash models
-    for (const modelName of AI_CONFIG.models) {
-      try {
-        const resp = await ai.models.generateContent({
-          model: modelName,
-          contents: userPrompt,
-          config: {
-            systemInstruction: SOCRATIC_SYSTEM_PROMPT,
-            temperature: level === 'chat' ? AI_CONFIG.temperature.socraticChat : AI_CONFIG.temperature.socraticHint,
-          },
-        });
-        if (resp.text && resp.text.trim()) {
-          replyText = resp.text.trim();
-          usedModel = modelName;
-          break;
+    // Tác vụ hỗ trợ: ưu tiên FREE, chỉ chuyển PAID khi free/model hiện tại thất bại.
+    outer: for (const { tier, client } of aiClients) {
+      for (const modelName of AI_CONFIG.models) {
+        try {
+          const resp = await client.models.generateContent({
+            model: modelName,
+            contents: userPrompt,
+            config: {
+              systemInstruction: SOCRATIC_SYSTEM_PROMPT,
+              temperature: level === 'chat' ? AI_CONFIG.temperature.socraticChat : AI_CONFIG.temperature.socraticHint,
+            },
+          });
+          if (resp.text && resp.text.trim()) {
+            replyText = resp.text.trim();
+            usedModel = `${modelName} [${tier}]`;
+            break outer;
+          }
+        } catch (err: any) {
+          lastError = err;
+          console.warn(`[Socratic Router] ${tier}/${modelName} thất bại, thử nguồn tiếp theo:`, err?.message || err);
+          await new Promise(r => setTimeout(r, 250));
         }
-      } catch (err: any) {
-        lastError = err;
-        console.warn(`[Socratic Router] Model ${modelName} thất bại, thử mô hình dự phòng:`, err?.message || err);
-        // Ngủ 400ms trước khi thử model tiếp theo nếu bị rate limit
-        await new Promise(r => setTimeout(r, 400));
       }
     }
 
