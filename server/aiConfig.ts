@@ -2,10 +2,10 @@
  * Server-Side AI Configuration & Security Module
  * 
  * NGUYÊN TẮC BẢO MẬT & BẢN QUYỀN:
- * 1. GEMINI_API_KEY CHỈ ĐƯỢC ĐỌC TẠI MÁY CHỦ QUA process.env.GEMINI_API_KEY.
+ * 1. GEMINI_API_KEY (paid) và GEMINI_FREE_API_KEY (free) chỉ được đọc ở server.
  * 2. Tuyệt đối không expose API Key cho browser/client bundle.
- * 3. Hỗ trợ Failover Candidate Models (thử lần lượt các model Flash nếu một model tạm thời quá tải).
- * 4. Làm sạch triệt để các lỗi escape ký tự toán học (LaTeX).
+ * 3. Chấm điểm chính thức luôn dùng paid key; tác vụ hỗ trợ có thể ưu tiên free rồi mới fallback paid.
+ * 4. Hỗ trợ failover model và làm sạch lỗi escape ký tự toán học (LaTeX).
  */
 
 import { GoogleGenAI } from '@google/genai';
@@ -26,15 +26,8 @@ export const AI_CONFIG = {
   timeoutMs: 30000,
 };
 
-/**
- * Khởi tạo Gemini Client an toàn phía máy chủ
- */
-export const getSystemGeminiClient = (): GoogleGenAI => {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey.trim().length === 0) {
-    throw new Error('Chưa cấu hình GEMINI_API_KEY trên máy chủ. Vui lòng thêm biến môi trường trong cấu hình hệ thống.');
-  }
-  return new GoogleGenAI({
+const createServerGeminiClient = (apiKey: string): GoogleGenAI =>
+  new GoogleGenAI({
     apiKey: apiKey.trim(),
     httpOptions: {
       headers: {
@@ -42,6 +35,34 @@ export const getSystemGeminiClient = (): GoogleGenAI => {
       },
     },
   });
+
+/**
+ * Paid client: dùng cho chấm điểm chính thức và làm fallback cuối cùng.
+ */
+export const getSystemGeminiClient = (): GoogleGenAI => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey.trim().length === 0) {
+    throw new Error('Chưa cấu hình GEMINI_API_KEY (paid) trên máy chủ.');
+  }
+  return createServerGeminiClient(apiKey);
+};
+
+/**
+ * Danh sách client cho tác vụ hỗ trợ học tập:
+ * ưu tiên FREE nếu có, sau đó mới PAID. Không bao giờ trả key ra client.
+ */
+export const getSupportGeminiClients = (): Array<{ tier: 'free' | 'paid'; client: GoogleGenAI }> => {
+  const clients: Array<{ tier: 'free' | 'paid'; client: GoogleGenAI }> = [];
+  const freeKey = process.env.GEMINI_FREE_API_KEY?.trim();
+  const paidKey = process.env.GEMINI_API_KEY?.trim();
+
+  if (freeKey) clients.push({ tier: 'free', client: createServerGeminiClient(freeKey) });
+  if (paidKey && paidKey !== freeKey) clients.push({ tier: 'paid', client: createServerGeminiClient(paidKey) });
+
+  if (clients.length === 0) {
+    throw new Error('Chưa cấu hình GEMINI_FREE_API_KEY hoặc GEMINI_API_KEY trên máy chủ.');
+  }
+  return clients;
 };
 
 /**
