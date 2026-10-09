@@ -32,7 +32,10 @@ import {
   FileBadge,
   AlertTriangle,
   Image as ImageIcon,
-  Filter
+  Filter,
+  Calculator,
+  Scale,
+  SlidersHorizontal
 } from 'lucide-react';
 
 interface TeacherCreateAssignmentProps {
@@ -156,6 +159,105 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [aiGenCount, setAiGenCount] = useState(5);
   const [importSuccessAlert, setImportSuccessAlert] = useState<string | null>(null);
+
+  // --- BỘ CÔNG CỤ PHÂN BỔ ĐIỂM THÔNG MINH (1-CLICK) ---
+  const [showPointDistributeModal, setShowPointDistributeModal] = useState(false);
+  const [customMcTotal, setCustomMcTotal] = useState<number>(3.0);
+  const [customEssayTotal, setCustomEssayTotal] = useState<number>(7.0);
+
+  const mcCount = questions.filter(q => q.type === 'multiple_choice').length;
+  const essayCount = questions.filter(q => q.type === 'essay').length;
+
+  const handleApplyPointPreset = (preset: '3_7' | '7_3' | '5_5' | 'equal_10' | 'custom') => {
+    if (questions.length === 0) return;
+
+    let targetMcTotal = 3.0;
+    let targetEssayTotal = 7.0;
+
+    if (preset === '7_3') {
+      targetMcTotal = 7.0;
+      targetEssayTotal = 3.0;
+    } else if (preset === '5_5') {
+      targetMcTotal = 5.0;
+      targetEssayTotal = 5.0;
+    } else if (preset === 'custom') {
+      targetMcTotal = Math.max(0, customMcTotal);
+      targetEssayTotal = Math.max(0, customEssayTotal);
+    }
+
+    if (preset === 'equal_10' || (mcCount === 0 && essayCount > 0) || (essayCount === 0 && mcCount > 0)) {
+      // Chia đều toàn bộ câu hỏi tròn 10 điểm
+      const basePoint = Math.floor((10 / questions.length) * 100) / 100;
+      let remaining = Math.round((10 - basePoint * questions.length) * 100) / 100;
+
+      const updated = questions.map((q, idx) => {
+        let p = basePoint;
+        if (idx === questions.length - 1 && remaining !== 0) {
+          p = Math.round((p + remaining) * 100) / 100;
+        }
+        return { ...q, points: Math.max(0.05, p) };
+      });
+      setQuestions(updated);
+      setShowPointDistributeModal(false);
+      setImportSuccessAlert(`Đã chia đều 10 điểm cho toàn bộ ${questions.length} câu hỏi thành công!`);
+      setTimeout(() => setImportSuccessAlert(null), 4000);
+      return;
+    }
+
+    // Chia theo tỉ lệ Trắc nghiệm & Tự luận
+    const mcPerQuestion = mcCount > 0 
+      ? Math.round((targetMcTotal / mcCount) * 100) / 100 
+      : 0;
+    const essayPerQuestion = essayCount > 0 
+      ? Math.round((targetEssayTotal / essayCount) * 100) / 100 
+      : 0;
+
+    let updated = questions.map(q => {
+      if (q.type === 'multiple_choice') {
+        return { ...q, points: mcPerQuestion };
+      } else {
+        return { ...q, points: essayPerQuestion };
+      }
+    });
+
+    // Cân bằng câu cuối cùng nếu tổng bị lệch (ví dụ 9.95 do làm tròn)
+    const currentSum = updated.reduce((sum, q) => sum + (q.points || 0), 0);
+    const diff = Math.round((10 - currentSum) * 100) / 100;
+    if (Math.abs(diff) > 0.001 && updated.length > 0) {
+      // Ưu tiên bù vào câu tự luận cuối cùng hoặc câu cuối
+      const lastEssayIdx = updated.findLastIndex(q => q.type === 'essay');
+      const targetIdx = lastEssayIdx !== -1 ? lastEssayIdx : updated.length - 1;
+      updated[targetIdx] = {
+        ...updated[targetIdx],
+        points: Math.max(0.05, Math.round((updated[targetIdx].points + diff) * 100) / 100)
+      };
+    }
+
+    setQuestions(updated);
+    setShowPointDistributeModal(false);
+    setImportSuccessAlert(`Đã phân bổ điểm thành công: ${mcCount} câu trắc nghiệm (${mcPerQuestion}đ/câu), ${essayCount} câu tự luận (${essayPerQuestion}đ/câu) • Tổng: 10.0đ!`);
+    setTimeout(() => setImportSuccessAlert(null), 4000);
+  };
+
+  const handleAutoBalanceTo10 = () => {
+    if (questions.length === 0) return;
+    const currentSum = Math.round(questions.reduce((sum, q) => sum + (q.points || 0), 0) * 100) / 100;
+    const diff = Math.round((10 - currentSum) * 100) / 100;
+    if (Math.abs(diff) < 0.001) {
+      alert('Đề thi đã đạt chuẩn tròn 10.0 điểm!');
+      return;
+    }
+    const updated = [...questions];
+    const lastEssayIdx = updated.findLastIndex(q => q.type === 'essay');
+    const targetIdx = lastEssayIdx !== -1 ? lastEssayIdx : updated.length - 1;
+    updated[targetIdx] = {
+      ...updated[targetIdx],
+      points: Math.max(0.05, Math.round((updated[targetIdx].points + diff) * 100) / 100)
+    };
+    setQuestions(updated);
+    setImportSuccessAlert(`Đã tự động cân bằng tròn 10.0 điểm (điều chỉnh ${diff > 0 ? `+${diff}` : diff}đ tại câu ${targetIdx + 1})!`);
+    setTimeout(() => setImportSuccessAlert(null), 4000);
+  };
 
   useEffect(() => {
     if (autoOpenImport && !editingAssignment) {

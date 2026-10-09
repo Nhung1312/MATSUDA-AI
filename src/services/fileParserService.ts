@@ -582,6 +582,15 @@ export class FileParserService {
     // Nhận diện phân vùng: "PHẦN I. TRẮC NGHIỆM" và "PHẦN II. TỰ LUẬN"
     const essaySectionIdx = processedText.search(/(?:\n|\s+)(?:phần\s*(?:ii|2|b)|ii\.|phần\s*tự\s*luận|b\.\s*tự\s*luận)\s*[\.\:\-]?\s*(?:tự\s*luận)?/i);
 
+    // Nhận diện điểm tổng các phân vùng: "PHẦN I. TRẮC NGHIỆM (3,0 ĐIỂM)" và "PHẦN II. TỰ LUẬN (7,0 ĐIỂM)"
+    const mcSectionPointsMatch = processedText.match(/(?:phần\s*(?:i|1|a)|i\.)?[\s\.\:\-]*trắc\s*nghiệm\s*\(\s*([0-9]+(?:[\.\,][0-9]+)?)\s*(?:điểm|đ)\s*\)/i)
+      || processedText.match(/trắc\s*nghiệm\s*\(\s*([0-9]+(?:[\.\,][0-9]+)?)\s*(?:điểm|đ)\s*\)/i);
+    const mcTotalPoints = mcSectionPointsMatch ? parseFloat(mcSectionPointsMatch[1].replace(',', '.')) : null;
+
+    const essaySectionPointsMatch = processedText.match(/(?:phần\s*(?:ii|2|b)|ii\.)?[\s\.\:\-]*tự\s*luận\s*\(\s*([0-9]+(?:[\.\,][0-9]+)?)\s*(?:điểm|đ)\s*\)/i)
+      || processedText.match(/tự\s*luận\s*\(\s*([0-9]+(?:[\.\,][0-9]+)?)\s*(?:điểm|đ)\s*\)/i);
+    const essayTotalPoints = essaySectionPointsMatch ? parseFloat(essaySectionPointsMatch[1].replace(',', '.')) : null;
+
     const items: ParsedItem[] = [];
 
     // Tăng cường Regex: Nhận diện cả "Câu", "Bài", "Question", có hoặc không có dấu hai chấm/chấm.
@@ -622,6 +631,29 @@ export class FileParserService {
 
     const mcCount = items.filter(i => i.category === 'trac_nghiem').length;
     const essayCount = items.filter(i => i.category === 'tu_luan').length;
+
+    // Tự động phân bổ điểm trắc nghiệm theo điểm phần (ví dụ: PHẦN I. TRẮC NGHIỆM (3,0 ĐIỂM) / 10 câu = 0.3đ/câu)
+    if (typeof mcTotalPoints === 'number' && mcTotalPoints > 0 && mcCount > 0) {
+      const perMc = Math.round((mcTotalPoints / mcCount) * 100) / 100;
+      items.forEach(it => {
+        if (it.category === 'trac_nghiem' && (!it.points || it.points === 0.5)) {
+          it.points = perMc;
+        }
+      });
+    }
+
+    // Tự động phân bổ điểm tự luận theo điểm phần nếu các câu tự luận chưa có điểm riêng
+    if (typeof essayTotalPoints === 'number' && essayTotalPoints > 0 && essayCount > 0) {
+      const hasCustomEssayPoints = items.some(it => it.category === 'tu_luan' && it.points && it.points !== 1.0 && it.points !== 1.5);
+      if (!hasCustomEssayPoints) {
+        const perEssay = Math.round((essayTotalPoints / essayCount) * 100) / 100;
+        items.forEach(it => {
+          if (it.category === 'tu_luan') {
+            it.points = perEssay;
+          }
+        });
+      }
+    }
 
     return {
       fileName,
@@ -744,8 +776,25 @@ export class FileParserService {
       }
     }
 
+    // Trích xuất điểm số riêng của câu nếu có ghi chú dạng "(2,0 điểm)", "(1,0 điểm)", "(0,5 điểm)", "(0.25đ)"
+    let detectedPoints: number | undefined = undefined;
+    const pointMatch = blockText.match(/(?:^|\n|[\.\:\s])(?:Câu|Bài|Question)?\s*\d*\s*[\.\:\s]*\(\s*([0-9]+(?:[\.\,][0-9]+)?)\s*(?:điểm|đ|pts?)\s*\)/i)
+      || blockText.match(/\(\s*([0-9]+(?:[\.\,][0-9]+)?)\s*(?:điểm|đ|pts?)\s*\)/i);
+    if (pointMatch) {
+      const p = parseFloat(pointMatch[1].replace(',', '.'));
+      if (!isNaN(p) && p > 0 && p <= 10) {
+        detectedPoints = p;
+      }
+    }
+
     // Làm sạch tiêu đề "Câu 1:" hay "Bài 1:" và cụm điểm "(1,5 điểm)" ở đầu đề bài
     questionContent = questionContent.replace(/^(?:Chủ\s*đề[^\n]+\n+)?(?:Câu|Bài|Question)\s*\d+(?:\s*\([^\)]+\))?[\.\:\s]*/i, '').trim();
+    // Làm sạch thêm nếu cụm (X điểm) vẫn còn sót lại ở đầu câu
+    questionContent = questionContent.replace(/^\(\s*[0-9]+(?:[\.\,][0-9]+)?\s*(?:điểm|đ|pts?)\s*\)[\.\:\s]*/i, '').trim();
+
+    const finalPoints = typeof detectedPoints === 'number'
+      ? detectedPoints
+      : (isMultipleChoice ? 0.5 : (hasProofKeywords ? 1.5 : 1.0));
 
     return {
       id: `q_parsed_${Date.now()}_${order}`,
@@ -762,7 +811,7 @@ export class FileParserService {
           ]
         : [],
       correctAnswer: isMultipleChoice ? (detectedCorrectLetter || 'A') : (solutionText ? 'Xem lời giải chi tiết' : ''),
-      points: isMultipleChoice ? 0.5 : (hasProofKeywords ? 1.5 : 1.0),
+      points: finalPoints,
       explanation: solutionText,
       rubric: rubricText,
       topicHint: 'Toán THCS',
