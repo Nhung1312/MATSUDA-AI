@@ -101,6 +101,7 @@ export interface StudentAnswer {
   selectedAnswer: string; // 'A', 'B', 'C', 'D' or text / student typed notes
   selectedOptionText?: string; // Nội dung văn bản của phương án học sinh đã chọn
   originalSelectedLabel?: string; // Nhãn phương án tương ứng trên đề gốc (trước khi đảo đề)
+  correctAnswer?: string; // Đáp án chuẩn theo đề học sinh đang làm (đã map chính xác theo đề xáo trộn)
   isCorrect: boolean;
   pointsEarned: number;
   maxPoints: number;
@@ -120,6 +121,9 @@ export interface StudentAnswer {
   isProvisional?: boolean; // Điểm số tạm tính (AI lỗi hoặc chờ GV duyệt, không phải điểm 0 thật)
   aiGradingError?: boolean; // Đánh dấu khi AI gặp lỗi xử lý hoặc ảnh không rõ
   stepGradingResponse?: StepGradingResponse;
+  hasCrossedOutDetection?: boolean;
+  uncertainCorrectionDetected?: boolean;
+  teacherCorrectionNotice?: string;
 }
 
 export interface EssayGradingResult {
@@ -423,6 +427,8 @@ export interface SocraticResponse {
 // STEP-BY-STEP GRADING & ANALYSIS (PHASE 4)
 // ==========================================
 
+export type HandwritingContentType = 'active' | 'crossed_out' | 'overwritten' | 'uncertain' | 'replacement';
+
 export interface StepBBox {
   x: number;
   y: number;
@@ -446,6 +452,12 @@ export interface StepAnalysis {
   isIndependentError?: boolean;
   confidence: number;
   bbox?: StepBBox | null;
+  // Handwriting strikeout / correction metadata (Matsuda Strikeout Guard)
+  contentType?: HandwritingContentType;
+  originalTextBeforeCorrection?: string;
+  hasCrossedOutContent?: boolean;
+  uncertainCorrection?: boolean;
+  crossedOutExplanation?: string;
 }
 
 export interface ScoreBreakdownItem {
@@ -490,6 +502,10 @@ export interface StepGradingResponse {
   needsTeacherReview?: boolean;
   modelUsed?: string;
   message?: string;
+  // Handwriting strikeout detection metadata (Matsuda Strikeout Guard)
+  hasCrossedOutDetection?: boolean;
+  uncertainCorrectionDetected?: boolean;
+  teacherCorrectionNotice?: string;
 }
 
 export interface VerifyCorrectionRequest {

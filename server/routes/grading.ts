@@ -13,7 +13,8 @@ import {
   VerifyCorrectionResponse,
   StepErrorType,
   StepStatus,
-  ScoreBreakdownItem
+  ScoreBreakdownItem,
+  HandwritingContentType
 } from '../types.js';
 
 export const gradingRouter = Router();
@@ -62,7 +63,37 @@ NGUYÊN TẮC CỐT LÕI (BẮT BUỘC):
    - Nếu có rubric, rubric là nguồn chính để phân điểm. Trả scoreBreakdown theo từng tiêu chí.
    - KHÔNG chia đều điểm theo số dòng/bước khi đã có rubric.
    - cascading_error không bị trừ điểm lặp vô lý cho cùng một lỗi gốc; independent_error có thể mất điểm ở tiêu chí tương ứng.
-   - Chỉ khi không có rubric mới dùng Step Analysis làm fallback để đề xuất điểm.`;
+   - Chỉ khi không có rubric mới dùng Step Analysis làm fallback để đề xuất điểm.
+
+8. GIAO THỨC NHẬN DIỆN NÉT GẠCH XOÁ & SỬA CHỮA VIẾT TAY (MATSUDA STRIKEOUT GUARD):
+   A. QUY TẮC NHẬN DIỆN BẮT BUỘC (NHẬN DIỆN TRƯỚC, CHẤM SAU):
+      - Tuyệt đối KHÔNG dùng đáp án chuẩn của giáo viên để quyết định một nét viết có phải bị gạch xoá hay không.
+      - Phân tích hình thái nét bút, hướng gạch (gạch ngang đè qua giữa chữ số, gạch chéo, nét gạch đậm đè chữ), vị trí và ngữ cảnh.
+      - Phân biệt 5 loại nội dung viết tay:
+        1. ACTIVE: Nội dung bình thường còn hiệu lực.
+        2. CROSSED_OUT: Nội dung đã bị gạch xoá rõ ràng (ví dụ: viết số 25 rồi gạch bỏ, gạch ngang qua chữ số, gạch cả dòng biểu thức).
+        3. OVERWRITTEN: Nội dung bị viết đè, có sửa chữa (ví dụ: viết số mới đè lên số cũ, sửa dấu âm thành dấu cộng hoặc ngược lại).
+        4. UNCERTAIN: Không đủ căn cứ xác định (hai chữ số viết đè nhau không phân biệt được số cuối cùng, nét gạch nhập nhằng) -> gán status="uncertain", confidence < 0.70, uncertainCorrection=true, đánh dấu để giáo viên rà soát.
+        5. REPLACEMENT: Nội dung mới thay thế phần đã xoá (viết ngay cạnh, viết lên trên, hoặc viết lại ở dòng tiếp theo hay trang sau).
+
+   B. PHÂN BIỆT RÕ RÀNG NÉT BÚT VỚI DẤU TOÁN HỌC:
+      - DẤU TRỪ (-): Nằm phía trước chữ số, tách rời ở khoảng cách chuẩn của dấu toán học (ví dụ: "-25" là số âm 25, TUYỆT ĐỐI KHÔNG nhận nhầm thành nét gạch xoá số 25).
+      - THANH PHÂN SỐ (/ hoặc thanh ngang phân số): Nằm giữa tử và mẫu, không cắt qua thân chữ số.
+      - NÉT GẠCH XOÁ: Cắt ngang qua thân chữ số/chữ cái hoặc gạch chéo/đè lên toàn bộ biểu thức.
+
+   C. NGUYÊN TẮC CHẤM KHI CÓ SỬA XOÁ:
+      - CHỈ CHẤM NỘI DUNG CUỐI CÙNG CÒN HIỆU LỰC (ACTIVE hoặc REPLACEMENT). Bỏ qua nội dung CROSSED_OUT đã gạch bỏ.
+      - KHÔNG TRỪ ĐIỂM vì học sinh gạch xoá để sửa bài.
+      - Nếu lời giải cũ sai nhưng đã gạch bỏ và thay bằng lời giải đúng ở dòng dưới hoặc trang sau -> CHẤM LỜI GIẢI MỚI (học sinh được trọn điểm bước đó).
+      - Nếu phần sửa cuối cùng vẫn sai -> chấm theo lỗi thực tế của lời giải sửa cuối cùng.
+      - KHÔNG tự suy diễn chữ số để biến phép tính sai thành đúng.
+      - KHÔNG tự xoá nội dung chỉ vì biểu thức đó sai về toán học nếu học sinh không có nét gạch xoá.
+      - Nếu bài có nhiều ảnh: Lời giải bị gạch ở ảnh trước và làm lại ở ảnh sau -> giữ đúng thứ tự pageIndex và ưu tiên lời giải sau cùng còn hiệu lực.
+      - Bài viết sạch, không có gạch xoá -> chấm bình thường, giữ nguyên kết quả.
+      - THÔNG BÁO CHO GIÁO VIÊN:
+        + Nếu có sửa xoá rõ ràng: đặt hasCrossedOutDetection=true, teacherCorrectionNotice="Phát hiện nội dung đã gạch xoá. Hệ thống ưu tiên lời giải sau khi sửa."
+        + Nếu không xác định chắc chắn nội dung đã sửa: đặt uncertainCorrectionDetected=true, needsTeacherReview=true, teacherCorrectionNotice="Không xác định chắc chắn nội dung đã sửa. Cần giáo viên xác minh."
+        + KHÔNG hiển thị nội dung bị gạch xoá như một lỗi kiến thức trong báo cáo của học sinh.`;
 
 /**
  * Endpoint: POST /api/grading/step-analysis
@@ -182,7 +213,7 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
             properties: {
               stepIndex: { type: Type.INTEGER, description: 'Chỉ số bước bắt đầu từ 1' },
               pageIndex: { type: Type.INTEGER, description: 'Chỉ số trang ảnh bài làm (0 cho ảnh 1, 1 cho ảnh 2...), mặc định 0' },
-              studentLatex: { type: Type.STRING, description: 'Biểu thức hoặc nội dung bước học sinh viết dạng LaTeX' },
+              studentLatex: { type: Type.STRING, description: 'Biểu thức hoặc nội dung bước học sinh viết dạng LaTeX (nội dung còn hiệu lực sau khi sửa)' },
               referenceStepLatex: { type: Type.STRING, description: 'Biểu thức chuẩn tương ứng dạng LaTeX' },
               status: {
                 type: Type.STRING,
@@ -207,6 +238,26 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
                   width: { type: Type.NUMBER },
                   height: { type: Type.NUMBER }
                 }
+              },
+              contentType: {
+                type: Type.STRING,
+                description: 'Loại nội dung viết tay: active | crossed_out | overwritten | uncertain | replacement'
+              },
+              originalTextBeforeCorrection: {
+                type: Type.STRING,
+                description: 'Nội dung cũ trước khi bị gạch bỏ hoặc viết đè nếu có (ví dụ: số 25 bị gạch thay bằng 20)'
+              },
+              hasCrossedOutContent: {
+                type: Type.BOOLEAN,
+                description: 'True nếu bước có chi tiết bị gạch xoá hoặc sửa chữa'
+              },
+              uncertainCorrection: {
+                type: Type.BOOLEAN,
+                description: 'True nếu hai chữ số viết đè hoặc nét gạch nhập nhằng không xác định chắc chắn được chữ số cuối'
+              },
+              crossedOutExplanation: {
+                type: Type.STRING,
+                description: 'Mô tả chi tiết nét gạch xoá hoặc lý do sửa (không coi là lỗi kiến thức)'
               }
             },
             required: ['stepIndex', 'studentLatex', 'status', 'comment', 'confidence']
@@ -234,6 +285,18 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
         },
         scoringMethod: { type: Type.STRING, description: 'rubric | step_fallback' },
         feedback: { type: Type.STRING, description: 'Nhận xét tổng quan toàn bài' },
+        hasCrossedOutDetection: {
+          type: Type.BOOLEAN,
+          description: 'True nếu phát hiện bài làm có chi tiết bị gạch xoá, viết đè hoặc sửa bài'
+        },
+        uncertainCorrectionDetected: {
+          type: Type.BOOLEAN,
+          description: 'True nếu có chi tiết sửa chữa không chắc chắn cần giáo viên xác minh'
+        },
+        teacherCorrectionNotice: {
+          type: Type.STRING,
+          description: 'Thông báo sư phạm chuẩn cho giáo viên đối chiếu nét sửa xoá'
+        },
         referenceSolution: {
           type: Type.OBJECT,
           properties: {
@@ -288,7 +351,7 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
       return res.status(200).json(generateRuleBasedGrading(body));
     }
 
-    // Hậu xử lý & Chuẩn hóa dữ liệu theo nguyên tắc Đợt 4
+    // Hậu xử lý & Chuẩn hóa dữ liệu theo nguyên tắc Đợt 4 & Matsuda Strikeout Guard
     const rawAnalysis: any[] = Array.isArray(resultJson.analysis) ? resultJson.analysis : [];
     let detectedFirstErrorIndex: number | null = null;
     let detectedFirstErrorType: StepErrorType | null = null;
@@ -297,28 +360,57 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
       const stepIdx = rawStep.stepIndex || (index + 1);
       // Đợt 7C: Không tự hiểu AI chắc chắn 95% khi thiếu confidence. Mặc định bảo thủ 0.60 (<0.70) để giáo viên rà soát.
       const hasExplicitConf = typeof rawStep.confidence === 'number' && !isNaN(rawStep.confidence);
-      const conf = hasExplicitConf ? Math.max(0, Math.min(1, rawStep.confidence)) : 0.60;
+      let conf = hasExplicitConf ? Math.max(0, Math.min(1, rawStep.confidence)) : 0.60;
       
+      const rawContentType = String(rawStep.contentType || '').toLowerCase();
+      let contentType: HandwritingContentType = 'active';
+      if (rawContentType === 'crossed_out') contentType = 'crossed_out';
+      else if (rawContentType === 'overwritten') contentType = 'overwritten';
+      else if (rawContentType === 'uncertain') contentType = 'uncertain';
+      else if (rawContentType === 'replacement') contentType = 'replacement';
+      else if (rawStep.hasCrossedOutContent) contentType = 'overwritten';
+
+      const hasCrossedOutContent = Boolean(
+        rawStep.hasCrossedOutContent ||
+        contentType === 'crossed_out' ||
+        contentType === 'overwritten' ||
+        contentType === 'replacement' ||
+        rawStep.originalTextBeforeCorrection
+      );
+
+      const isUncertainCorrection = Boolean(
+        rawStep.uncertainCorrection ||
+        contentType === 'uncertain'
+      );
+
+      if (isUncertainCorrection) {
+        conf = Math.min(conf, 0.60);
+      }
+
       let status: StepStatus = 'correct';
       const rawStatus = String(rawStep.status || '').toLowerCase();
+      const isPureCrossedOut = contentType === 'crossed_out';
       
-      if (rawStatus === 'first_error' || rawStep.isFirstError) {
+      if (isPureCrossedOut) {
+        // Dòng này đã bị học sinh gạch bỏ hoàn toàn, không tham gia chuỗi lỗi toán học
+        status = 'uncertain';
+      } else if (isUncertainCorrection || rawStatus === 'uncertain' || rawStatus === 'unclear' || conf < 0.70 || !hasExplicitConf) {
+        status = 'uncertain';
+      } else if (rawStatus === 'first_error' || rawStep.isFirstError) {
         status = 'first_error';
       } else if (rawStatus === 'cascading_error' || rawStep.isFollowUpError) {
         status = 'cascading_error';
       } else if (rawStatus === 'independent_error' || rawStep.isIndependentError) {
         status = 'independent_error';
-      } else if (rawStatus === 'uncertain' || rawStatus === 'unclear' || conf < 0.70 || !hasExplicitConf) {
-        status = 'uncertain';
       } else if (rawStatus === 'incorrect') {
         status = detectedFirstErrorIndex === null ? 'first_error' : 'cascading_error';
       }
 
-      // Xác định chính xác bước sai đầu tiên
-      if (status === 'first_error' && detectedFirstErrorIndex === null) {
+      // Xác định chính xác bước sai đầu tiên (chỉ tính bước active / replacement có hiệu lực)
+      if (!isPureCrossedOut && status === 'first_error' && detectedFirstErrorIndex === null) {
         detectedFirstErrorIndex = stepIdx;
         detectedFirstErrorType = (rawStep.errorType as StepErrorType) || 'other';
-      } else if (status === 'first_error' && detectedFirstErrorIndex !== null) {
+      } else if (!isPureCrossedOut && status === 'first_error' && detectedFirstErrorIndex !== null) {
         // Chỉ có duy nhất một first_error
         status = 'cascading_error';
       }
@@ -350,22 +442,38 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
         isIndependentError: status === 'independent_error',
         confidence: conf,
         bbox,
+        contentType,
+        originalTextBeforeCorrection: rawStep.originalTextBeforeCorrection ? sanitizeMathData(rawStep.originalTextBeforeCorrection) : undefined,
+        hasCrossedOutContent,
+        uncertainCorrection: isUncertainCorrection,
+        crossedOutExplanation: rawStep.crossedOutExplanation ? sanitizeMathData(rawStep.crossedOutExplanation) : undefined,
       };
     });
 
     // Tính toán số liệu tổng hợp & Kiểm tra an toàn sư phạm (Safety Check)
-    const totalSteps = normalizedAnalysis.length;
-    const correctStepsCount = normalizedAnalysis.filter(s => s.status === 'correct').length;
-    const hasRealError = detectedFirstErrorIndex !== null || normalizedAnalysis.some(s => s.status === 'independent_error');
-    const hasUncertainStep = normalizedAnalysis.some(s => s.status === 'uncertain' || s.confidence < 0.70);
+    const activeSteps = normalizedAnalysis.filter(s => s.contentType !== 'crossed_out');
+    const totalSteps = activeSteps.length > 0 ? activeSteps.length : normalizedAnalysis.length;
+    const correctStepsCount = normalizedAnalysis.filter(s => s.status === 'correct' && s.contentType !== 'crossed_out').length;
+    const hasRealError = detectedFirstErrorIndex !== null || normalizedAnalysis.some(s => s.status === 'independent_error' && s.contentType !== 'crossed_out');
+    const hasUncertainStep = normalizedAnalysis.some(s => (s.status === 'uncertain' || s.confidence < 0.70) && s.contentType !== 'crossed_out');
     // Tách rõ đúng hoàn toàn: Không có lỗi thực tế, không có bước không chắc chắn, và toàn bộ bước đúng
-    const isAllCorrect = !hasRealError && !hasUncertainStep && normalizedAnalysis.length > 0 && normalizedAnalysis.every(s => s.status === 'correct');
+    const isAllCorrect = !hasRealError && !hasUncertainStep && activeSteps.length > 0 && activeSteps.every(s => s.status === 'correct');
 
     const firstError = detectedFirstErrorIndex 
       ? normalizedAnalysis.find(s => s.stepIndex === detectedFirstErrorIndex)
       : null;
 
-    let needsTeacherReview = hasUncertainStep;
+    const anyUncertainCorrection = normalizedAnalysis.some(s => s.uncertainCorrection) || Boolean(resultJson.uncertainCorrectionDetected);
+    const anyCrossedOut = normalizedAnalysis.some(s => s.hasCrossedOutContent || s.contentType === 'crossed_out' || s.contentType === 'replacement' || s.contentType === 'overwritten') || Boolean(resultJson.hasCrossedOutDetection);
+
+    let teacherCorrectionNotice: string | undefined = undefined;
+    if (anyUncertainCorrection) {
+      teacherCorrectionNotice = 'Không xác định chắc chắn nội dung đã sửa. Cần giáo viên xác minh.';
+    } else if (anyCrossedOut) {
+      teacherCorrectionNotice = 'Phát hiện nội dung đã gạch xoá. Hệ thống ưu tiên lời giải sau khi sửa.';
+    }
+
+    let needsTeacherReview = hasUncertainStep || anyUncertainCorrection;
     let computedScore: number;
 
     const hasRubric = typeof rubric === 'string' && rubric.trim().length > 0;
@@ -468,6 +576,9 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
       maxScore: maxPoints,
       feedback: feedbackText,
       needsTeacherReview,
+      hasCrossedOutDetection: anyCrossedOut,
+      uncertainCorrectionDetected: anyUncertainCorrection,
+      teacherCorrectionNotice,
       scoreBreakdown: normalizedScoreBreakdown.length > 0 ? normalizedScoreBreakdown : undefined,
       scoringMethod,
       referenceSolution: resultJson.referenceSolution ? {
@@ -650,10 +761,17 @@ Toán học bọc trong cặp dấu $...$.`;
  */
 function generateRuleBasedGrading(req: StepGradingRequest): StepGradingResponse {
   const { questionText, studentSolutionText, maxPoints = 10 } = req;
-  const lines = (studentSolutionText || '')
+  const rawText = studentSolutionText || '';
+  const lines = rawText
     .split(/\n+/)
     .map(l => l.trim())
     .filter(l => l.length > 0);
+
+  // Nhận diện mẫu gạch xoá hoặc viết đè trong chuỗi bài làm (nếu có)
+  const strikeRegex = /~~([^~]+)~~|\[(gạch|bỏ|xoá|crossed|strike)\]/i;
+  const uncertainRegex = /\[(không rõ|uncertain|nhập nhằng|viết đè không rõ)\]|\?\?\?/i;
+  const anyCrossedText = strikeRegex.test(rawText);
+  const anyUncertainText = uncertainRegex.test(rawText);
 
   const steps: StepAnalysis[] = [];
 
@@ -668,11 +786,15 @@ function generateRuleBasedGrading(req: StepGradingRequest): StepGradingResponse 
       errorType: 'other',
       isFirstError: false,
       isFollowUpError: false,
-      isIndependentError: false
+      isIndependentError: false,
+      contentType: 'uncertain'
     });
   } else {
     lines.forEach((line, idx) => {
       const stepIdx = idx + 1;
+      const isStrikeLine = strikeRegex.test(line);
+      const isUncertainLine = uncertainRegex.test(line);
+      const contentType: HandwritingContentType = isUncertainLine ? 'uncertain' : (isStrikeLine ? 'crossed_out' : 'active');
       steps.push({
         stepIndex: stepIdx,
         stepNumber: stepIdx,
@@ -683,9 +805,19 @@ function generateRuleBasedGrading(req: StepGradingRequest): StepGradingResponse 
         errorType: 'other',
         isFirstError: false,
         isFollowUpError: false,
-        isIndependentError: false
+        isIndependentError: false,
+        contentType,
+        hasCrossedOutContent: isStrikeLine,
+        uncertainCorrection: isUncertainLine
       });
     });
+  }
+
+  let teacherCorrectionNotice: string | undefined = undefined;
+  if (anyUncertainText) {
+    teacherCorrectionNotice = 'Không xác định chắc chắn nội dung đã sửa. Cần giáo viên xác minh.';
+  } else if (anyCrossedText) {
+    teacherCorrectionNotice = 'Phát hiện nội dung đã gạch xoá. Hệ thống ưu tiên lời giải sau khi sửa.';
   }
 
   return {
@@ -703,5 +835,8 @@ function generateRuleBasedGrading(req: StepGradingRequest): StepGradingResponse 
     needsTeacherReview: true,
     scoringMethod: 'unavailable',
     analysisSource: 'rule',
+    hasCrossedOutDetection: anyCrossedText,
+    uncertainCorrectionDetected: anyUncertainText,
+    teacherCorrectionNotice
   };
 }

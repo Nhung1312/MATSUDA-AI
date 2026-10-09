@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Question, QuestionOption, QuestionType } from '../types';
+import { formatQuestionSubItems } from '../utils/questionUtils';
 
 // Set up pdfjs worker
 try {
@@ -74,7 +75,7 @@ export class FileParserService {
         return {
           ...item,
           order: idx + 1,
-          question: item.question.trim(),
+          question: formatQuestionSubItems(item.question.trim()),
           options: isEssay ? [] : options,
           correctAnswer: isEssay ? String(item.correctAnswer || '').trim() : normalizedCorrect
         };
@@ -734,9 +735,8 @@ export class FileParserService {
         questionContent = blockText;
       }
 
-      // 2. Tự động ngắt dòng và thụt lề định dạng đẹp mắt cho các ý con a), b), c)...
-      // Đảm bảo mỗi ý con a), b), c) được xuống dòng đôi và bôi đậm **a)**
-      questionContent = questionContent.replace(/(?:\r?\n|\s+)([a-d]|[1-4])\)\s+/gi, '\n\n**$1)** ');
+      // 2. Tự động ngắt dòng và thụt lề định dạng đẹp mắt cho các ý con a), b), c)... hoặc 1), 2), 3)...
+      questionContent = formatQuestionSubItems(questionContent);
 
       // Nếu có biểu điểm trong lời giải
       if (solutionText.includes('+0.') || solutionText.includes('điểm') || solutionText.includes('Rubric')) {
@@ -772,8 +772,8 @@ export class FileParserService {
   }
 
   private static buildFallbackItem(text: string, order: number): ParsedItem {
-    // Format ngắt ý con a), b), c) cho văn bản fallback
-    const formatted = text.trim().replace(/(?:\r?\n|\s+)([a-d]|[1-4])\)\s+/gi, '\n\n**$1)** ');
+    // Format ngắt ý con a), b), c)... hoặc 1), 2), 3)... cho văn bản fallback
+    const formatted = formatQuestionSubItems(text.trim());
     return {
       id: `q_parsed_${Date.now()}_${order}`,
       order: order,

@@ -555,15 +555,16 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
                   )}
                   {context.detectedError && (
                     <div className="text-[11px] text-rose-800 dark:text-rose-300 leading-tight">
-                      {context.detectedError}
+                      <MathDisplay content={context.detectedError} />
                     </div>
                   )}
                 </div>
               ) : context.detectedError ? (
                 <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div className="min-w-0">
-                    <span className="font-bold">Nhận xét:</span> {context.detectedError}
+                  <div className="min-w-0 flex-1">
+                    <span className="font-bold mr-1">Nhận xét:</span>
+                    <MathDisplay content={context.detectedError} />
                   </div>
                 </div>
               ) : null}
@@ -764,7 +765,7 @@ export const SocraticTutorModal: React.FC<SocraticTutorModalProps> = ({
 
                   {remedialFeedback && (
                     <div className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-900 dark:text-indigo-200 text-[11px] font-semibold">
-                      {remedialFeedback}
+                      <MathDisplay content={remedialFeedback} />
                     </div>
                   )}
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import { formatQuestionSubItems, sanitizeMathString } from '../utils/questionUtils';
 
 interface MathDisplayProps {
   text?: string | null;
@@ -14,10 +15,10 @@ interface MathDisplayProps {
 /**
  * Intelligent LaTeX & KaTeX parser for Vietnamese Secondary School Mathematics (Toán THCS Lớp 6 - 9)
  * Supports:
- * - Standard LaTeX Block formulas: `$$...$$` or `\[...\]`
+ * - Standard LaTeX Block formulas: `$$...$$` or `\[...\]` (including multi-line blocks like aligned, cases)
  * - Standard LaTeX Inline formulas: `$...$` or `\(...\)`
- * - Vietnamese Math notations: fractions (e.g. 2/5, -3/7), square roots (√2x-6), powers (x^2, x²), subscripts (x₁), angles (\widehat{ABC}, \angle A), degrees (90°), vectors (\vec{AB}).
- * - Safe rendering: will not crash on malformed inputs.
+ * - Vietnamese Math notations: fractions (e.g. 2/5, -3/7), square roots (√2x-6), powers (x^2, x², x^{2}), subscripts (x₁, x_{1}), angles (\widehat{ABC}, \angle A), degrees (90°), vectors (\vec{AB}).
+ * - Safe rendering: will not crash or break on malformed inputs or control characters.
  */
 export const MathDisplay: React.FC<MathDisplayProps> = ({ 
   text, 
@@ -30,28 +31,71 @@ export const MathDisplay: React.FC<MathDisplayProps> = ({
   const rawText = text ?? content ?? math ?? (typeof children === 'string' ? children : '');
   if (!rawText || typeof rawText !== 'string') return null;
 
+  // Làm sạch các control characters do escape JSON gây ra trước
+  const sanitizedText = sanitizeMathString(rawText);
+
   if (inline) {
     return (
       <span className={`inline-math-container text-inherit font-normal ${className}`}>
-        {renderInlineContent(rawText)}
+        {renderInlineContent(sanitizedText)}
       </span>
     );
   }
 
-  // Split lines
-  const lines = rawText.split(/\r?\n/);
+  // Tự động nhận diện xuống dòng các ý nhỏ a) b) c)... hoặc 1) 2) 3)...
+  const formattedText = formatQuestionSubItems(sanitizedText);
+
+  // TÁCH BLOCK MATH TRƯỚC ($$...$$ hoặc \[...\]) ĐỂ BẢO VỆ CÔNG THỨC NHIỀU DÒNG
+  // Tránh việc split(\n) làm xé toạc các khối công thức như \begin{cases}, \begin{aligned}...
+  const blockRegex = /(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\])/g;
+  const segments = formattedText.split(blockRegex);
 
   return (
     <div className={`math-display-container text-inherit leading-relaxed break-words ${className}`}>
-      {lines.map((line, lIdx) => {
-        if (!line.trim()) {
-          return <div key={lIdx} className="h-2" />;
+      {segments.map((seg, sIdx) => {
+        if (!seg) return null;
+
+        // Block math: $$...$$
+        if (seg.startsWith('$$') && seg.endsWith('$$') && seg.length >= 4) {
+          const formula = seg.slice(2, -2).trim();
+          const html = renderKaTeX(formula, true);
+          return (
+            <div
+              key={`block-${sIdx}`}
+              className="my-3 overflow-x-auto py-1 text-center font-serif text-inherit katex-block-wrapper"
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          );
         }
 
+        // Block math: \[...\]
+        if (seg.startsWith('\\[') && seg.endsWith('\\]') && seg.length >= 4) {
+          const formula = seg.slice(2, -2).trim();
+          const html = renderKaTeX(formula, true);
+          return (
+            <div
+              key={`block-${sIdx}`}
+              className="my-3 overflow-x-auto py-1 text-center font-serif text-inherit katex-block-wrapper"
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          );
+        }
+
+        // Đoạn văn thông thường: tách thành các dòng
+        const lines = seg.split(/\r?\n/);
         return (
-          <div key={lIdx} className={lIdx > 0 ? 'mt-2' : ''}>
-            {renderLineContent(line)}
-          </div>
+          <React.Fragment key={`text-seg-${sIdx}`}>
+            {lines.map((line, lIdx) => {
+              if (!line.trim()) {
+                return <div key={`empty-${lIdx}`} className="h-2" />;
+              }
+              return (
+                <div key={`line-${lIdx}`} className={lIdx > 0 ? 'mt-2' : ''}>
+                  {renderInlineContent(line)}
+                </div>
+              );
+            })}
+          </React.Fragment>
         );
       })}
     </div>
@@ -62,7 +106,15 @@ export const MathDisplay: React.FC<MathDisplayProps> = ({
  * Pre-processes and normalizes raw math symbols into clean LaTeX strings
  */
 function normalizeToLatex(formula: string): string {
-  return formula.trim()
+  let clean = sanitizeMathString(formula).trim();
+
+  // Sửa lỗi nhân đôi gạch chéo ngược thừa do JSON string escape (ví dụ \\frac -> \frac)
+  clean = clean.replace(/\\\\([a-zA-Z]+)/g, '\\$1');
+
+  // Sửa lỗi % chưa được escape trong công thức Toán (trong LaTeX, % là chú thích làm mất phần sau)
+  clean = clean.replace(/(?<!\\)%/g, '\\%');
+
+  return clean
     // Unicode superscripts & subscripts
     .replace(/⁰/g, '^0')
     .replace(/¹/g, '^1')
@@ -123,47 +175,6 @@ function renderKaTeX(formula: string, isBlock: boolean): string {
   } catch {
     return `<span class="font-mono text-indigo-600">${escapeHtml(formula)}</span>`;
   }
-}
-
-/**
- * Parses and renders a line with block equations ($$...$$ or \[...\]) and inline content
- */
-function renderLineContent(line: string): React.ReactNode {
-  // Regex to split block math
-  const blockRegex = /(\$\$.*?\$\$|\\\[.*?\\\])/gs;
-  const segments = line.split(blockRegex);
-
-  return segments.map((seg, idx) => {
-    if (!seg) return null;
-
-    // $$...$$
-    if (seg.startsWith('$$') && seg.endsWith('$$') && seg.length >= 4) {
-      const formula = seg.slice(2, -2);
-      const html = renderKaTeX(formula, true);
-      return (
-        <div
-          key={idx}
-          className="my-3 overflow-x-auto py-1 text-center font-serif text-inherit katex-block-wrapper"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      );
-    }
-
-    // \[...\]
-    if (seg.startsWith('\\[') && seg.endsWith('\\]') && seg.length >= 4) {
-      const formula = seg.slice(2, -2);
-      const html = renderKaTeX(formula, true);
-      return (
-        <div
-          key={idx}
-          className="my-3 overflow-x-auto py-1 text-center font-serif text-inherit katex-block-wrapper"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      );
-    }
-
-    return <span key={idx} className="text-inherit">{renderInlineContent(seg)}</span>;
-  });
 }
 
 /**
@@ -241,8 +252,8 @@ function extractBalancedBraces(str: string, startIndex: number): { content: stri
  * - Nested LaTeX square roots: \sqrt{...} or \sqrt[n]{...}
  * - LaTeX environments: \begin{cases}...\end{cases}
  * - Geometry notations: \widehat{ABC}, \triangle ABC, \angle A, \vec{AB}
- * - Powers & superscripts: x^2, x², (x+1)², 10^5
- * - Subscripts: x_1, x₁, x_2, y_0
+ * - Powers & superscripts: x^2, x², (x+1)², x^{2}, 10^5
+ * - Subscripts: x_1, x₁, x_2, x_{1}, y_0
  * - LaTeX math symbols without $: \Delta, \pm, \ge, \le, \neq, \approx, \pi, \cdot, \times
  * - Standalone numeric fractions: 1/2, -3/7
  * - Degrees: 90°, 45°
@@ -337,8 +348,8 @@ function renderSmartMathText(str: string): React.ReactNode {
       continue;
     }
 
-    // Exponents with powers or unicode: x^2, (x+1)^2, x², y³, a⁴, 10^5
-    const expMatch = subStr.match(/^([a-zA-Z0-9()]+\^[0-9a-zA-Z+-]+|[a-zA-Z0-9()]+[⁰¹²³⁴⁵⁶⁷⁸⁹]+)/);
+    // Exponents with powers, braces or unicode: x^2, x^{2}, (x+1)^2, (x+1)^{2}, x², y³, a⁴, 10^5, 10^{-3}
+    const expMatch = subStr.match(/^([a-zA-Z0-9()]+\^(\{[^}]+\}|[0-9a-zA-Z+-]+)|[a-zA-Z0-9()]+[⁰¹²³⁴⁵⁶⁷⁸⁹]+)/);
     if (expMatch) {
       const token = expMatch[1];
       const html = renderKaTeX(token, false);
@@ -353,8 +364,8 @@ function renderSmartMathText(str: string): React.ReactNode {
       continue;
     }
 
-    // Subscripts: x_1, x_2, x₁, y₂
-    const subMatch = subStr.match(/^([a-zA-Z]_[0-9a-zA-Z]+|[a-zA-Z][₀₁₂₃₄₅₆₇₈₉]+)/);
+    // Subscripts: x_1, x_{1}, x_2, x₁, y₂
+    const subMatch = subStr.match(/^([a-zA-Z]_(\{[^}]+\}|[0-9a-zA-Z]+)|[a-zA-Z][₀₁₂₃₄₅₆₇₈₉]+)/);
     if (subMatch) {
       const token = subMatch[1];
       const html = renderKaTeX(token, false);

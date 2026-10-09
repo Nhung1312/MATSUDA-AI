@@ -51,6 +51,8 @@ export interface SocraticResponse {
 // PHASE 4: STEP-BY-STEP GRADING & ANALYSIS TYPES
 // ==========================================
 
+export type HandwritingContentType = 'active' | 'crossed_out' | 'overwritten' | 'uncertain' | 'replacement';
+
 export interface StepBBox {
   x: number;
   y: number;
@@ -74,6 +76,12 @@ export interface StepAnalysis {
   isIndependentError?: boolean;
   confidence: number;
   bbox?: StepBBox | null;
+  // Handwriting strikeout / correction metadata (Matsuda Strikeout Guard)
+  contentType?: HandwritingContentType;
+  originalTextBeforeCorrection?: string;
+  hasCrossedOutContent?: boolean;
+  uncertainCorrection?: boolean;
+  crossedOutExplanation?: string;
 }
 
 export interface ScoreBreakdownItem {
@@ -118,6 +126,10 @@ export interface StepGradingResponse {
   needsTeacherReview?: boolean;
   modelUsed?: string;
   message?: string;
+  // Handwriting strikeout detection metadata (Matsuda Strikeout Guard)
+  hasCrossedOutDetection?: boolean;
+  uncertainCorrectionDetected?: boolean;
+  teacherCorrectionNotice?: string;
 }
 
 export interface VerifyCorrectionRequest {

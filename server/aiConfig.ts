@@ -103,12 +103,13 @@ QUY TẮC TOÁN HỌC & LATEX:
 export const sanitizeMathData = (val: string): string => {
   if (!val || typeof val !== 'string') return '';
   return val
-    .replace(/[\t\\]?times\b/g, '\\cdot')
-    .replace(/[\t\\]?imes\b/g, '\\cdot')
-    .replace(/([0-9a-zA-Z\)\}])\s*imes\s*([0-9a-zA-Z\(\{])/g, '$1 \\cdot $2')
-    .replace(/[\x0c\\]?frac\{/g, '\\frac{')
+    .replace(/\x0crac\{/g, '\\frac{')
     .replace(/(?:\\+f+|\f)+\\*(?:frac\{|rac\{)/g, '\\frac{')
-    .replace(/[\t\\]?ext\{/g, '\\text{')
-    .replace(/[\x08\\]?oxed\{/g, '\\boxed{')
-    .replace(/[\x08\\]?egin\{/g, '\\begin{');
+    .replace(/\x08egin\{/g, '\\begin{')
+    .replace(/\x08oxed\{/g, '\\boxed{')
+    .replace(/\t(imes|ext|riangle|heta|au|o)\b/g, '\\$1')
+    .replace(/\r(ight|ho)\b/g, '\\$1')
+    .replace(/\n(eq)\b/g, '\\$1')
+    .replace(/([0-9a-zA-Z\)\}])\s*imes\s*([0-9a-zA-Z\(\{])/g, '$1 \\cdot $2')
+    .replace(/\\\\([a-zA-Z]+)/g, '\\$1');
 };

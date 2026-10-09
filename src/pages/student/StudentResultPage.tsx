@@ -276,7 +276,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
     const referenceStepLatex = firstErrStepObj?.referenceStepLatex;
 
     let errorDesc = !ans.isCorrect
-      ? `Học sinh đã chọn/điền: "${ans.selectedAnswer || 'chưa làm'}", trong khi đáp án đúng là "${question.correctAnswer}".`
+      ? `Học sinh đã chọn/điền: "${ans.selectedAnswer || 'chưa làm'}", trong khi đáp án đúng là "${ans.correctAnswer || question.correctAnswer}".`
       : undefined;
 
     if (firstErrorStep) {
@@ -900,11 +900,16 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                     {!isEssayQuestion(question) && question.options && question.options.length > 0 && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
                         {question.options.map((opt) => {
+                          const effectiveCorrectAnswer = ans.correctAnswer || (ans.isCorrect ? ans.selectedAnswer : '');
                           const isStudentChoice = ans.selectedAnswer === opt.id || 
-                            (ans.originalSelectedLabel && ans.originalSelectedLabel === opt.id) ||
-                            (ans.selectedOptionText && opt.text && ans.selectedOptionText.trim() === opt.text.trim());
-                          const isCorrectChoice = question.correctAnswer === opt.id ||
-                            (question.correctAnswer && opt.text && question.correctAnswer.trim() === opt.text.trim());
+                            (!ans.selectedAnswer && ans.selectedOptionText && opt.text && ans.selectedOptionText.trim() === opt.text.trim());
+                          const isCorrectChoice = ans.isCorrect
+                            ? isStudentChoice
+                            : (effectiveCorrectAnswer
+                                ? (effectiveCorrectAnswer === opt.id || (opt.text && effectiveCorrectAnswer.trim() === opt.text.trim()))
+                                : ((Boolean((opt as any).originalId) && (opt as any).originalId === question.correctAnswer) ||
+                                   question.correctAnswer === opt.id ||
+                                   (question.correctAnswer && opt.text && question.correctAnswer.trim() === opt.text.trim())));
 
                           let optContainerClass = 'border-slate-200 bg-slate-50/70 text-slate-700';
                           let badgeClass = 'bg-slate-200 text-slate-700';
@@ -961,7 +966,9 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                     {ans.studentSolutionText && (
                       <div className="mb-4 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-1">
                         <div className="font-bold text-slate-700">Bài làm</div>
-                        <div className="font-mono text-slate-800 whitespace-pre-line pl-1">{ans.studentSolutionText}</div>
+                        <div className="font-mono text-slate-800 whitespace-pre-line pl-1">
+                          <MathDisplay text={ans.studentSolutionText} />
+                        </div>
                       </div>
                     )}
 
@@ -1004,9 +1011,9 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                             Đạt {currentAiGrading.score}/{question.points} điểm
                           </span>
                         </div>
-                        <p className="leading-relaxed whitespace-pre-line text-indigo-900">
-                          {currentAiGrading.feedback}
-                        </p>
+                        <div className="leading-relaxed whitespace-pre-line text-indigo-900">
+                          <MathDisplay text={currentAiGrading.feedback} />
+                        </div>
                       </div>
                     )}
 

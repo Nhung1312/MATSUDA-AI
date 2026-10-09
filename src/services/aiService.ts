@@ -11,7 +11,7 @@
 
 import { GoogleGenAI } from '@google/genai';
 import { Question, QuestionAnalysis, Submission, EssayGradingResult } from '../types';
-import { isEssayQuestion } from '../utils/questionUtils';
+import { isEssayQuestion, formatQuestionSubItems, sanitizeMathString } from '../utils/questionUtils';
 
 export interface GenerateQuestionsParams {
   grade: '6' | '7' | '8' | '9';
@@ -815,6 +815,11 @@ QUY TẮC SƯ PHẠM VÀ PHẠM VI KIẾN THỨC BẮT BUỘC (TUÂN THỦ 100%)
    - Tự giải đối soát lại để chắc chắn phương án được gán là correctAnswer là đúng tuyệt đối 100%, 3 phương án còn lại là bẫy số học điển hình.
    - Chọn số liệu đẹp (nghiệm nguyên hoặc phân số tối giản).
 
+3. CHUẨN HÓA CÔNG THỨC TOÁN HỌC (LATEX):
+   - Mọi biểu thức toán, phân số, căn thức, phương trình, số mũ, biến số, góc, vector BẮT BUỘC phải đặt trong cặp dấu đô la: $công_thức$.
+   - Ví dụ: $x^2 - 4$, $\\frac{a}{b}$, $\\sqrt{x}$, $x = 2$, $\\Delta = b^2 - 4ac$.
+   - Trong JSON, các dấu gạch chéo ngược phải được escape hợp lệ: \\\\frac, \\\\sqrt, \\\\cdot, v.v.
+
 Trả về mảng JSON thuần túy (không bọc text giải thích bên ngoài):
 [
   {
@@ -848,9 +853,12 @@ Trả về mảng JSON thuần túy (không bọc text giải thích bên ngoài
             return arr.map((item, idx) => ({
               id: `q_ai_${Date.now()}_${idx + 1}`,
               order: idx + 1,
-              question: item.question || `Câu ${idx + 1}`,
+              question: formatQuestionSubItems(sanitizeMathString(item.question || `Câu ${idx + 1}`)),
               type: 'multiple_choice',
-              options: Array.isArray(item.options) ? item.options : [
+              options: Array.isArray(item.options) ? item.options.map((opt: any) => ({
+                id: opt.id || String.fromCharCode(65 + idx),
+                text: sanitizeMathString(opt.text || '')
+              })) : [
                 { id: 'A', text: 'Phương án A' },
                 { id: 'B', text: 'Phương án B' },
                 { id: 'C', text: 'Phương án C' },
@@ -858,7 +866,7 @@ Trả về mảng JSON thuần túy (không bọc text giải thích bên ngoài
               ],
               correctAnswer: item.correctAnswer || 'A',
               points: item.points || 1,
-              explanation: item.explanation || '',
+              explanation: sanitizeMathString(item.explanation || ''),
               topicHint: item.topicHint || params.topic
             }));
           }
@@ -1173,7 +1181,7 @@ Trả về JSON duy nhất:
       questions.push({
         id: currentQ.id || `parsed_${Date.now()}_${questions.length + 1}`,
         order: currentQ.order || questions.length + 1,
-        question: currentQ.question.trim(),
+        question: formatQuestionSubItems(currentQ.question.trim()),
         type: isEssay ? 'essay' : 'multiple_choice',
         options: isEssay ? [] : opts,
         correctAnswer: isEssay ? '' : (currentQ.correctAnswer || 'A'),
@@ -2340,7 +2348,11 @@ QUY TẮC BÓC TÁCH CỰC KỲ QUAN TRỌNG:
    - Mọi biểu thức toán, phân số, căn thức, phương trình, số mũ, góc, vector, hệ phương trình BẮT BUỘC phải đặt trong cặp dấu đô la: $công_thức$.
    - Ví dụ: $\\frac{x - 1}{x + 2}$, $\\sqrt{2x + 1}$, $x^2 - 4x + 4 = 0$, $\\widehat{ABC} = 60^\\circ$, $\\vec{AB}$, $\\begin{cases} x + y = 3 \\\\ 2x - y = 1 \\end{cases}$.
    - Giữ nguyên các ký tự toán học chính xác từng ký tự, không viết tắt, không làm tròn.
-3. PHÂN LOẠI CÂU HỎI:
+3. NHẬN DIỆN VÀ XUỐNG DÒNG CÁC Ý CON (a, b, c... hoặc 1, 2, 3...):
+   - Khi câu hỏi có các ý nhỏ do người ra đề phân chia (ví dụ: a), b), c)... hoặc 1), 2), 3)... hoặc a., b., c.... hoặc 1., 2., 3.... hoặc (a), (b)...):
+   - BẮT BUỘC phải nhận diện và cho MỖI Ý CON XUỐNG DÒNG RIÊNG BIỆT (dùng ký tự xuống dòng \n\n trước mỗi ý con, ví dụ: "Đề bài chung...\n\na) Ý hỏi thứ nhất...\n\nb) Ý hỏi thứ hai..." hoặc "Đề bài chung...\n\n1) Ý hỏi thứ nhất...\n\n2) Ý hỏi thứ hai...").
+   - TUYỆT ĐỐI không viết gộp các ý a, b, c hoặc 1, 2, 3 dính liền trên cùng một dòng.
+4. PHÂN LOẠI CÂU HỎI:
    - "multiple_choice": Các câu trắc nghiệm nhiều lựa chọn (thường có A, B, C, D).
      + Tách riêng từng phương án vào mảng options: [{ id: "A", text: "..." }, { id: "B", text: "..." }, ...].
      + Nhận diện phương án đúng (correctAnswer): Nếu đề có khoanh tròn, đánh dấu, gạch chân hoặc có bảng đáp án cuối trang thì lấy theo đề; nếu đề bài chưa có đáp án, bạn hãy TỰ GIẢI TOÁN ĐỂ CHỌN ĐÁP ÁN ĐÚNG CHÍNH XÁC (A, B, C hoặc D).
@@ -2348,10 +2360,10 @@ QUY TẮC BÓC TÁCH CỰC KỲ QUAN TRỌNG:
    - "essay": Các câu tự luận (chứng minh hình học, rút gọn biểu thức, giải bài toán bằng cách lập hệ phương trình, bài toán thực tế).
      + Ghi rõ đề bài kèm điều kiện, hình vẽ (nêu rõ giả thiết).
      + Viết tóm tắt các bước giải hoặc biểu điểm gợi ý vào rubric hoặc explanation.
-4. ĐIỂM SỐ (points):
+5. ĐIỂM SỐ (points):
    - Nếu đề có ghi điểm (ví dụ: "(0,5 điểm)", "(1,0 điểm)"), hãy lấy đúng số điểm đó.
    - Nếu không ghi: Mặc định trắc nghiệm là 0.25 hoặc 0.5 điểm, tự luận là 1.0 đến 2.0 điểm.
-5. SỐ THỨ TỰ (order): Đánh số thứ tự từ 1, 2, 3... liên tục.
+6. SỐ THỨ TỰ (order): Đánh số thứ tự từ 1, 2, 3... liên tục.
 
 YÊU CẦU ĐỊNH DẠNG ĐẦU RA:
 Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ theo định dạng sau (không kèm lời chào hay văn bản ngoài JSON):
@@ -2467,7 +2479,7 @@ Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ theo định dạng sa
       return {
         id: `ai_media_${Date.now()}_${qOrder}_${Math.random().toString(36).substring(2, 6)}`,
         order: qOrder,
-        question: String(q.question || `Câu hỏi ${qOrder}`).trim(),
+        question: formatQuestionSubItems(String(q.question || `Câu hỏi ${qOrder}`).trim()),
         type: isEssay ? 'essay' : 'multiple_choice',
         options: isEssay ? [] : options,
         correctAnswer: isEssay ? '' : correct,

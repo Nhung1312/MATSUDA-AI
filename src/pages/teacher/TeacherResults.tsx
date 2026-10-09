@@ -1919,7 +1919,10 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
               {[...selectedSubmissionDetail.answers]
                 .sort((a, b) => Number(isAnswerPendingTeacherReview(selectedSubmissionDetail, b)) - Number(isAnswerPendingTeacherReview(selectedSubmissionDetail, a)))
                 .map((ans) => {
-                const question = currentAssignment.questions.find(q => q.id === ans.questionId);
+                const questionPool = (selectedSubmissionDetail.shuffledQuestions && selectedSubmissionDetail.shuffledQuestions.length > 0)
+                  ? selectedSubmissionDetail.shuffledQuestions
+                  : currentAssignment.questions;
+                const question = questionPool.find(q => q.id === ans.questionId) || currentAssignment.questions.find(q => q.id === ans.questionId);
                 if (!question) return null;
 
                 const isEssay = isEssayQuestion(question);
@@ -1997,25 +2000,82 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
 
                     {/* Multiple choice response */}
                     {!isEssay && (
-                      <div className="text-xs text-slate-600 flex flex-wrap items-center gap-4 bg-white/70 p-2.5 rounded-xl border border-slate-100 mb-2">
-                        <span>
-                          Học sinh chọn: <strong className="text-indigo-700">{ans.selectedAnswer || '(Bỏ trống)'}</strong>
-                          {ans.selectedOptionText && <span className="text-slate-500 ml-1">({ans.selectedOptionText})</span>}
-                          {ans.originalSelectedLabel && ans.originalSelectedLabel !== ans.selectedAnswer && (
-                            <span className="text-[11px] text-indigo-500 ml-1 font-normal">(Đề gốc: {ans.originalSelectedLabel})</span>
-                          )}
-                        </span>
-                        <span>
-                          Đáp án đúng: <strong className="text-emerald-700">{question.correctAnswer}</strong>
-                        </span>
+                      <div className="space-y-2 mb-2">
+                        {question.options && question.options.length > 0 && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 my-2">
+                            {question.options.map((opt) => {
+                              const effectiveCorrect = ans.correctAnswer || (ans.isCorrect ? ans.selectedAnswer : '') || question.correctAnswer;
+                              const isStudentPick = ans.selectedAnswer === opt.id || (!ans.selectedAnswer && ans.selectedOptionText && opt.text && ans.selectedOptionText.trim() === opt.text.trim());
+                              const isRightPick = effectiveCorrect === opt.id || (opt.text && effectiveCorrect.trim() === opt.text.trim());
+
+                              let optBorder = 'border-slate-200 bg-slate-50/50 text-slate-700';
+                              let badgeColor = 'bg-slate-200 text-slate-700';
+
+                              if (isRightPick) {
+                                optBorder = 'border-emerald-500 bg-emerald-50 text-emerald-950 font-bold';
+                                badgeColor = 'bg-emerald-600 text-white';
+                              } else if (isStudentPick && !isCorrect) {
+                                optBorder = 'border-rose-400 bg-rose-50 text-rose-950 font-bold';
+                                badgeColor = 'bg-rose-600 text-white';
+                              }
+
+                              return (
+                                <div
+                                  key={opt.id}
+                                  className={`flex items-center p-2 rounded-xl border text-xs transition-all ${optBorder}`}
+                                >
+                                  <span className={`w-6 h-6 rounded-lg flex items-center justify-center font-black text-xs mr-2 shrink-0 ${badgeColor}`}>
+                                    {opt.id}
+                                  </span>
+                                  <span className="flex-1 min-w-0">
+                                    <MathDisplay text={opt.text} />
+                                  </span>
+                                  {isStudentPick && (
+                                    <span className={`ml-2 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded shrink-0 ${isCorrect ? 'bg-emerald-700 text-white' : 'bg-rose-600 text-white'}`}>
+                                      {isCorrect ? '✓ Đúng' : '✗ Chọn'}
+                                    </span>
+                                  )}
+                                  {isRightPick && !isStudentPick && (
+                                    <span className="ml-2 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-emerald-600 text-white shrink-0">
+                                      Đáp án đúng
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        <div className="text-xs text-slate-600 flex flex-wrap items-center gap-4 bg-white/70 p-2.5 rounded-xl border border-slate-100">
+                          <span className="flex items-center gap-1 flex-wrap">
+                            <span>Học sinh chọn:</span> <strong className="text-indigo-700">{ans.selectedAnswer || '(Bỏ trống)'}</strong>
+                            {ans.selectedOptionText && (
+                              <span className="text-slate-500 ml-1 inline-flex items-center">
+                                (<MathDisplay inline={true} text={ans.selectedOptionText} />)
+                              </span>
+                            )}
+                            {ans.originalSelectedLabel && ans.originalSelectedLabel !== ans.selectedAnswer && (
+                              <span className="text-[11px] text-indigo-500 ml-1 font-normal">(Đề gốc: {ans.originalSelectedLabel})</span>
+                            )}
+                          </span>
+                          <span>
+                            Đáp án đúng: <strong className="text-emerald-700">{
+                              ans.correctAnswer ||
+                              (ans.isCorrect && ans.selectedAnswer ? ans.selectedAnswer : '') ||
+                              question.correctAnswer
+                            }</strong>
+                          </span>
+                        </div>
                       </div>
                     )}
 
                     {/* Essay: Typed text solution */}
                     {ans.studentSolutionText && (
-                      <div className="mb-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-0.5">
+                      <div className="mb-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1">
                         <div className="font-bold text-slate-700">📝 Lời giải học sinh gõ:</div>
-                        <div className="font-mono text-slate-800 whitespace-pre-line pl-1">{ans.studentSolutionText}</div>
+                        <div className="font-mono text-slate-800 whitespace-pre-line pl-1">
+                          <MathDisplay text={ans.studentSolutionText} />
+                        </div>
                       </div>
                     )}
 
@@ -2059,9 +2119,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                             <span>Matsuda AI chấm: {ans.aiScore}/{question.points} điểm</span>
                           </span>
                         </div>
-                        <p className="leading-relaxed whitespace-pre-line text-indigo-900/90 text-[11px]">
-                          {ans.aiFeedback}
-                        </p>
+                        <div className="leading-relaxed whitespace-pre-line text-indigo-900/90 text-[11px]">
+                          <MathDisplay text={ans.aiFeedback} />
+                        </div>
                       </div>
                     )}
 
@@ -2101,7 +2161,10 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                               maxScore: question.points,
                               feedback: ans.aiFeedback || 'Đã phân tích từng bước.',
                               analysisSource: 'ai',
-                              needsTeacherReview: ans.needsTeacherReview
+                              needsTeacherReview: ans.needsTeacherReview,
+                              hasCrossedOutDetection: ans.hasCrossedOutDetection,
+                              uncertainCorrectionDetected: ans.uncertainCorrectionDetected,
+                              teacherCorrectionNotice: ans.teacherCorrectionNotice
                             }}
                           />
                         )}

@@ -12,7 +12,27 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+function resolvePort(): number {
+  const portArgIdx = process.argv.indexOf('--port');
+  if (portArgIdx !== -1 && process.argv[portArgIdx + 1]) {
+    const parsed = parseInt(process.argv[portArgIdx + 1], 10);
+    if (!isNaN(parsed)) return parsed;
+  }
+  if (process.env.DEFAULT_APP_PORT) {
+    const parsed = parseInt(process.env.DEFAULT_APP_PORT, 10);
+    if (!isNaN(parsed)) return parsed;
+  }
+  // If PORT is 8080 (which is used by nginx reverse proxy in AI Studio / Cloud Run container),
+  // the Node application must bind to 3000 to avoid EADDRINUSE.
+  if (process.env.PORT === '8080' || process.env.NODE_ENV !== 'production') {
+    return 3000;
+  }
+  const parsed = parseInt(process.env.PORT || '3000', 10);
+  return isNaN(parsed) ? 3000 : parsed;
+}
+
+const PORT = resolvePort();
 const HOST = '0.0.0.0';
 
 // Hỗ trợ JSON body cho các request ngữ cảnh Socratic & bài làm học sinh (ảnh base64)

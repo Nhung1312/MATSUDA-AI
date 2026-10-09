@@ -22,6 +22,7 @@ import { Assignment, Submission, StepAnalysis, StepErrorType } from '../types';
 import { GradingService } from '../services/gradingService';
 import { processQuestionImage } from '../utils/imageProcessUtils';
 import { StepGradingBreakdown } from './StepGradingBreakdown';
+import { MathDisplay } from './MathDisplay';
 
 export type BatchItemStatus = 'pending' | 'grading' | 'completed' | 'needs_review' | 'failed';
 
@@ -1016,28 +1017,46 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
                 return (
                   <div key={ans.questionId} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                     <div className="flex items-center justify-between">
-                      <div className="font-bold text-slate-900 text-xs">
-                        Câu {qIdx + 1}: {question?.question || `Câu hỏi ${ans.questionId}`}
+                      <div className="font-bold text-slate-900 text-xs flex-1 pr-3">
+                        <MathDisplay text={`Câu ${qIdx + 1}: ${question?.question || `Câu hỏi ${ans.questionId}`}`} />
                       </div>
-                      <span className="px-2 py-0.5 rounded-md font-bold text-xs bg-indigo-100 text-indigo-800">
+                      <span className="px-2 py-0.5 rounded-md font-bold text-xs bg-indigo-100 text-indigo-800 shrink-0">
                         {ans.pointsEarned}/{ans.maxPoints || 1} điểm
                       </span>
                     </div>
 
+                    {/* Lời giải của học sinh nếu có */}
+                    {ans.studentSolutionText && (
+                      <div className="p-2.5 bg-white rounded-xl border border-slate-200 text-xs font-mono">
+                        <div className="text-[11px] font-bold text-slate-500 mb-1">📝 Lời giải học sinh:</div>
+                        <MathDisplay text={ans.studentSolutionText} />
+                      </div>
+                    )}
+
                     {/* StepGradingBreakdown nếu có */}
                     {hasStepAnalysis ? (
                       <StepGradingBreakdown
-                        analysis={ans.stepAnalysis!}
-                        firstErrorStep={ans.firstErrorStep}
-                        firstErrorType={ans.firstErrorType}
-                        firstErrorExplanation={ans.firstErrorExplanation}
-                        needsTeacherReview={ans.needsTeacherReview}
-                        maxPoints={ans.maxPoints}
-                        currentScore={ans.pointsEarned}
+                        questionId={String(qIdx + 1)}
+                        questionText={question?.question || ''}
+                        result={{
+                          success: true,
+                          analysis: ans.stepAnalysis!,
+                          firstErrorStep: ans.firstErrorStep,
+                          firstErrorType: ans.firstErrorType,
+                          firstErrorExplanation: ans.firstErrorExplanation,
+                          totalSteps: ans.stepAnalysis!.length,
+                          correctStepsCount: ans.stepAnalysis!.filter(s => s.status === 'correct').length,
+                          isAllCorrect: !ans.firstErrorStep && ans.stepAnalysis!.every(s => s.status === 'correct'),
+                          score: ans.pointsEarned,
+                          maxScore: ans.maxPoints || 1,
+                          feedback: ans.aiFeedback || 'Đã phân tích từng bước.',
+                          analysisSource: 'ai',
+                          needsTeacherReview: ans.needsTeacherReview
+                        }}
                       />
                     ) : (
-                      <div className="text-xs text-slate-500 italic">
-                        {ans.aiFeedback || ans.teacherFeedback || 'Câu này được chấm điểm trực tiếp.'}
+                      <div className="text-xs text-slate-600">
+                        <MathDisplay text={ans.aiFeedback || ans.teacherFeedback || 'Câu này được chấm điểm trực tiếp.'} />
                       </div>
                     )}
                   </div>

@@ -87,7 +87,10 @@ socraticRouter.post(['/', '/socratic'], async (req: Request, res: Response) => {
 
     if (Array.isArray(context.stepAnalysis) && context.stepAnalysis.length > 0) {
       contextDescription += `\nKẾT QUẢ PHÂN TÍCH TỪNG BƯỚC ĐÃ CHẤM (StepAnalysis):\n` +
-        context.stepAnalysis.map((s: any) => `  - Bước ${s.stepIndex} [${s.status}${s.isFirstError ? ' - LỖI GỐC' : ''}]: Học sinh viết: "${s.studentLatex}". ${s.comment ? `Nhận xét: ${s.comment}` : ''}`).join('\n') + '\n';
+        `- Lưu ý Matsuda Strikeout Guard: Bỏ qua mọi nội dung đã bị gạch xoá (crossed_out). Chỉ dẫn dắt dựa trên nội dung còn hiệu lực (active / replacement).\n` +
+        context.stepAnalysis
+          .filter((s: any) => s.contentType !== 'crossed_out')
+          .map((s: any) => `  - Bước ${s.stepIndex} [${s.status}${s.isFirstError ? ' - LỖI GỐC' : ''}]: Học sinh viết: "${s.studentLatex}". ${s.comment ? `Nhận xét: ${s.comment}` : ''}`).join('\n') + '\n';
     }
 
     if (Array.isArray(context.previousHints) && context.previousHints.length > 0) {

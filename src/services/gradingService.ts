@@ -256,6 +256,35 @@ export class GradingService {
       earnedTotalPoints += pointsEarned;
       maxPointsTotal += questionPoints;
 
+      // Xác định đáp án chuẩn theo đúng đề học sinh đang làm
+      let studentExamCorrectAnswer: string | undefined = undefined;
+      if (!isEssay) {
+        if (q.type === 'short_answer') {
+          studentExamCorrectAnswer = q.correctAnswer || '';
+        } else {
+          // Nếu học sinh đã chọn đúng: đáp án chuẩn trên đề học sinh đang làm chắc chắn là đáp án học sinh đã chọn
+          if (isCorrect && selected) {
+            studentExamCorrectAnswer = selected;
+          } else {
+            const cleanCorrect = (q.correctAnswer || '').trim().toUpperCase();
+            const strippedCorrect = cleanCorrect.replace(/[^A-Z0-9]/g, '');
+            const correctOpt = q.options?.find(opt => {
+              const optOrigId = ((opt as any).originalId || '').trim().toUpperCase();
+              return optOrigId === cleanCorrect ||
+                     (strippedCorrect.length > 0 && optOrigId.replace(/[^A-Z0-9]/g, '') === strippedCorrect);
+            }) || q.options?.find(opt => {
+              const optText = (opt.text || '').trim().toUpperCase();
+              return optText && optText === cleanCorrect;
+            }) || q.options?.find(opt => {
+              const optId = (opt.id || '').trim().toUpperCase();
+              return optId === cleanCorrect ||
+                     (strippedCorrect.length > 0 && optId.replace(/[^A-Z0-9]/g, '') === strippedCorrect);
+            });
+            studentExamCorrectAnswer = correctOpt?.id || q.correctAnswer || '';
+          }
+        }
+      }
+
       const answerNeedsReview = isEssay && !!(
         aiEval?.needsTeacherReview ||
         aiEval?.isProvisional ||
@@ -280,6 +309,7 @@ export class GradingService {
         selectedAnswer: selected,
         selectedOptionText,
         originalSelectedLabel,
+        correctAnswer: studentExamCorrectAnswer,
         studentSolutionText: solutionText,
         essayImages: images,
         isCorrect,
@@ -458,6 +488,35 @@ export class GradingService {
       earnedPointsTotal += pointsEarned;
       maxPointsTotal += q.points;
 
+      // Xác định đáp án chuẩn trên đề học sinh đang làm
+      let studentExamCorrectAnswer: string | undefined = undefined;
+      if (!isEssay) {
+        if (q.type === 'short_answer') {
+          studentExamCorrectAnswer = q.correctAnswer || '';
+        } else {
+          // Nếu học sinh đã chọn đúng: đáp án chuẩn trên đề học sinh đang làm chắc chắn là đáp án học sinh đã chọn
+          if (isCorrect && selected) {
+            studentExamCorrectAnswer = selected;
+          } else {
+            const cleanCorrect = (q.correctAnswer || '').trim().toUpperCase();
+            const strippedCorrect = cleanCorrect.replace(/[^A-Z0-9]/g, '');
+            const correctOpt = q.options?.find(opt => {
+              const optOrigId = ((opt as any).originalId || '').trim().toUpperCase();
+              return optOrigId === cleanCorrect ||
+                     (strippedCorrect.length > 0 && optOrigId.replace(/[^A-Z0-9]/g, '') === strippedCorrect);
+            }) || q.options?.find(opt => {
+              const optText = (opt.text || '').trim().toUpperCase();
+              return optText && optText === cleanCorrect;
+            }) || q.options?.find(opt => {
+              const optId = (opt.id || '').trim().toUpperCase();
+              return optId === cleanCorrect ||
+                     (strippedCorrect.length > 0 && optId.replace(/[^A-Z0-9]/g, '') === strippedCorrect);
+            });
+            studentExamCorrectAnswer = correctOpt?.id || q.correctAnswer || '';
+          }
+        }
+      }
+
       const answerNeedsReview = isEssay && !!(aiEval?.needsTeacherReview || aiEval?.isProvisional || aiEval?.aiGradingError || aiEval?.stepGradingResponse?.needsTeacherReview || aiEval?.stepGradingResponse?.analysisSource === 'rule' || aiEval?.stepGradingResponse?.analysisSource === 'unavailable' || ((solutionText || images.length > 0 || selected) && !aiEval));
       if (isUnanswered) {
         unansweredCount++;
@@ -474,6 +533,7 @@ export class GradingService {
         selectedAnswer: selected,
         selectedOptionText,
         originalSelectedLabel,
+        correctAnswer: studentExamCorrectAnswer,
         studentSolutionText: solutionText,
         essayImages: images,
         isCorrect,
@@ -536,7 +596,10 @@ export class GradingService {
       tabSwitchCount,
       violationEvents,
       isShuffled,
-      shuffledQuestions: assignment.questions
+      shuffledQuestions: assignment.questions.map((q, idx) => ({
+        ...q,
+        correctAnswer: answers[idx]?.correctAnswer || q.correctAnswer
+      }))
     };
   }
 
@@ -789,7 +852,10 @@ export class GradingService {
           needsTeacherReview: needsReview,
           isProvisional: needsReview,
           aiGradingError: stepRes.analysisSource === 'rule' || stepRes.analysisSource === 'unavailable',
-          stepGradingResponse: stepRes
+          stepGradingResponse: stepRes,
+          hasCrossedOutDetection: stepRes.hasCrossedOutDetection,
+          uncertainCorrectionDetected: stepRes.uncertainCorrectionDetected,
+          teacherCorrectionNotice: stepRes.teacherCorrectionNotice
         });
       } catch (err: any) {
         console.error(`[GradingService] Lỗi chấm câu ${q.id}:`, err);

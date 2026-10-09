@@ -107,10 +107,36 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
     return ans.selectedAnswer;
   };
 
-  const getCorrectAnswerLabel = (question?: Question) => {
-    if (!question) return '—';
-    if (isEssayQuestion(question)) return 'Theo biểu điểm';
-    return question.correctAnswer || '—';
+  const getCorrectAnswerLabel = (ans: StudentAnswer, question?: Question) => {
+    if (question && isEssayQuestion(question)) return 'Theo biểu điểm';
+
+    // 1. Nếu học sinh làm ĐÚNG, đáp án chuẩn trên đề học sinh đang làm chắc chắn là đáp án học sinh đã chọn
+    if (ans.isCorrect && ans.selectedAnswer) return ans.selectedAnswer;
+
+    // 2. Ưu tiên đáp án chuẩn đã map chính xác theo đề học sinh đang làm
+    if (ans.correctAnswer) return ans.correctAnswer;
+
+    // 3. Nếu học sinh làm SAI: tìm option đúng trên đề học sinh thông qua question.options
+    if (question?.options && question.options.length > 0) {
+      const cleanCorrect = (question.correctAnswer || '').trim().toUpperCase();
+      const strippedCorrect = cleanCorrect.replace(/[^A-Z0-9]/g, '');
+      const matched = question.options.find(opt => {
+        const optOrigId = ((opt as any).originalId || '').trim().toUpperCase();
+        return optOrigId === cleanCorrect ||
+               (strippedCorrect.length > 0 && optOrigId.replace(/[^A-Z0-9]/g, '') === strippedCorrect);
+      }) || question.options.find(opt => {
+        const optText = (opt.text || '').trim().toUpperCase();
+        return optText && optText === cleanCorrect;
+      }) || question.options.find(opt => {
+        const optId = (opt.id || '').trim().toUpperCase();
+        return optId === cleanCorrect ||
+               (strippedCorrect.length > 0 && optId.replace(/[^A-Z0-9]/g, '') === strippedCorrect);
+      });
+      if (matched?.id) return matched.id;
+    }
+
+    if (question?.correctAnswer) return question.correctAnswer;
+    return '—';
   };
 
   const improvementItems = submission.answers
@@ -357,7 +383,7 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
                         <MathDisplay text={getStudentAnswerLabel(ans, question)} />
                       </td>
                       <td className="py-2 px-2 text-center text-slate-600">
-                        {pending ? 'Chờ duyệt' : <MathDisplay text={getCorrectAnswerLabel(question)} />}
+                        {pending ? 'Chờ duyệt' : <MathDisplay text={getCorrectAnswerLabel(ans, question)} />}
                       </td>
                       <td className="py-2 px-2 text-center font-bold">
                         {pending

@@ -9,6 +9,7 @@
  */
 
 import { SocraticContext, SocraticHintLevel, SocraticRequest, SocraticResponse } from '../types';
+import { sanitizeMathString } from '../utils/questionUtils';
 
 export class SocraticService {
   /**
@@ -41,6 +42,7 @@ export class SocraticService {
         if (data.success && data.reply) {
           return {
             ...data,
+            reply: sanitizeMathString(data.reply),
             isFallback: false,
           };
         }
@@ -118,7 +120,7 @@ export class SocraticService {
     return {
       success: true,
       level,
-      reply: ruleContent,
+      reply: sanitizeMathString(ruleContent),
       modelUsed: 'RuleEngineFallback',
       isFallback: true,
       message: `Chế độ Sư phạm Ngoại tuyến kích hoạt (${reason})`,

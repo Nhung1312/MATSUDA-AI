@@ -203,3 +203,91 @@ export function normalizeQuestions(questions: Question[]): Question[] {
   if (!Array.isArray(questions)) return [];
   return questions.map(normalizeQuestion);
 }
+
+/**
+ * Làm sạch và sửa triệt để các ký tự control characters do JSON escape làm hỏng LaTeX
+ * (\x0c -> \frac, \x08 -> \begin / \boxed, \t -> \text / \times, v.v.)
+ */
+export function sanitizeMathString(val?: string | null): string {
+  if (!val || typeof val !== 'string') return '';
+  return val
+    .replace(/\x0crac\{/g, '\\frac{')
+    .replace(/(?:\\+f+|\f)+\\*(?:frac\{|rac\{)/g, '\\frac{')
+    .replace(/\x08egin\{/g, '\\begin{')
+    .replace(/\x08oxed\{/g, '\\boxed{')
+    .replace(/\t(imes|ext|riangle|heta|au|o)\b/g, '\\$1')
+    .replace(/\r(ight|ho)\b/g, '\\$1')
+    .replace(/\n(eq)\b/g, '\\$1');
+}
+
+/**
+ * Tự động nhận diện và xuống dòng cho các ý nhỏ trong câu hỏi / bài toán (a, b, c... hoặc 1, 2, 3...)
+ * Hỗ trợ linh hoạt nhiều phong cách soạn đề của giáo viên:
+ * - Dạng ngoặc đơn: a), b), c)... hoặc 1), 2), 3)...
+ * - Dạng dấu gạch: a/, b/, c/... hoặc 1/, 2/, 3/...
+ * - Dạng bao ngoặc: (a), (b), (c)... hoặc (1), (2), (3)...
+ * - Dạng dấu chấm: a., b., c.... hoặc 1., 2., 3....
+ * Giúp đề bài được trình bày rõ ràng, chuẩn mực sư phạm, không bị dồn tất cả các ý trên một dòng ngang.
+ */
+export function formatQuestionSubItems(text?: string | null): string {
+  if (!text || typeof text !== 'string') return text || '';
+
+  const cleaned = sanitizeMathString(text);
+
+  // Tách các khối math ($$...$$, \[...\], $...$, \(...\)) trên TOÀN BỘ văn bản
+  // để bảo toàn công thức toán nhiều dòng, không để newline xé nát khối LaTeX
+  const mathSegments: string[] = [];
+  const textWithPlaceholders = cleaned.replace(/(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\$[^\$\n]+?\$|\\\(.*?\\\))/g, (match) => {
+    const idx = mathSegments.length;
+    mathSegments.push(match);
+    return `@@MATH_${idx}@@`;
+  });
+
+  // Tách văn bản thành các dòng hiện có
+  const lines = textWithPlaceholders.split(/\r?\n/);
+
+  const formattedLines = lines.map(line => {
+    // Nếu dòng quá ngắn, giữ nguyên
+    if (line.trim().length < 6) return line;
+
+    let transformed = line;
+
+    // 1. Dạng a) b) c) d)... hoặc 1) 2) 3)...
+    const hasParenSub = /(?:^|[\s;,:])((?:[a-hA-H]|[1-9])\))\s+(?=[^\s])/g;
+    const parenMatches = [...transformed.matchAll(hasParenSub)];
+    if (parenMatches.length >= 2 || (parenMatches.length === 1 && parenMatches[0].index !== undefined && parenMatches[0].index > 8)) {
+      transformed = transformed.replace(/(?:[\s;,:]+)((?:[a-hA-H]|[1-9])\))\s+/g, '\n$1 ');
+    }
+
+    // 2. Dạng a/ b/ c/... hoặc 1/ 2/ 3/...
+    const hasSlashSub = /(?:^|[\s;,:])((?:[a-hA-H]|[1-9])\/)\s+(?=[^\s])/g;
+    const slashMatches = [...transformed.matchAll(hasSlashSub)];
+    if (slashMatches.length >= 2 || (slashMatches.length === 1 && slashMatches[0].index !== undefined && slashMatches[0].index > 8)) {
+      transformed = transformed.replace(/(?:[\s;,:]+)((?:[a-hA-H]|[1-9])\/)\s+/g, '\n$1 ');
+    }
+
+    // 3. Dạng (a) (b) (c)... hoặc (1) (2) (3)...
+    const hasWrapSub = /(?:^|[\s;,:])(\((?:[a-h]|[1-9])\))\s+(?=[^\s])/g;
+    const wrapMatches = [...transformed.matchAll(hasWrapSub)];
+    if (wrapMatches.length >= 2 || (wrapMatches.length === 1 && wrapMatches[0].index !== undefined && wrapMatches[0].index > 8)) {
+      transformed = transformed.replace(/(?:[\s;,:]+)(\((?:[a-h]|[1-9])\))\s+/g, '\n$1 ');
+    }
+
+    // 4. Dạng a. b. c.... hoặc 1. 2. 3.... (theo sau là chữ cái tiếng Việt/Anh hoặc công thức toán)
+    const hasDotSub = /(?:^|[\s;,:])((?:[a-hA-H]|[1-9])\.)\s+(?=[A-Za-z0-9\$\\\+\-àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ])/g;
+    const dotMatches = [...transformed.matchAll(hasDotSub)];
+    if (dotMatches.length >= 2 || (dotMatches.length === 1 && dotMatches[0].index !== undefined && dotMatches[0].index > 8)) {
+      transformed = transformed.replace(/(?:[\s;,:]+)((?:[a-hA-H]|[1-9])\.)\s+(?=[A-Za-z0-9\$\\\+\-àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ])/g, '\n$1 ');
+    }
+
+    return transformed;
+  });
+
+  const joined = formattedLines.join('\n');
+
+  // Khôi phục lại các khối math an toàn tuyệt đối (dùng function replacer chống ký tự đặc biệt $ trong chuỗi)
+  return joined.replace(/@@MATH_(\d+)@@/g, (_, idxStr) => {
+    const idx = parseInt(idxStr, 10);
+    return mathSegments[idx] !== undefined ? mathSegments[idx] : '';
+  });
+}

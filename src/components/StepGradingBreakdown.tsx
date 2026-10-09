@@ -263,6 +263,31 @@ export const StepGradingBreakdown: React.FC<StepGradingBreakdownProps> = ({
           ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800'
           : 'bg-indigo-50/70 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800/80'
       }`}>
+        {/* Thông báo nhận diện nét gạch xoá / sửa chữa (Matsuda Strikeout Guard) */}
+        {result.teacherCorrectionNotice && (
+          <div className={`mb-3.5 p-3 rounded-xl border flex items-start gap-2.5 text-xs font-semibold ${
+            result.uncertainCorrectionDetected
+              ? 'bg-amber-100/90 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200'
+              : 'bg-sky-100/90 dark:bg-sky-950/60 border-sky-300 dark:border-sky-800 text-sky-900 dark:text-sky-200'
+          }`}>
+            {result.uncertainCorrectionDetected ? (
+              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            ) : (
+              <Sparkles className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
+            )}
+            <div className="space-y-0.5">
+              <div className="font-black">
+                {result.uncertainCorrectionDetected
+                  ? 'Cần giáo viên xác minh nét sửa chữa'
+                  : 'Nhận diện nét viết sửa xoá (Matsuda AI)'}
+              </div>
+              <div className="font-medium text-slate-800 dark:text-slate-200">
+                {result.teacherCorrectionNotice}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-indigo-100 dark:border-indigo-900/60">
           <div className="flex items-center gap-2.5">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black ${
@@ -424,6 +449,21 @@ export const StepGradingBreakdown: React.FC<StepGradingBreakdownProps> = ({
                         {getErrorTypeLabel(step.errorType)}
                       </span>
                     )}
+                    {step.contentType === 'crossed_out' && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 line-through">
+                        Đã gạch bỏ (Bỏ qua)
+                      </span>
+                    )}
+                    {(step.contentType === 'replacement' || step.contentType === 'overwritten' || step.hasCrossedOutContent) && step.contentType !== 'crossed_out' && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-100 dark:bg-sky-950 text-sky-800 dark:text-sky-300 border border-sky-300 dark:border-sky-800">
+                        ✍️ Đã sửa / Ưu tiên lời giải mới
+                      </span>
+                    )}
+                    {step.uncertainCorrection && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                        ⚠️ Nét sửa không rõ (Chờ GV)
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -443,6 +483,14 @@ export const StepGradingBreakdown: React.FC<StepGradingBreakdownProps> = ({
                     <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 font-mono text-xs sm:text-sm text-slate-900 dark:text-slate-100 border border-slate-200/70 dark:border-slate-700/60">
                       <MathDisplay content={step.studentLatex} />
                     </div>
+                    {step.originalTextBeforeCorrection && (
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
+                        <span className="font-semibold">Nét viết cũ trước khi sửa:</span>
+                        <span className="line-through font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-rose-600 dark:text-rose-400 font-bold">
+                          {step.originalTextBeforeCorrection}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {step.referenceStepLatex && (
@@ -647,7 +695,7 @@ export const StepGradingBreakdown: React.FC<StepGradingBreakdownProps> = ({
 
             {remedialFeedback && (
               <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-xs font-bold text-indigo-900 dark:text-indigo-200 animate-in fade-in">
-                {remedialFeedback}
+                <MathDisplay content={remedialFeedback} />
               </div>
             )}
 
@@ -685,8 +733,8 @@ export const StepGradingBreakdown: React.FC<StepGradingBreakdownProps> = ({
                 <div className="font-mono leading-relaxed">
                   <MathDisplay content={remedialExercise.solutionLatex} />
                 </div>
-                <div className="font-bold pt-1 text-emerald-600 dark:text-emerald-400">
-                  Đáp số cuối: {remedialExercise.finalAnswer}
+                <div className="font-bold pt-1 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <span>Đáp số cuối:</span> <MathDisplay content={remedialExercise.finalAnswer} />
                 </div>
               </div>
             )}

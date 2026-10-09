@@ -43,16 +43,19 @@ export function shuffleAssignmentQuestionsAndOptions(assignment: Assignment): As
     }
 
     const cleanCorrect = (q.correctAnswer || '').trim().toUpperCase();
+    const strippedCorrect = cleanCorrect.replace(/[^A-Z0-9]/g, '');
 
     // Xác định chính xác phương án đúng ban đầu
-    // 1. So khớp theo id (ví dụ: 'A', 'B', 'C', 'D')
-    let originalCorrectIdx = q.options.findIndex(
-      opt => (opt.id || '').trim().toUpperCase() === cleanCorrect
-    );
+    // 1. So khớp theo id (ví dụ: 'A', 'B', 'C', 'D' hoặc 'A.', 'B.')
+    let originalCorrectIdx = q.options.findIndex(opt => {
+      const optId = (opt.id || '').trim().toUpperCase();
+      const strippedOptId = optId.replace(/[^A-Z0-9]/g, '');
+      return optId === cleanCorrect || (strippedCorrect.length > 0 && strippedOptId === strippedCorrect);
+    });
 
     // 2. Nếu chưa thấy, thử so khớp theo nhãn chuẩn A=0, B=1, C=2, D=3
-    if (originalCorrectIdx === -1 && ['A', 'B', 'C', 'D', 'E', 'F'].includes(cleanCorrect)) {
-      const idxFromLetter = cleanCorrect.charCodeAt(0) - 65;
+    if (originalCorrectIdx === -1 && ['A', 'B', 'C', 'D', 'E', 'F'].includes(strippedCorrect)) {
+      const idxFromLetter = strippedCorrect.charCodeAt(0) - 65;
       if (idxFromLetter >= 0 && idxFromLetter < q.options.length) {
         originalCorrectIdx = idxFromLetter;
       }
