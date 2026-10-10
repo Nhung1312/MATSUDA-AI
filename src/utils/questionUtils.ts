@@ -291,3 +291,37 @@ export function formatQuestionSubItems(text?: string | null): string {
     return mathSegments[idx] !== undefined ? mathSegments[idx] : '';
   });
 }
+
+/**
+ * Chuyển đổi chuỗi điểm số (hỗ trợ cả dấu phẩy ',' và dấu chấm '.') thành số thực dương hợp lệ
+ * Ví dụ: "0,3" -> 0.3; "0.25" -> 0.25; "1,5" -> 1.5; "2" -> 2
+ */
+export function parseDecimalPoint(input: string | number | undefined | null, defaultValue = 0): number {
+  if (typeof input === 'number') {
+    return isNaN(input) ? defaultValue : Math.max(0, input);
+  }
+  if (!input) return defaultValue;
+  const cleaned = String(input).replace(',', '.').trim();
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? defaultValue : Math.max(0, num);
+}
+
+/**
+ * Định dạng hiển thị điểm số gọn gàng (không dư số 0 vô nghĩa, tối đa 2 chữ số thập phân)
+ * Ví dụ: 0.3 -> "0.3"; 0.25 -> "0.25"; 1.0 -> "1"; 1.5 -> "1.5"
+ */
+export function formatDecimalPoint(val: number): string {
+  if (isNaN(val)) return '0';
+  const rounded = Math.round(val * 100) / 100;
+  return rounded.toString();
+}
+
+/**
+ * Tính tổng điểm thực tế của danh sách câu hỏi (chính xác đến 2 chữ số thập phân)
+ */
+export function calculateQuestionsTotalPoints(questions: Question[]): number {
+  if (!Array.isArray(questions)) return 0;
+  const sum = questions.reduce((acc, q) => acc + (typeof q?.points === 'number' ? q.points : 0), 0);
+  return Math.round(sum * 100) / 100;
+}
+

@@ -776,21 +776,22 @@ export class FileParserService {
       }
     }
 
-    // Trích xuất điểm số riêng của câu nếu có ghi chú dạng "(2,0 điểm)", "(1,0 điểm)", "(0,5 điểm)", "(0.25đ)"
+    // Trích xuất điểm số riêng của câu nếu có ghi chú dạng "(2,0 điểm)", "(1,0 điểm)", "(0,5 điểm)", "(0.25đ)", "(0,3 điểm)", "[0.75đ]"
     let detectedPoints: number | undefined = undefined;
     const pointMatch = blockText.match(/(?:^|\n|[\.\:\s])(?:Câu|Bài|Question)?\s*\d*\s*[\.\:\s]*\(\s*([0-9]+(?:[\.\,][0-9]+)?)\s*(?:điểm|đ|pts?)\s*\)/i)
-      || blockText.match(/\(\s*([0-9]+(?:[\.\,][0-9]+)?)\s*(?:điểm|đ|pts?)\s*\)/i);
+      || blockText.match(/\(\s*([0-9]+(?:[\.\,][0-9]+)?)\s*(?:điểm|đ|pts?)\s*\)/i)
+      || blockText.match(/\[\s*([0-9]+(?:[\.\,][0-9]+)?)\s*(?:điểm|đ|pts?)\s*\]/i);
     if (pointMatch) {
       const p = parseFloat(pointMatch[1].replace(',', '.'));
-      if (!isNaN(p) && p > 0 && p <= 10) {
-        detectedPoints = p;
+      if (!isNaN(p) && p > 0 && p <= 100) {
+        detectedPoints = Math.round(p * 100) / 100;
       }
     }
 
     // Làm sạch tiêu đề "Câu 1:" hay "Bài 1:" và cụm điểm "(1,5 điểm)" ở đầu đề bài
-    questionContent = questionContent.replace(/^(?:Chủ\s*đề[^\n]+\n+)?(?:Câu|Bài|Question)\s*\d+(?:\s*\([^\)]+\))?[\.\:\s]*/i, '').trim();
-    // Làm sạch thêm nếu cụm (X điểm) vẫn còn sót lại ở đầu câu
-    questionContent = questionContent.replace(/^\(\s*[0-9]+(?:[\.\,][0-9]+)?\s*(?:điểm|đ|pts?)\s*\)[\.\:\s]*/i, '').trim();
+    questionContent = questionContent.replace(/^(?:Chủ\s*đề[^\n]+\n+)?(?:Câu|Bài|Question)\s*\d+(?:\s*\([^\)]+\)|\s*\[[^\]]+\])?[\.\:\s]*/i, '').trim();
+    // Làm sạch thêm nếu cụm (X điểm) hoặc [X điểm] vẫn còn sót lại ở đầu câu
+    questionContent = questionContent.replace(/^[\(\[]\s*[0-9]+(?:[\.\,][0-9]+)?\s*(?:điểm|đ|pts?)\s*[\)\]][\.\:\s]*/i, '').trim();
 
     const finalPoints = typeof detectedPoints === 'number'
       ? detectedPoints

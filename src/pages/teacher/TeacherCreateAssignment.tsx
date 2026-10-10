@@ -9,9 +9,10 @@ import { FileUploadModal } from '../../components/FileUploadModal';
 import { MathDisplay } from '../../components/MathDisplay';
 import { QuestionImageUpload } from '../../components/QuestionImageUpload';
 import { processQuestionImage } from '../../utils/imageProcessUtils';
-import { isEssayQuestion, normalizeQuestion, isQuestionMissingImage, isQuestionMentioningImage, getMissingImageReason } from '../../utils/questionUtils';
+import { isEssayQuestion, normalizeQuestion, isQuestionMissingImage, isQuestionMentioningImage, getMissingImageReason, parseDecimalPoint, formatDecimalPoint, calculateQuestionsTotalPoints } from '../../utils/questionUtils';
 import { SubscriptionService, BILLING_ENABLED } from '../../services/subscriptionService';
 import { AiSolveExamModal } from '../../components/AiSolveExamModal';
+import { PointDistributionModal } from '../../components/PointDistributionModal';
 import { FileParserService } from '../../services/fileParserService';
 import { 
   Plus, 
@@ -57,6 +58,49 @@ const DEFAULT_OPTIONS: QuestionOption[] = [
   { id: 'C', text: '' },
   { id: 'D', text: '' }
 ];
+
+/**
+ * Component nhập điểm câu hỏi linh hoạt:
+ * - Hỗ trợ mọi số điểm dương: 0,1; 0,25; 0,3; 0,5; 0,75; 1,25; 2,5...
+ * - Chấp nhận cả dấu phẩy (,) và dấu chấm (.)
+ * - Không tự ý làm tròn về 0,25 hay 0,5
+ * - Không bị chặn bởi step/min của trình duyệt
+ */
+const QuestionPointsInput: React.FC<{
+  points: number;
+  onChange: (newPoints: number) => void;
+}> = ({ points, onChange }) => {
+  const [localVal, setLocalVal] = useState<string>(() => formatDecimalPoint(points));
+
+  useEffect(() => {
+    setLocalVal(formatDecimalPoint(points));
+  }, [points]);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={localVal}
+      onChange={(e) => {
+        const val = e.target.value;
+        setLocalVal(val);
+        const parsed = parseDecimalPoint(val);
+        if (parsed > 0) {
+          onChange(parsed);
+        }
+      }}
+      onBlur={() => {
+        const parsed = parseDecimalPoint(localVal);
+        const valid = Math.max(0.01, parsed);
+        setLocalVal(formatDecimalPoint(valid));
+        onChange(valid);
+      }}
+      className="w-16 px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-center focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+      placeholder="0.25"
+      title="Nhập số điểm cho câu hỏi (chấp nhận cả dấu phẩy và chấm: 0,3 hoặc 0.3)"
+    />
+  );
+};
 
 export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = ({
   classes,
@@ -160,102 +204,42 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
   const [aiGenCount, setAiGenCount] = useState(5);
   const [importSuccessAlert, setImportSuccessAlert] = useState<string | null>(null);
 
-  // --- BỘ CÔNG CỤ PHÂN BỔ ĐIỂM THÔNG MINH (1-CLICK) ---
+  // --- BỘ CÔNG CỤ PHÂN BỔ ĐIỂM THÔNG MINH (1-CLICK) & TỔNG ĐIỂM MỤC TIÊU ---
   const [showPointDistributeModal, setShowPointDistributeModal] = useState(false);
-  const [customMcTotal, setCustomMcTotal] = useState<number>(3.0);
-  const [customEssayTotal, setCustomEssayTotal] = useState<number>(7.0);
+  const [targetTotalPoints, setTargetTotalPoints] = useState<number>(() => {
+    if (editingAssignment?.totalPoints && editingAssignment.totalPoints > 0) {
+      return editingAssignment.totalPoints;
+    }
+    if (initialQuestions && initialQuestions.length > 0) {
+      const sum = initialQuestions.reduce((acc, q) => acc + (q.points || 0), 0);
+      return Math.round(sum * 100) / 100 || 10;
+    }
+    return 10.0;
+  });
 
-  const mcCount = questions.filter(q => q.type === 'multiple_choice').length;
-  const essayCount = questions.filter(q => q.type === 'essay').length;
+  const actualTotalPoints = Math.round(questions.reduce((sum, q) => sum + (q.points || 0), 0) * 100) / 100;
 
-  const handleApplyPointPreset = (preset: '3_7' | '7_3' | '5_5' | 'equal_10' | 'custom') => {
+  const handleAutoBalanceLastQuestion = () => {
     if (questions.length === 0) return;
-
-    let targetMcTotal = 3.0;
-    let targetEssayTotal = 7.0;
-
-    if (preset === '7_3') {
-      targetMcTotal = 7.0;
-      targetEssayTotal = 3.0;
-    } else if (preset === '5_5') {
-      targetMcTotal = 5.0;
-      targetEssayTotal = 5.0;
-    } else if (preset === 'custom') {
-      targetMcTotal = Math.max(0, customMcTotal);
-      targetEssayTotal = Math.max(0, customEssayTotal);
-    }
-
-    if (preset === 'equal_10' || (mcCount === 0 && essayCount > 0) || (essayCount === 0 && mcCount > 0)) {
-      // Chia đều toàn bộ câu hỏi tròn 10 điểm
-      const basePoint = Math.floor((10 / questions.length) * 100) / 100;
-      let remaining = Math.round((10 - basePoint * questions.length) * 100) / 100;
-
-      const updated = questions.map((q, idx) => {
-        let p = basePoint;
-        if (idx === questions.length - 1 && remaining !== 0) {
-          p = Math.round((p + remaining) * 100) / 100;
-        }
-        return { ...q, points: Math.max(0.05, p) };
-      });
-      setQuestions(updated);
-      setShowPointDistributeModal(false);
-      setImportSuccessAlert(`Đã chia đều 10 điểm cho toàn bộ ${questions.length} câu hỏi thành công!`);
-      setTimeout(() => setImportSuccessAlert(null), 4000);
-      return;
-    }
-
-    // Chia theo tỉ lệ Trắc nghiệm & Tự luận
-    const mcPerQuestion = mcCount > 0 
-      ? Math.round((targetMcTotal / mcCount) * 100) / 100 
-      : 0;
-    const essayPerQuestion = essayCount > 0 
-      ? Math.round((targetEssayTotal / essayCount) * 100) / 100 
-      : 0;
-
-    let updated = questions.map(q => {
-      if (q.type === 'multiple_choice') {
-        return { ...q, points: mcPerQuestion };
-      } else {
-        return { ...q, points: essayPerQuestion };
-      }
-    });
-
-    // Cân bằng câu cuối cùng nếu tổng bị lệch (ví dụ 9.95 do làm tròn)
-    const currentSum = updated.reduce((sum, q) => sum + (q.points || 0), 0);
-    const diff = Math.round((10 - currentSum) * 100) / 100;
-    if (Math.abs(diff) > 0.001 && updated.length > 0) {
-      // Ưu tiên bù vào câu tự luận cuối cùng hoặc câu cuối
-      const lastEssayIdx = updated.findLastIndex(q => q.type === 'essay');
-      const targetIdx = lastEssayIdx !== -1 ? lastEssayIdx : updated.length - 1;
-      updated[targetIdx] = {
-        ...updated[targetIdx],
-        points: Math.max(0.05, Math.round((updated[targetIdx].points + diff) * 100) / 100)
-      };
-    }
-
-    setQuestions(updated);
-    setShowPointDistributeModal(false);
-    setImportSuccessAlert(`Đã phân bổ điểm thành công: ${mcCount} câu trắc nghiệm (${mcPerQuestion}đ/câu), ${essayCount} câu tự luận (${essayPerQuestion}đ/câu) • Tổng: 10.0đ!`);
-    setTimeout(() => setImportSuccessAlert(null), 4000);
-  };
-
-  const handleAutoBalanceTo10 = () => {
-    if (questions.length === 0) return;
+    const target = targetTotalPoints > 0 ? targetTotalPoints : 10;
     const currentSum = Math.round(questions.reduce((sum, q) => sum + (q.points || 0), 0) * 100) / 100;
-    const diff = Math.round((10 - currentSum) * 100) / 100;
+    const diff = Math.round((target - currentSum) * 100) / 100;
     if (Math.abs(diff) < 0.001) {
-      alert('Đề thi đã đạt chuẩn tròn 10.0 điểm!');
+      alert(`Tổng điểm thực tế đã khớp tròn ${target} điểm!`);
       return;
     }
+
     const updated = [...questions];
     const lastEssayIdx = updated.findLastIndex(q => q.type === 'essay');
     const targetIdx = lastEssayIdx !== -1 ? lastEssayIdx : updated.length - 1;
+    const newPoint = Math.max(0.01, Math.round((updated[targetIdx].points + diff) * 100) / 100);
     updated[targetIdx] = {
       ...updated[targetIdx],
-      points: Math.max(0.05, Math.round((updated[targetIdx].points + diff) * 100) / 100)
+      points: newPoint
     };
+
     setQuestions(updated);
-    setImportSuccessAlert(`Đã tự động cân bằng tròn 10.0 điểm (điều chỉnh ${diff > 0 ? `+${diff}` : diff}đ tại câu ${targetIdx + 1})!`);
+    setImportSuccessAlert(`Đã cân bằng tổng điểm ${target}đ: Điều chỉnh câu ${targetIdx + 1} thành ${newPoint}đ (${diff > 0 ? `+${diff}` : diff}đ)!`);
     setTimeout(() => setImportSuccessAlert(null), 4000);
   };
 

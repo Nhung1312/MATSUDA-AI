@@ -88,6 +88,7 @@ export interface Assignment {
   isPublished: boolean;
   verificationStatus?: 'verified' | 'unverified' | 'needs_review' | 'pending'; // Trạng thái thẩm định đề thi (unverified = chưa thẩm định, needs_review = cần xem lại, verified = đã thẩm định)
   eligibleForSampleBank?: boolean; // Đủ điều kiện làm dữ liệu mẫu (khi đã verified 100%)
+  totalPoints?: number; // Tổng điểm mục tiêu tùy chỉnh của đề thi (mặc định 10.0 hoặc linh hoạt: 5, 10, 15, 20, 100...)
 }
 
 export interface ViolationEvent {
@@ -326,6 +327,7 @@ export interface Contest {
   teacherEmail?: string;
   createdAt: string;
   updatedAt?: string;
+  totalPoints?: number; // Tổng điểm mục tiêu tùy chỉnh của cuộc thi (mặc định 10.0 hoặc linh hoạt)
 }
 
 export interface ContestSubmission {
