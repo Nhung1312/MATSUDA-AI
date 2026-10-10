@@ -49,6 +49,7 @@ export interface Question {
   aiProposedAnswer?: string; // Đáp án AI đề xuất trong đợt thẩm định
   aiReason?: string; // Lý do / căn cứ AI đưa ra
   needsReview?: boolean; // Cờ đánh dấu câu cần giáo viên duyệt lại
+  verificationFingerprint?: string; // Phiên bản nội dung đã được duyệt, dùng phát hiện sửa đề/đáp án
 }
 
 // ==========================================

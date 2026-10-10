@@ -5,6 +5,7 @@ import { StorageService } from '../services/storageService';
 import { FirestoreService } from '../services/firestoreService';
 import { soundEffects } from '../utils/soundEffects';
 import { isEssayQuestion } from '../utils/questionUtils';
+import { getQuestionVerificationFingerprint, isQuestionVerifiedCurrent, shouldVerifyQuestion } from '../utils/verificationUtils';
 import confetti from 'canvas-confetti';
 import { 
   Sparkles, 
@@ -68,7 +69,7 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
         return {
           assignment: asg,
           totalQuestions: questions.length,
-          verifiedCount: questions.filter(q => q.verificationStatus === 'verified' && !q.needsReview).length,
+          verifiedCount: questions.filter(isQuestionVerifiedCurrent).length,
           needsReviewCount: questions.filter(q => q.verificationStatus === 'needs_review' || q.needsReview).length,
           status: 'pending'
         };
@@ -126,7 +127,7 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
       const questions = asg.questions || [];
 
       // Không chạy lại câu đã xác minh từ trước (Requirement F)
-      const questionsToVerify = questions.filter(q => q.verificationStatus !== 'verified' || q.needsReview === true);
+      const questionsToVerify = questions.filter(shouldVerifyQuestion);
 
       // Nếu tất cả các câu đã được thẩm định đạt chuẩn từ trước
       if (questionsToVerify.length === 0 && questions.length > 0) {
@@ -174,6 +175,7 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
               ...q,
               verificationStatus: isNeedReview ? 'needs_review' : 'verified',
               needsReview: isNeedReview,
+              verificationFingerprint: isNeedReview ? undefined : getQuestionVerificationFingerprint(q),
               confidence: found.confidence,
               pass1Answer: found.pass1Answer,
               pass2Answer: found.pass2Answer,
@@ -184,7 +186,7 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
           }
 
           // Đối với các câu đã xác minh trước đó
-          if (q.verificationStatus === 'verified' && !q.needsReview) {
+          if (isQuestionVerifiedCurrent(q)) {
             vCount++;
           } else if (q.verificationStatus === 'needs_review' || q.needsReview) {
             nrCount++;
@@ -195,7 +197,7 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
         // Kết quả thẩm định đề (Requirement G):
         // Nếu tất cả câu đạt => verified, eligibleForSampleBank = true
         // Nếu còn câu nghi ngờ => needs_review, eligibleForSampleBank = false
-        const allVerified = updatedQuestions.length > 0 && updatedQuestions.every(q => q.verificationStatus === 'verified' && !q.needsReview);
+        const allVerified = updatedQuestions.length > 0 && updatedQuestions.every(isQuestionVerifiedCurrent);
         const hasSuspicious = updatedQuestions.some(q => q.verificationStatus === 'needs_review' || q.needsReview === true);
 
         const updatedAssignment: Assignment = {
