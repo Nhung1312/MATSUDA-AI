@@ -293,35 +293,54 @@ export function formatQuestionSubItems(text?: string | null): string {
 }
 
 /**
- * Chuyển đổi chuỗi điểm số (hỗ trợ cả dấu phẩy ',' và dấu chấm '.') thành số thực dương hợp lệ
- * Ví dụ: "0,3" -> 0.3; "0.25" -> 0.25; "1,5" -> 1.5; "2" -> 2
+ * Các điểm có tối đa 4 chữ số thập phân (không dùng AI/API).
+ * Phép phân phối tính trên đơn vị 1/10000 điểm để không lệch tổng vì làm tròn.
  */
+export const POINT_SCALE = 10000;
+
+export function toPointUnits(points: number): number {
+  if (!Number.isFinite(points) || points < 0 || Math.abs(points * POINT_SCALE - Math.round(points * POINT_SCALE)) > 0.000001) {
+    throw new Error('Điểm phải không âm và có tối đa 4 chữ số thập phân.');
+  }
+  return Math.round(points * POINT_SCALE);
+}
+
+export function fromPointUnits(units: number): number {
+  return units / POINT_SCALE;
+}
+
+/** Chỉ chấp nhận toàn bộ chuỗi số; không nhận '0.3abc', dấu âm hay vô cực. */
 export function parseDecimalPoint(input: string | number | undefined | null, defaultValue = 0): number {
   if (typeof input === 'number') {
-    return isNaN(input) ? defaultValue : Math.max(0, input);
+    try { toPointUnits(input); return input; } catch { return defaultValue; }
   }
-  if (!input) return defaultValue;
-  const cleaned = String(input).replace(',', '.').trim();
-  const num = parseFloat(cleaned);
-  return isNaN(num) ? defaultValue : Math.max(0, num);
+  if (input === undefined || input === null) return defaultValue;
+  const cleaned = String(input).trim();
+  if (!/^(?:\d+(?:[.,]\d{1,4})?|[.,]\d{1,4})$/.test(cleaned)) return defaultValue;
+  const result = Number(cleaned.replace(',', '.'));
+  try { toPointUnits(result); return result; } catch { return defaultValue; }
 }
 
-/**
- * Định dạng hiển thị điểm số gọn gàng (không dư số 0 vô nghĩa, tối đa 2 chữ số thập phân)
- * Ví dụ: 0.3 -> "0.3"; 0.25 -> "0.25"; 1.0 -> "1"; 1.5 -> "1.5"
- */
+/** Bảo toàn chính xác tối đa 4 chữ số sau dấu thập phân khi hiển thị. */
 export function formatDecimalPoint(val: number): string {
-  if (isNaN(val)) return '0';
-  const rounded = Math.round(val * 100) / 100;
-  return rounded.toString();
+  if (!Number.isFinite(val)) return '0';
+  return String(fromPointUnits(Math.round(val * POINT_SCALE)));
 }
 
-/**
- * Tính tổng điểm thực tế của danh sách câu hỏi (chính xác đến 2 chữ số thập phân)
- */
 export function calculateQuestionsTotalPoints(questions: Question[]): number {
   if (!Array.isArray(questions)) return 0;
-  const sum = questions.reduce((acc, q) => acc + (typeof q?.points === 'number' ? q.points : 0), 0);
-  return Math.round(sum * 100) / 100;
+  // Dung nạp các đề cũ có điểm lưu với độ chính xác lớn hơn 4 chữ số.
+  // Chỉ làm tròn tổng để hiển thị và so sánh; không sửa dữ liệu câu hỏi cũ.
+  const sum = questions.reduce((acc, q) => acc + (Number.isFinite(q?.points) ? q.points : 0), 0);
+  return fromPointUnits(Math.round(sum * POINT_SCALE));
 }
 
+/** Chia đều mục tiêu, phân bổ phần dư 0.0001 điểm để tổng LUÔN khớp. */
+export function distributePointsEvenly(total: number, count: number): number[] {
+  if (!Number.isInteger(count) || count < 1) throw new Error('Số câu phải là số nguyên dương.');
+  const units = toPointUnits(total);
+  if (units < count) throw new Error('Tổng điểm quá nhỏ: mỗi câu cần ít nhất 0,0001 điểm.');
+  const base = Math.floor(units / count);
+  const remainder = units - base * count;
+  return Array.from({ length: count }, (_, i) => fromPointUnits(base + (i >= count - remainder ? 1 : 0)));
+}
