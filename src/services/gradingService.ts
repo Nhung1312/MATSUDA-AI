@@ -18,7 +18,7 @@ import {
   StepErrorType,
   StepGradingResponse
 } from '../types';
-import { isEssayQuestion } from '../utils/questionUtils';
+import { isEssayQuestion, formatDecimalPoint } from '../utils/questionUtils';
 import { stepGradingService } from './stepGradingService';
 import { StorageService } from './storageService';
 import { FirestoreService } from './firestoreService';
@@ -553,10 +553,13 @@ export class GradingService {
       };
     });
 
-    // Quy đổi điểm ra thang điểm 10 chuẩn
-    const rawScore = maxPointsTotal > 0 ? (earnedPointsTotal / maxPointsTotal) * 10 : 0;
-    const finalScore = Math.round(rawScore * 10) / 10; // làm tròn 1 chữ số thập phân
-    const mcqScore = maxMcqPoints > 0 ? Math.round(((earnedMcqPoints / maxMcqPoints) * 10) * 10) / 10 : 0;
+    // Bài tập mới dùng đúng thang điểm giáo viên đã lưu; đề cũ giữ thang 10.
+    const scoreScale = assignment.totalPoints && assignment.totalPoints > 0 ? assignment.totalPoints : 10;
+    const rawScore = maxPointsTotal > 0 ? (earnedPointsTotal / maxPointsTotal) * scoreScale : 0;
+    const finalScore = Number(formatDecimalPoint(rawScore));
+    const mcqScore = assignment.totalPoints
+      ? Number(formatDecimalPoint(earnedMcqPoints))
+      : maxMcqPoints > 0 ? Math.round(((earnedMcqPoints / maxMcqPoints) * 10) * 10) / 10 : 0;
 
     const startTime = new Date(startedAt).getTime();
     const endTime = new Date(submittedAt).getTime();
@@ -574,17 +577,17 @@ export class GradingService {
       studentId,
       answers,
       totalScore: finalScore,
-      maxScore: 10,
+      maxScore: scoreScale,
       hasEssayQuestions,
       gradingStatus: provisionalCount > 0 ? 'needs_review' : (hasEssayQuestions ? 'pending_teacher_grading' : 'graded'),
       needsTeacherReview: provisionalCount > 0,
       isProvisional: provisionalCount > 0,
       ungradedCount: provisionalCount,
       mcqScore,
-      mcqPoints: Math.round(earnedMcqPoints * 10) / 10,
-      maxMcqPoints: Math.round(maxMcqPoints * 10) / 10,
-      essayPoints: Math.round(earnedEssayPoints * 10) / 10,
-      maxEssayPoints: Math.round(maxEssayPoints * 10) / 10,
+      mcqPoints: Number(formatDecimalPoint(earnedMcqPoints)),
+      maxMcqPoints: Number(formatDecimalPoint(maxMcqPoints)),
+      essayPoints: Number(formatDecimalPoint(earnedEssayPoints)),
+      maxEssayPoints: Number(formatDecimalPoint(maxEssayPoints)),
       correctCount,
       wrongCount,
       unansweredCount,
@@ -616,7 +619,7 @@ export class GradingService {
 
     let sumScore = 0;
     let highestScore = 0;
-    let lowestScore = submittedCount > 0 ? 10 : 0;
+    let lowestScore = submittedCount > 0 ? Math.max(10, assignment.totalPoints || 10) : 0;
 
     submissions.forEach(sub => {
       sumScore += sub.totalScore;
@@ -887,8 +890,9 @@ export class GradingService {
       }
     }
 
-    const rawScore = totalMax > 0 ? (totalEarned / totalMax) * 10 : 0;
-    const finalScore = Math.round(rawScore * 10) / 10;
+    const scoreScale = submission.maxScore && submission.maxScore > 0 ? submission.maxScore : 10;
+    const rawScore = totalMax > 0 ? (totalEarned / totalMax) * scoreScale : 0;
+    const finalScore = Number(formatDecimalPoint(rawScore));
 
     const hasAnyProvisional = updatedAnswers.some(a => a.isProvisional || (a.needsTeacherReview && a.teacherScore === undefined));
 

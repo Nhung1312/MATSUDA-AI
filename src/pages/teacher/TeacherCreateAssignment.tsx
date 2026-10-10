@@ -9,9 +9,10 @@ import { FileUploadModal } from '../../components/FileUploadModal';
 import { MathDisplay } from '../../components/MathDisplay';
 import { QuestionImageUpload } from '../../components/QuestionImageUpload';
 import { processQuestionImage } from '../../utils/imageProcessUtils';
-import { isEssayQuestion, normalizeQuestion, isQuestionMissingImage, isQuestionMentioningImage, getMissingImageReason } from '../../utils/questionUtils';
+import { isEssayQuestion, normalizeQuestion, isQuestionMissingImage, isQuestionMentioningImage, getMissingImageReason, parseDecimalPoint, formatDecimalPoint, calculateQuestionsTotalPoints, distributePointsEvenly, toPointUnits, fromPointUnits } from '../../utils/questionUtils';
 import { SubscriptionService, BILLING_ENABLED } from '../../services/subscriptionService';
 import { AiSolveExamModal } from '../../components/AiSolveExamModal';
+import { PointDistributionModal } from '../../components/PointDistributionModal';
 import { FileParserService } from '../../services/fileParserService';
 import { 
   Plus, 
@@ -57,6 +58,52 @@ const DEFAULT_OPTIONS: QuestionOption[] = [
   { id: 'C', text: '' },
   { id: 'D', text: '' }
 ];
+
+/**
+ * Component nhập điểm câu hỏi linh hoạt:
+ * - Hỗ trợ mọi số điểm dương: 0,1; 0,25; 0,3; 0,5; 0,75; 1,25; 2,5...
+ * - Chấp nhận cả dấu phẩy (,) và dấu chấm (.)
+ * - Không tự ý làm tròn về 0,25 hay 0,5
+ * - Không bị chặn bởi step/min của trình duyệt
+ */
+const QuestionPointsInput: React.FC<{
+  points: number;
+  onChange: (newPoints: number) => void;
+}> = ({ points, onChange }) => {
+  const [localVal, setLocalVal] = useState<string>(() => formatDecimalPoint(points));
+
+  useEffect(() => {
+    setLocalVal(formatDecimalPoint(points));
+  }, [points]);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={localVal}
+      onChange={(e) => {
+        const val = e.target.value;
+        setLocalVal(val);
+        const parsed = parseDecimalPoint(val);
+        if (parsed > 0) {
+          onChange(parsed);
+        }
+      }}
+      onBlur={() => {
+        const parsed = parseDecimalPoint(localVal);
+        if (parsed > 0) {
+          setLocalVal(formatDecimalPoint(parsed));
+          onChange(parsed);
+        } else {
+          setLocalVal(formatDecimalPoint(points));
+        }
+      }}
+      className="w-16 px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-center focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+      placeholder="0.25"
+      title="Nhập số điểm cho câu hỏi (chấp nhận cả dấu phẩy và chấm: 0,3 hoặc 0.3)"
+    />
+  );
+};
 
 export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = ({
   classes,
@@ -160,103 +207,45 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
   const [aiGenCount, setAiGenCount] = useState(5);
   const [importSuccessAlert, setImportSuccessAlert] = useState<string | null>(null);
 
-  // --- BỘ CÔNG CỤ PHÂN BỔ ĐIỂM THÔNG MINH (1-CLICK) ---
+  // --- BỘ CÔNG CỤ PHÂN BỔ ĐIỂM THÔNG MINH (1-CLICK) & TỔNG ĐIỂM MỤC TIÊU ---
   const [showPointDistributeModal, setShowPointDistributeModal] = useState(false);
-  const [customMcTotal, setCustomMcTotal] = useState<number>(3.0);
-  const [customEssayTotal, setCustomEssayTotal] = useState<number>(7.0);
+  const [targetTotalPoints, setTargetTotalPoints] = useState<number>(() => {
+    if (editingAssignment?.totalPoints && editingAssignment.totalPoints > 0) {
+      return editingAssignment.totalPoints;
+    }
+    if (editingAssignment?.questions?.length) {
+      return calculateQuestionsTotalPoints(editingAssignment.questions) || 10;
+    }
+    if (initialQuestions && initialQuestions.length > 0) {
+      return calculateQuestionsTotalPoints(initialQuestions) || 10;
+    }
+    return 10.0;
+  });
 
-  const mcCount = questions.filter(q => q.type === 'multiple_choice').length;
-  const essayCount = questions.filter(q => q.type === 'essay').length;
-
-  const handleApplyPointPreset = (preset: '3_7' | '7_3' | '5_5' | 'equal_10' | 'custom') => {
+  const actualTotalPoints = calculateQuestionsTotalPoints(questions);
+  const pdfActualTotalPoints = targetTotalPoints;
+  const handleAutoBalanceLastQuestion = () => {
     if (questions.length === 0) return;
-
-    let targetMcTotal = 3.0;
-    let targetEssayTotal = 7.0;
-
-    if (preset === '7_3') {
-      targetMcTotal = 7.0;
-      targetEssayTotal = 3.0;
-    } else if (preset === '5_5') {
-      targetMcTotal = 5.0;
-      targetEssayTotal = 5.0;
-    } else if (preset === 'custom') {
-      targetMcTotal = Math.max(0, customMcTotal);
-      targetEssayTotal = Math.max(0, customEssayTotal);
-    }
-
-    if (preset === 'equal_10' || (mcCount === 0 && essayCount > 0) || (essayCount === 0 && mcCount > 0)) {
-      // Chia đều toàn bộ câu hỏi tròn 10 điểm
-      const basePoint = Math.floor((10 / questions.length) * 100) / 100;
-      let remaining = Math.round((10 - basePoint * questions.length) * 100) / 100;
-
-      const updated = questions.map((q, idx) => {
-        let p = basePoint;
-        if (idx === questions.length - 1 && remaining !== 0) {
-          p = Math.round((p + remaining) * 100) / 100;
-        }
-        return { ...q, points: Math.max(0.05, p) };
-      });
-      setQuestions(updated);
-      setShowPointDistributeModal(false);
-      setImportSuccessAlert(`Đã chia đều 10 điểm cho toàn bộ ${questions.length} câu hỏi thành công!`);
-      setTimeout(() => setImportSuccessAlert(null), 4000);
-      return;
-    }
-
-    // Chia theo tỉ lệ Trắc nghiệm & Tự luận
-    const mcPerQuestion = mcCount > 0 
-      ? Math.round((targetMcTotal / mcCount) * 100) / 100 
-      : 0;
-    const essayPerQuestion = essayCount > 0 
-      ? Math.round((targetEssayTotal / essayCount) * 100) / 100 
-      : 0;
-
-    let updated = questions.map(q => {
-      if (q.type === 'multiple_choice') {
-        return { ...q, points: mcPerQuestion };
-      } else {
-        return { ...q, points: essayPerQuestion };
+    try {
+      const targetUnits = toPointUnits(targetTotalPoints);
+      const currentUnits = toPointUnits(actualTotalPoints);
+      const difference = targetUnits - currentUnits;
+      if (difference === 0) {
+        alert('Tổng điểm đã khớp mục tiêu!');
+        return;
       }
-    });
-
-    // Cân bằng câu cuối cùng nếu tổng bị lệch (ví dụ 9.95 do làm tròn)
-    const currentSum = updated.reduce((sum, q) => sum + (q.points || 0), 0);
-    const diff = Math.round((10 - currentSum) * 100) / 100;
-    if (Math.abs(diff) > 0.001 && updated.length > 0) {
-      // Ưu tiên bù vào câu tự luận cuối cùng hoặc câu cuối
-      const lastEssayIdx = updated.findLastIndex(q => q.type === 'essay');
-      const targetIdx = lastEssayIdx !== -1 ? lastEssayIdx : updated.length - 1;
-      updated[targetIdx] = {
-        ...updated[targetIdx],
-        points: Math.max(0.05, Math.round((updated[targetIdx].points + diff) * 100) / 100)
-      };
-    }
-
-    setQuestions(updated);
-    setShowPointDistributeModal(false);
-    setImportSuccessAlert(`Đã phân bổ điểm thành công: ${mcCount} câu trắc nghiệm (${mcPerQuestion}đ/câu), ${essayCount} câu tự luận (${essayPerQuestion}đ/câu) • Tổng: 10.0đ!`);
-    setTimeout(() => setImportSuccessAlert(null), 4000);
-  };
-
-  const handleAutoBalanceTo10 = () => {
-    if (questions.length === 0) return;
-    const currentSum = Math.round(questions.reduce((sum, q) => sum + (q.points || 0), 0) * 100) / 100;
-    const diff = Math.round((10 - currentSum) * 100) / 100;
-    if (Math.abs(diff) < 0.001) {
-      alert('Đề thi đã đạt chuẩn tròn 10.0 điểm!');
-      return;
-    }
-    const updated = [...questions];
-    const lastEssayIdx = updated.findLastIndex(q => q.type === 'essay');
-    const targetIdx = lastEssayIdx !== -1 ? lastEssayIdx : updated.length - 1;
-    updated[targetIdx] = {
-      ...updated[targetIdx],
-      points: Math.max(0.05, Math.round((updated[targetIdx].points + diff) * 100) / 100)
-    };
-    setQuestions(updated);
-    setImportSuccessAlert(`Đã tự động cân bằng tròn 10.0 điểm (điều chỉnh ${diff > 0 ? `+${diff}` : diff}đ tại câu ${targetIdx + 1})!`);
-    setTimeout(() => setImportSuccessAlert(null), 4000);
+      const lastEssayIdx = questions.findLastIndex(q => q.type === 'essay');
+      const index = lastEssayIdx >= 0 ? lastEssayIdx : questions.length - 1;
+      const nextUnits = toPointUnits(questions[index].points) + difference;
+      if (nextUnits < 1) {
+        alert('Không thể cân bằng vào câu cuối vì điểm câu đó sẽ không còn dương. Hãy dùng chức năng Chia đều.');
+        return;
+      }
+      const updated = [...questions];
+      updated[index] = { ...updated[index], points: fromPointUnits(nextUnits) };
+      setQuestions(updated);
+      setImportSuccessAlert(`Đã cân bằng: câu ${index + 1} = ${updated[index].points} điểm, tổng ${targetTotalPoints} điểm.`);
+    } catch (error) { alert(error instanceof Error ? error.message : 'Điểm không hợp lệ.'); }
   };
 
   useEffect(() => {
@@ -662,6 +651,10 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
           }
         }
       }
+      if (questions.some(q => !Number.isFinite(q.points) || q.points <= 0)) {
+        alert('Mỗi câu phải có điểm dương hợp lệ.');
+        return;
+      }
       finalQuestions = questions.map(q => normalizeQuestion(q));
       finalType = 'text';
     } 
@@ -681,8 +674,23 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
       // bằng hàm upload file PDF lên Firebase Storage và lấy link tải về.
       finalPdfUrl = pdfPreviewUrl; 
       
-      // Tự động sinh mảng questions "ảo" để hệ thống chấm điểm dựa vào bảng đáp án
-      const pointPerQuestion = Number((10 / pdfNumQuestions).toFixed(2));
+      // Sinh điểm từ mục tiêu của giáo viên, chia phần dư chính xác đến 0,0001 điểm.
+      // Nếu chỉ chỉnh sửa PDF mà không đổi mục tiêu/số câu thì giữ nguyên điểm cũ.
+      if (!Number.isInteger(pdfNumQuestions) || pdfNumQuestions < 1 || pdfNumQuestions > 100) {
+        alert('Số câu PDF phải từ 1 đến 100.');
+        return;
+      }
+      let pdfPoints: number[];
+      try {
+        const existing = editingAssignment?.type === 'pdf' ? editingAssignment.questions : undefined;
+        pdfPoints = existing?.length === pdfNumQuestions &&
+          Math.abs(calculateQuestionsTotalPoints(existing) - targetTotalPoints) < 0.000001
+          ? existing.map(q => q.points)
+          : distributePointsEvenly(targetTotalPoints, pdfNumQuestions);
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'Tổng điểm PDF không hợp lệ.');
+        return;
+      }
       finalQuestions = Array.from({ length: pdfNumQuestions }).map((_, i) => ({
         id: `q_pdf_${Date.now()}_${i + 1}`,
         order: i + 1,
@@ -695,10 +703,26 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
           { id: 'D', text: 'D' }
         ],
         correctAnswer: pdfAnswers[i + 1] || 'A', // Lấy đáp án giáo viên đã tick
-        points: pointPerQuestion,
+        points: pdfPoints[i],
         explanation: '',
         topicHint: topic
       }));
+    }
+
+    let finalTotalPoints: number;
+    try {
+      finalTotalPoints = calculateQuestionsTotalPoints(finalQuestions);
+      toPointUnits(targetTotalPoints);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Điểm không hợp lệ.');
+      return;
+    }
+    if (finalTotalPoints <= 0) {
+      alert('Tổng điểm bài tập phải lớn hơn 0.');
+      return;
+    }
+    if (examMode === 'text' && Math.abs(finalTotalPoints - targetTotalPoints) > 0.000001) {
+      if (!window.confirm(`Tổng điểm các câu là ${finalTotalPoints}, khác mục tiêu ${targetTotalPoints}.\nNếu lưu, hệ thống sẽ dùng tổng điểm thực tế ${finalTotalPoints} để chấm. Tiếp tục?`)) return;
     }
 
     setIsSaving(true);
@@ -719,6 +743,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
           classId,
           className,
           questions: finalQuestions,
+          totalPoints: finalTotalPoints,
           durationMinutes: Number(durationMinutes) || 0,
           deadline,
           allowViewResult,
@@ -737,6 +762,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
           classId,
           className,
           questions: finalQuestions,
+          totalPoints: finalTotalPoints,
           durationMinutes: Number(durationMinutes) || 0,
           deadline,
           allowViewResult,
@@ -1224,6 +1250,22 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
               )}
             </div>
 
+            {/* Cấu hình điểm riêng cho từng đề - không gọi AI */}
+            <div className="bg-white border border-indigo-200 rounded-2xl p-3 sm:p-4 flex flex-wrap gap-3 items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                <span>Tổng điểm mục tiêu:</span>
+                <QuestionPointsInput points={targetTotalPoints} onChange={setTargetTotalPoints} />
+                <span>Thực tế: <b className="text-indigo-700">{actualTotalPoints}đ</b></span>
+                {Math.abs(actualTotalPoints - targetTotalPoints) > 0.000001 && <span className="text-amber-700">(chưa khớp)</span>}
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={handleAutoBalanceLastQuestion}
+                  className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold">Cân bằng câu cuối</button>
+                <button type="button" onClick={() => setShowPointDistributeModal(true)}
+                  className="px-3 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 text-xs font-bold">⚖️ Phân phối điểm</button>
+              </div>
+            </div>
+
             {/* Questions List */}
             <div className="space-y-4">
               {questions.filter((q) => {
@@ -1348,14 +1390,9 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
                     <div className="flex items-center space-x-3">
                       <div className="flex items-center space-x-1">
                         <span className="text-xs text-slate-500 font-medium">Điểm:</span>
-                        <input
-                          type="number"
-                          step="0.25"
-                          min="0.25"
-                          max="10"
-                          value={q.points}
-                          onChange={(e) => handleUpdateQuestion(qIdx, { points: Number(e.target.value) })}
-                          className="w-16 px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-center"
+                        <QuestionPointsInput
+                          points={q.points}
+                          onChange={(value) => handleUpdateQuestion(qIdx, { points: value })}
                         />
                       </div>
 
@@ -1608,6 +1645,12 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
                     </div>
                   </div>
 
+                  <div className="flex gap-2 items-center text-xs font-bold text-slate-700">
+                    <span>Tổng điểm PDF:</span>
+                    <QuestionPointsInput points={targetTotalPoints} onChange={setTargetTotalPoints} />
+                    <span>điểm (chia đều, phần dư phân bổ tự động)</span>
+                  </div>
+
                   {/* Actions for PDF answers */}
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -1714,13 +1757,13 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
               <>
                 Tổng cộng: <strong className="text-indigo-600">{questions.length}</strong> câu hỏi • Tổng điểm:{' '}
                 <strong className="text-slate-900">
-                  {questions.reduce((sum, q) => sum + (q.points || 0), 0)}
+                  {actualTotalPoints}
                 </strong>
               </>
             ) : (
               <>
                 Đề PDF: <strong className="text-indigo-600">{pdfNumQuestions}</strong> câu • Điểm chia đều:{' '}
-                <strong className="text-slate-900">10 điểm</strong>
+                <strong className="text-slate-900">{pdfActualTotalPoints} điểm</strong>
               </>
             )}
           </div>
@@ -1743,6 +1786,17 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
           </button>
         </div>
       </form>
+      <PointDistributionModal
+        isOpen={showPointDistributeModal && examMode === 'text'}
+        onClose={() => setShowPointDistributeModal(false)}
+        questions={questions}
+        targetTotalPoints={targetTotalPoints}
+        onUpdateTargetTotalPoints={setTargetTotalPoints}
+        onApplyPoints={(updatedQuestions, message) => {
+          setQuestions(updatedQuestions);
+          setImportSuccessAlert(message);
+        }}
+      />
 
       {/* --- CÁC MODAL HỖ TRỢ CHẾ ĐỘ TEXT --- */}
       {showAiGenModal && (

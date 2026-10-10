@@ -291,3 +291,56 @@ export function formatQuestionSubItems(text?: string | null): string {
     return mathSegments[idx] !== undefined ? mathSegments[idx] : '';
   });
 }
+
+/**
+ * Các điểm có tối đa 4 chữ số thập phân (không dùng AI/API).
+ * Phép phân phối tính trên đơn vị 1/10000 điểm để không lệch tổng vì làm tròn.
+ */
+export const POINT_SCALE = 10000;
+
+export function toPointUnits(points: number): number {
+  if (!Number.isFinite(points) || points < 0 || Math.abs(points * POINT_SCALE - Math.round(points * POINT_SCALE)) > 0.000001) {
+    throw new Error('Điểm phải không âm và có tối đa 4 chữ số thập phân.');
+  }
+  return Math.round(points * POINT_SCALE);
+}
+
+export function fromPointUnits(units: number): number {
+  return units / POINT_SCALE;
+}
+
+/** Chỉ chấp nhận toàn bộ chuỗi số; không nhận '0.3abc', dấu âm hay vô cực. */
+export function parseDecimalPoint(input: string | number | undefined | null, defaultValue = 0): number {
+  if (typeof input === 'number') {
+    try { toPointUnits(input); return input; } catch { return defaultValue; }
+  }
+  if (input === undefined || input === null) return defaultValue;
+  const cleaned = String(input).trim();
+  if (!/^(?:\d+(?:[.,]\d{1,4})?|[.,]\d{1,4})$/.test(cleaned)) return defaultValue;
+  const result = Number(cleaned.replace(',', '.'));
+  try { toPointUnits(result); return result; } catch { return defaultValue; }
+}
+
+/** Bảo toàn chính xác tối đa 4 chữ số sau dấu thập phân khi hiển thị. */
+export function formatDecimalPoint(val: number): string {
+  if (!Number.isFinite(val)) return '0';
+  return String(fromPointUnits(Math.round(val * POINT_SCALE)));
+}
+
+export function calculateQuestionsTotalPoints(questions: Question[]): number {
+  if (!Array.isArray(questions)) return 0;
+  // Dung nạp các đề cũ có điểm lưu với độ chính xác lớn hơn 4 chữ số.
+  // Chỉ làm tròn tổng để hiển thị và so sánh; không sửa dữ liệu câu hỏi cũ.
+  const sum = questions.reduce((acc, q) => acc + (Number.isFinite(q?.points) ? q.points : 0), 0);
+  return fromPointUnits(Math.round(sum * POINT_SCALE));
+}
+
+/** Chia đều mục tiêu, phân bổ phần dư 0.0001 điểm để tổng LUÔN khớp. */
+export function distributePointsEvenly(total: number, count: number): number[] {
+  if (!Number.isInteger(count) || count < 1) throw new Error('Số câu phải là số nguyên dương.');
+  const units = toPointUnits(total);
+  if (units < count) throw new Error('Tổng điểm quá nhỏ: mỗi câu cần ít nhất 0,0001 điểm.');
+  const base = Math.floor(units / count);
+  const remainder = units - base * count;
+  return Array.from({ length: count }, (_, i) => fromPointUnits(base + (i >= count - remainder ? 1 : 0)));
+}

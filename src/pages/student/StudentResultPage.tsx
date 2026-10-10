@@ -202,8 +202,9 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
           wrongCnt++;
         }
       });
-      const rawScore = totalMax > 0 ? (totalEarned / totalMax) * 10 : 0;
-      const totalScore = Math.round(rawScore * 10) / 10;
+      const scale = submission.maxScore && submission.maxScore > 0 ? submission.maxScore : 10;
+      const rawScore = totalMax > 0 ? (totalEarned / totalMax) * scale : 0;
+      const totalScore = Math.round(rawScore * 10000) / 10000;
 
       const pendingReviewCount = updatedAnswers.filter(
         a => a.teacherScore === undefined && Boolean(a.needsTeacherReview || a.isProvisional || a.aiGradingError)
@@ -382,6 +383,8 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   const isAwaitingReview = submission.isProvisional || submission.needsTeacherReview || submission.gradingStatus === 'needs_review' || (submission.answers || []).some(a => a.needsTeacherReview && a.teacherScore === undefined);
   const hasPendingTeacherGrading = (submission.hasEssayQuestions && submission.gradingStatus === 'pending_teacher_grading') || isAwaitingReview;
   const score = submission.totalScore;
+  const scoreMax = submission.maxScore && submission.maxScore > 0 ? submission.maxScore : 10;
+  const normalizedScore = scoreMax > 0 ? score * 10 / scoreMax : 0;
   let ratingColor = isAwaitingReview ? 'from-amber-500 to-indigo-600' : hasPendingTeacherGrading ? 'from-purple-600 to-indigo-600' : 'from-indigo-600 to-purple-600';
   let ratingTitle = 'Kết quả bài làm';
   let ratingMessage = 'Xem lại câu cần củng cố bên dưới.';
@@ -389,15 +392,15 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   if (isAwaitingReview) {
     ratingTitle = 'Đang chờ Thầy/Cô duyệt';
     ratingMessage = 'Điểm hiện tại là tạm tính.';
-  } else if (score >= 9.0) {
+  } else if (normalizedScore >= 9.0) {
     ratingColor = 'from-emerald-500 to-teal-600';
     ratingTitle = 'Hoàn thành rất tốt';
     ratingMessage = 'Tiếp tục phát huy.';
-  } else if (score >= 7.0) {
+  } else if (normalizedScore >= 7.0) {
     ratingColor = 'from-blue-600 to-indigo-600';
     ratingTitle = 'Hoàn thành tốt';
     ratingMessage = 'Xem lại vài điểm cần củng cố.';
-  } else if (score < 5.0) {
+  } else if (normalizedScore < 5.0) {
     ratingColor = 'from-rose-500 to-amber-600';
     ratingTitle = 'Cần củng cố thêm';
     ratingMessage = 'Ưu tiên xem lỗi gốc và luyện lại.';
@@ -475,9 +478,9 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 <div className="flex items-baseline space-x-1.5 pt-1">
                   <span className="text-xs font-bold text-slate-500">Tạm tính</span>
                   <span className="text-3xl sm:text-4xl font-black text-amber-700 dark:text-amber-300">
-                    {submission.mcqScore !== undefined ? submission.mcqScore.toFixed(1) : score.toFixed(1)}
+                    {submission.mcqScore !== undefined ? submission.mcqScore : score}
                   </span>
-                  <span className="text-sm font-bold text-slate-400">/ 10</span>
+                  <span className="text-sm font-bold text-slate-400">/ {scoreMax}</span>
                 </div>
 
               </div>
@@ -489,9 +492,9 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 <div className="flex items-baseline space-x-1.5 pt-1">
                   <span className="text-xs font-bold text-slate-500">Tạm tính</span>
                   <span className="text-3xl sm:text-4xl font-black text-purple-700 dark:text-purple-300">
-                    {submission.mcqScore !== undefined ? submission.mcqScore.toFixed(1) : score.toFixed(1)}
+                    {submission.mcqScore !== undefined ? submission.mcqScore : score}
                   </span>
-                  <span className="text-sm font-bold text-slate-400">/ 10</span>
+                  <span className="text-sm font-bold text-slate-400">/ {scoreMax}</span>
                 </div>
 
               </div>
@@ -499,9 +502,9 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
               <>
                 <div className="inline-flex items-baseline space-x-2 bg-gradient-to-br from-indigo-50 to-purple-50 px-4 sm:px-8 py-4 rounded-2xl border border-indigo-100 shadow-sm">
                   <span className="text-5xl sm:text-6xl font-black text-indigo-600 tracking-tight">
-                    {score.toFixed(1)}
+                    {score}
                   </span>
-                  <span className="text-xl font-bold text-slate-400">/ 10</span>
+                  <span className="text-xl font-bold text-slate-400">/ {scoreMax}</span>
                 </div>
                 <h3 className="font-extrabold text-base sm:text-lg text-slate-800 mt-3">{ratingTitle}</h3>
                 <p className="text-xs text-slate-500 max-w-lg mx-auto mt-1">{ratingMessage}</p>

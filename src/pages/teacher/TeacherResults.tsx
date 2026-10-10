@@ -406,8 +406,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
           wrongCnt++;
         }
       });
-      const rawScore = totalMax > 0 ? (totalEarned / totalMax) * 10 : 0;
-      const totalScore = Math.round(rawScore * 10) / 10;
+      const scale = selectedSubmissionDetail.maxScore && selectedSubmissionDetail.maxScore > 0 ? selectedSubmissionDetail.maxScore : 10;
+      const rawScore = totalMax > 0 ? (totalEarned / totalMax) * scale : 0;
+      const totalScore = Math.round(rawScore * 10000) / 10000;
 
       const pendingReviewCount = updatedAnswers.filter(
         a => a.teacherScore === undefined && Boolean(a.needsTeacherReview || a.isProvisional || a.aiGradingError)
@@ -464,7 +465,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
         type: res.submission.needsTeacherReview || res.submission.isProvisional ? 'warning' : 'success',
         text: res.submission.needsTeacherReview || res.submission.isProvisional
           ? 'AI đã phân tích toàn bài. Vẫn còn nội dung cần giáo viên duyệt.'
-          : `AI đã chấm xong toàn bài: ${res.submission.totalScore}/10 điểm.`
+          : `AI đã chấm xong toàn bài: ${res.submission.totalScore}/${res.submission.maxScore || 10} điểm.`
       });
     } catch (e: any) {
       setActionNotice({ type: 'error', text: 'AI chưa chấm được toàn bài. Hãy thử lại sau.' });
@@ -524,8 +525,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
         else wrongCnt++;
       }
     });
-    const rawScore = totalMax > 0 ? (totalEarned / totalMax) * 10 : 0;
-    const totalScore = Math.round(rawScore * 10) / 10;
+    const scale = selectedSubmissionDetail.maxScore && selectedSubmissionDetail.maxScore > 0 ? selectedSubmissionDetail.maxScore : 10;
+    const rawScore = totalMax > 0 ? (totalEarned / totalMax) * scale : 0;
+    const totalScore = Math.round(rawScore * 10000) / 10000;
 
     const pendingReviewCount = updatedAnswers.filter(a => {
       if (a.teacherScore !== undefined) return false;
@@ -742,7 +744,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
           <div className="text-xs font-bold text-indigo-600 uppercase">Điểm trung bình</div>
           <div className="text-2xl font-extrabold text-indigo-700 mt-1">
             {stats?.averageScore || 0}
-            <span className="text-xs font-normal text-slate-400">/10</span>
+            <span className="text-xs font-normal text-slate-400">/{currentAssignment?.totalPoints || 10}</span>
           </div>
           <span className="text-[11px] text-slate-500">Toàn lớp</span>
         </div>
@@ -751,7 +753,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
           <div className="text-xs font-bold text-amber-600 uppercase">Điểm cao nhất</div>
           <div className="text-2xl font-extrabold text-amber-700 mt-1">
             {stats?.highestScore || 0}
-            <span className="text-xs font-normal text-slate-400">/10</span>
+            <span className="text-xs font-normal text-slate-400">/{currentAssignment?.totalPoints || 10}</span>
           </div>
           <span className="text-[11px] text-slate-500">Thủ khoa lớp</span>
         </div>
@@ -760,7 +762,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
           <div className="text-xs font-bold text-slate-400 uppercase">Điểm thấp nhất</div>
           <div className="text-2xl font-extrabold text-slate-700 mt-1">
             {stats?.lowestScore || 0}
-            <span className="text-xs font-normal text-slate-400">/10</span>
+            <span className="text-xs font-normal text-slate-400">/{currentAssignment?.totalPoints || 10}</span>
           </div>
           <span className="text-[11px] text-slate-500">Cần phụ đạo</span>
         </div>
@@ -945,7 +947,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                         <div className="font-extrabold text-base text-white mt-0.5 line-clamp-1">{top2.studentName}</div>
                       </div>
                       <div className="mt-3 w-full bg-white/10 rounded-2xl py-2 px-3">
-                        <div className="text-2xl font-black text-amber-300">{top2.totalScore.toFixed(1)} <span className="text-xs font-normal text-slate-300">/ 10</span></div>
+                        <div className="text-2xl font-black text-amber-300">{top2.totalScore} <span className="text-xs font-normal text-slate-300">/ {currentAssignment?.totalPoints || 10}</span></div>
                         <div className="text-[11px] text-slate-300 mt-0.5 flex items-center justify-center gap-1">
                           <Clock className="w-3 h-3" /> {GradingService.formatDuration(top2.timeSpentSeconds)}
                         </div>
@@ -969,7 +971,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                         <div className="font-black text-lg text-white mt-0.5 line-clamp-1">{top1.studentName}</div>
                       </div>
                       <div className="mt-3 w-full bg-amber-400/20 rounded-2xl py-2.5 px-3 border border-amber-400/30">
-                        <div className="text-3xl font-black text-amber-300">{top1.totalScore.toFixed(1)} <span className="text-xs font-normal text-amber-100">/ 10</span></div>
+                        <div className="text-3xl font-black text-amber-300">{top1.totalScore} <span className="text-xs font-normal text-amber-100">/ {currentAssignment?.totalPoints || 10}</span></div>
                         <div className="text-xs text-amber-100 mt-0.5 flex items-center justify-center gap-1 font-semibold">
                           <Clock className="w-3.5 h-3.5" /> {GradingService.formatDuration(top1.timeSpentSeconds)}
                         </div>
@@ -988,7 +990,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                         <div className="font-extrabold text-base text-white mt-0.5 line-clamp-1">{top3.studentName}</div>
                       </div>
                       <div className="mt-3 w-full bg-white/10 rounded-2xl py-2 px-3">
-                        <div className="text-2xl font-black text-amber-300">{top3.totalScore.toFixed(1)} <span className="text-xs font-normal text-slate-300">/ 10</span></div>
+                        <div className="text-2xl font-black text-amber-300">{top3.totalScore} <span className="text-xs font-normal text-slate-300">/ {currentAssignment?.totalPoints || 10}</span></div>
                         <div className="text-[11px] text-slate-300 mt-0.5 flex items-center justify-center gap-1">
                           <Clock className="w-3 h-3" /> {GradingService.formatDuration(top3.timeSpentSeconds)}
                         </div>
@@ -1088,7 +1090,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                             </td>
                             <td className="py-3 px-3 text-center">
                               <span className={`inline-block px-3 py-1 rounded-xl font-extrabold text-sm border ${scoreBadge}`}>
-                                {sub.totalScore.toFixed(1)}
+                                {sub.totalScore}
                               </span>
                             </td>
                             <td className="py-3 px-3 text-center text-xs font-semibold">
@@ -1644,7 +1646,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                               <span
                                 className={`inline-block px-3 py-1 rounded-xl font-extrabold text-sm border ${scoreColor}`}
                               >
-                                {sub.totalScore.toFixed(1)}
+                                {sub.totalScore}
                               </span>
                               <span className="inline-block px-2 py-0.5 rounded-full font-black text-[9px] bg-amber-100 text-amber-900 border border-amber-300">
                                 Cần GV duyệt ({getPendingReviewCount(sub)})
@@ -1654,7 +1656,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                             <span
                               className={`inline-block px-3 py-1 rounded-xl font-extrabold text-sm border ${scoreColor}`}
                             >
-                              {sub.totalScore.toFixed(1)}
+                              {sub.totalScore}
                             </span>
                           )}
                         </td>
@@ -1776,7 +1778,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                   )}
                   Thời gian: {GradingService.formatDuration(selectedSubmissionDetail.timeSpentSeconds)} •{' '}
                   <strong className={selectedPendingReviewCount > 0 ? 'text-amber-700 text-sm' : 'text-indigo-600 text-sm'}>
-                    {selectedSubmissionDetail.totalScore}/10
+                    {selectedSubmissionDetail.totalScore}/{selectedSubmissionDetail.maxScore || 10}
                   </strong>
                   {selectedPendingReviewCount > 0 && <span className="text-amber-700"> • Tạm tính</span>}
                 </p>
@@ -2194,7 +2196,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                             <label className="text-slate-600 font-semibold shrink-0">Điểm:</label>
                             <input
                               type="number"
-                              step="0.25"
+                              step="any"
                               min="0"
                               max={question.points}
                               value={currentScore}

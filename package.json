@@ -11,7 +11,8 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "check:imports": "tsx scripts/check-import-parsers.ts",
-    "test:strikeout": "tsx scripts/test-strikeout-grading.ts"
+    "test:strikeout": "tsx scripts/test-strikeout-grading.ts",
+    "test:points": "node scripts/test-point-distribution.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
