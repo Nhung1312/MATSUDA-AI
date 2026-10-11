@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { FileParserService, ParsedItem, ParseResult } from '../services/fileParserService';
 import { aiService } from '../services/aiService';
+import { reconcileExtraGeminiPdfSolutions } from '../utils/reconcileGeminiPdf';
 import { Question } from '../types';
 import { MathDisplay } from './MathDisplay';
 import { auditNewMediaQuestions } from '../utils/mediaImportGuard';
@@ -220,7 +221,20 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         onProgress: (status) => setAiProgressStatus(status)
       });
 
-      const parsedItems: ParsedItem[] = result.questions.map((q, idx) => ({
+      // Cross-check Gemini output against the existing PDF text parser.
+      // No additional AI call, and no changes to saved assignments.
+      let pdfReference: ParseResult | null = null;
+      try {
+        pdfReference = await FileParserService.parsePdfFile(file);
+      } catch (refErr) {
+        console.warn('PDF text reference unavailable:', refErr);
+      }
+      const reconciliation = pdfReference
+        ? reconcileExtraGeminiPdfSolutions(result.questions, pdfReference)
+        : { questions: result.questions, recoveredCount: 0, note: undefined };
+      const extractedQuestions = reconciliation.questions;
+
+      const parsedItems: ParsedItem[] = extractedQuestions.map((q, idx) => ({
         id: q.id || `q_pdf_${Date.now()}_${idx + 1}`,
         order: q.order || (idx + 1),
         question: q.question,
@@ -235,8 +249,8 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       }));
 
       // Check BEFORE and AFTER normalization: it may drop items with empty question text.
-      const issues = auditNewMediaQuestions(result.questions, {
-        expectedQuestionCount: result.expectedQuestionCount,
+      const issues = auditNewMediaQuestions(extractedQuestions, {
+        expectedQuestionCount: reconciliation.recoveredCount ? extractedQuestions.length : result.expectedQuestionCount,
         declaredTotalPoints: result.declaredTotalPoints
       });
       const normalized = FileParserService.normalizeParseResult({
@@ -247,30 +261,32 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         essayCount: parsedItems.filter(i => i.category === 'tu_luan').length,
         items: parsedItems
       });
-      if (normalized.totalFound < result.questions.length) {
+      if (normalized.totalFound < extractedQuestions.length) {
         issues.push({
           order: 0,
           level: 'error',
-          message: 'AI tạo ' + result.questions.length + ' mục nhưng chỉ ' + normalized.totalFound +
+          message: 'AI tạo ' + extractedQuestions.length + ' mục nhưng chỉ ' + normalized.totalFound +
             ' mục có đủ nội dung để nhập. Có câu đã bị loại vì rỗng; phải kiểm tra PDF gốc.'
         });
       }
       // Đối chiếu độc lập số lượng câu với phần đề trong PDF (không gọi AI).
       // Chỉ chặn khi PDF có đáp án tự luận rõ ràng và Gemini trích thừa câu.
-      try {
-        const textReference = await FileParserService.parsePdfFile(file);
-        const hasMappedEssaySolutions = textReference.items.some(item =>
+      if (pdfReference) {
+        const hasMappedEssaySolutions = pdfReference.items.some(item =>
           item.category === 'tu_luan' && Boolean(item.explanation?.trim())
         );
-        if (hasMappedEssaySolutions && textReference.totalFound > 0 && result.questions.length > textReference.totalFound) {
+        if (hasMappedEssaySolutions && pdfReference.totalFound > 0 &&
+            extractedQuestions.length > pdfReference.totalFound) {
           issues.push({
             order: 0,
             level: 'error',
-            message: `Gemini nhận ${result.questions.length} câu, nhưng phần đề trong PDF có ${textReference.totalFound} câu/bài trước trang đáp án. Có thể Gemini đã coi lời giải là câu mới.`
+            message: 'Gemini trả ' + extractedQuestions.length + ' mục nhưng phần đề trong PDF có ' +
+              pdfReference.totalFound + ' câu/bài. Không đủ căn cứ ghép phần đáp án; phải đối chiếu nguồn.'
           });
         }
-      } catch (crossCheckErr) {
-        console.warn('Không thể đối chiếu PDF dạng văn bản; giáo viên cần duyệt kỹ:', crossCheckErr);
+      }
+      if (reconciliation.recoveredCount > 0 && reconciliation.note) {
+        issues.push({ order: 0, level: 'warning', message: reconciliation.note });
       }
       setAiPdfIssues(issues);
       setLastPdfReader('ai');
@@ -542,6 +558,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     : [];
 
   const selectedCount = parseResult?.items.filter(i => i.selected).length || 0;
+  const hasBlockingImportIssues = aiPdfIssues.some(issue => issue.level === 'error');
   const reviewCount = parseResult
     ? parseResult.items.filter(item => {
         if (item.category !== 'trac_nghiem') return false;
@@ -1153,15 +1170,17 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                 </button>
               </div>
 
-              <div className={`rounded-2xl px-4 py-3 border text-xs flex items-start gap-2 ${reviewCount > 0 ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900'}`}>
-                {reviewCount > 0 ? (
+              <div className={`rounded-2xl px-4 py-3 border text-xs flex items-start gap-2 ${(reviewCount > 0 || hasBlockingImportIssues) ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900'}`}>
+                {(reviewCount > 0 || hasBlockingImportIssues) ? (
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
                 ) : (
                   <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
                 )}
                 <div>
                   <div className="font-black">
-                    {reviewCount > 0
+                    {hasBlockingImportIssues
+                      ? 'Có lỗi cấu trúc PDF cần xử lý trước khi nhập'
+                      : reviewCount > 0
                       ? `Có ${reviewCount} câu cần kiểm tra lại trước khi giao bài`
                       : 'Cấu trúc câu hỏi ổn'}
                   </div>
