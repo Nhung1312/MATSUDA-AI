@@ -12,6 +12,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { Question, QuestionAnalysis, Submission, EssayGradingResult } from '../types';
 import { isEssayQuestion, formatQuestionSubItems, sanitizeMathString } from '../utils/questionUtils';
+import { resolveGeminiEssayReference } from '../utils/mediaImportGuard';
 
 export interface GenerateQuestionsParams {
   grade: '6' | '7' | '8' | '9';
@@ -66,6 +67,8 @@ export interface MediaExtractResult {
   grade?: string;
   questions: Question[];
   rawSummary?: string;
+  expectedQuestionCount?: number;
+  declaredTotalPoints?: number;
 }
 
 export interface TestConnectionResult {
@@ -2365,6 +2368,17 @@ QUY TẮC BÓC TÁCH CỰC KỲ QUAN TRỌNG:
    - Nếu không ghi: Mặc định trắc nghiệm là 0.25 hoặc 0.5 điểm, tự luận là 1.0 đến 2.0 điểm.
 6. SỐ THỨ TỰ (order): Đánh số thứ tự từ 1, 2, 3... liên tục.
 
+QUY TẮC ĐẶC BIỆT CHO TÀI LIỆU CÓ CẢ ĐỀ VÀ ĐÁP ÁN:
+- Phân biệt PHẦN ĐỀ với phần ĐÁP ÁN VÀ HƯỚNG DẪN GIẢI, KHÔNG tạo câu hỏi mới từ trang đáp án.
+- Ghép Câu 1, 2 của trắc nghiệm với đáp án trắc nghiệm; ghép Bài 1, 2 của tự luận với lời giải tương ứng. Không nhầm Câu 1 và Bài 1.
+- Mỗi Bài tự luận có a), b), c), d), e)... là một câu duy nhất và trường question BẮT BUỘC chứa đầy đủ biểu thức gốc của TẤT CẢ các ý, mỗi ý xuống một dòng. Không được chỉ viết nhãn a), b) mà bỏ trống biểu thức.
+- CorrectAnswer của tự luận là các đáp số/kết luận theo từng ý ở đáp án gốc, ví dụ: a) -99; b) -15; c) 350; d) -200; e) 0.
+- Explanation của tự luận chứa lời giải gốc đầy đủ từng ý, rubric chỉ chứa barem/thang điểm thực tế có trên tài liệu. Nếu PDF không có đáp án tự luận, để cả hai trường đúng như dữ liệu nguồn, KHÔNG tự bịa lời giải.
+- Giữ chính xác dấu trừ, ngoặc, căn, phân số, hệ phương trình và LaTeX. Nếu không đọc được biểu thức, để trống và hệ thống kiểm tra sẽ cảnh báo thay vì tự suy đoán.
+- Nếu phần trắc nghiệm ghi tổng 3,0 điểm và có 10 câu thì gán points=0.3 cho từng câu; giữ điểm riêng của các Bài tự luận.
+- Bổ sung JSON cấp cao nhất expectedQuestionCount là tổng số câu trắc nghiệm + bài tự luận trong PHẦN ĐỀ và declaredTotalPoints là điểm tổng đề nếu có; số lượng thực tế phụ thuộc PDF, không mặc định 14.
+- Trắc nghiệm không có bảng đáp án vẫn giữ khả năng tự giải và xác nhận như code đang hoạt động.
+
 YÊU CẦU ĐỊNH DẠNG ĐẦU RA:
 Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ theo định dạng sau (không kèm lời chào hay văn bản ngoài JSON):
 {
@@ -2455,7 +2469,7 @@ Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ theo định dạng sa
 
     const questions: Question[] = rawQuestions.map((q: any, idx: number) => {
       const qOrder = Number(q.order) || (idx + 1);
-      const isEssay = q.type === 'essay' || (!q.options || q.options.length < 2);
+      const isEssay = q.type === 'essay' || q.type === 'short_answer' || (!q.options || q.options.length < 2);
       
       let options: { id: string; text: string }[] = [];
       if (!isEssay && Array.isArray(q.options)) {
@@ -2471,21 +2485,20 @@ Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ theo định dạng sa
         });
       }
 
-      let correct = 'A';
-      if (!isEssay) {
-        correct = this.extractValidAnswerLetter(q.correctAnswer, options);
-      }
+      const correct = isEssay
+        ? resolveGeminiEssayReference(q)
+        : this.extractValidAnswerLetter(q.correctAnswer, options);
 
       return {
         id: `ai_media_${Date.now()}_${qOrder}_${Math.random().toString(36).substring(2, 6)}`,
         order: qOrder,
-        question: formatQuestionSubItems(String(q.question || `Câu hỏi ${qOrder}`).trim()),
+        question: formatQuestionSubItems(String(q.question || '').trim()),
         type: isEssay ? 'essay' : 'multiple_choice',
         options: isEssay ? [] : options,
-        correctAnswer: isEssay ? '' : correct,
-        points: Number(q.points) || (isEssay ? 1.0 : 0.5),
-        explanation: q.explanation ? String(q.explanation).trim() : '',
-        rubric: q.rubric ? String(q.rubric).trim() : ''
+        correctAnswer: correct,
+        points: Number(String(q.points ?? '').replace(',', '.')) || (isEssay ? 1.0 : 0.5),
+        explanation: String(q.explanation || q.solution || q.detailedSolution || '').trim(),
+        rubric: String(q.rubric || q.markingGuide || '').trim()
       };
     });
 
@@ -2495,6 +2508,8 @@ Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ theo định dạng sa
       examTitle: parsedJson?.examTitle || fileName || 'Đề thi trích xuất từ AI',
       grade: parsedJson?.grade || grade || '8',
       questions,
+      expectedQuestionCount: Number(parsedJson?.expectedQuestionCount) > 0 ? Number(parsedJson.expectedQuestionCount) : undefined,
+      declaredTotalPoints: Number(parsedJson?.declaredTotalPoints) > 0 ? Number(parsedJson.declaredTotalPoints) : undefined,
       rawSummary: `Đã bóc tách thành công ${questions.length} câu hỏi (${questions.filter(q => q.type === 'multiple_choice').length} trắc nghiệm, ${questions.filter(q => q.type === 'essay').length} tự luận) từ mô hình ${modelUsed}.`
     };
   }
