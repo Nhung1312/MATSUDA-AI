@@ -232,19 +232,29 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         selected: true
       }));
 
-      // Audit before normalization renumbers questions; no silent loss of a)-e) or references.
-      setAiPdfIssues(auditNewMediaQuestions(result.questions, {
+      // Check BEFORE and AFTER normalization: it may drop items with empty question text.
+      const issues = auditNewMediaQuestions(result.questions, {
         expectedQuestionCount: result.expectedQuestionCount,
         declaredTotalPoints: result.declaredTotalPoints
-      }));
-      setParseResult(FileParserService.normalizeParseResult({
+      });
+      const normalized = FileParserService.normalizeParseResult({
         fileName: file.name,
         fileType: 'pdf',
         totalFound: parsedItems.length,
         multipleChoiceCount: parsedItems.filter(i => i.category === 'trac_nghiem').length,
         essayCount: parsedItems.filter(i => i.category === 'tu_luan').length,
         items: parsedItems
-      }));
+      });
+      if (normalized.totalFound < result.questions.length) {
+        issues.push({
+          order: 0,
+          level: 'error',
+          message: 'AI tạo ' + result.questions.length + ' mục nhưng chỉ ' + normalized.totalFound +
+            ' mục có đủ nội dung để nhập. Có câu đã bị loại vì rỗng; phải kiểm tra PDF gốc.'
+        });
+      }
+      setAiPdfIssues(issues);
+      setParseResult(normalized);
     } catch (err: any) {
       console.error('PDF AI Extraction Error:', err);
       setErrorMsg(toFriendlyAiError(err, 'Không thể tách đề PDF bằng AI lúc này. Hãy thử lại.'));
