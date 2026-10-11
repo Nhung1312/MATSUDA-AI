@@ -287,10 +287,19 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
           needsRev = vStatus !== 'verified';
         }
 
-        const verifiedSource = { ...q, correctAnswer: chosenAnswer };
+        // Fingerprint must use the exact values persisted below. Legacy questions may
+        // have no type; changing that on save must not immediately invalidate approval.
+        const savedType = q.type === 'short_answer' ? 'short_answer' : (isEssay ? 'essay' : (q.type || 'multiple_choice'));
+        const verifiedSource = {
+          ...q,
+          type: savedType,
+          correctAnswer: chosenAnswer,
+          explanation: q.explanation || '',
+          rubric: q.rubric || ''
+        };
         return {
           ...q,
-          type: q.type === 'short_answer' ? 'short_answer' : (isEssay ? 'essay' : (q.type || 'multiple_choice')),
+          type: savedType,
           correctAnswer: chosenAnswer,
           explanation: q.explanation || '',
           rubric: q.rubric || '',
