@@ -12,6 +12,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { Question, QuestionAnalysis, Submission, EssayGradingResult } from '../types';
 import { isEssayQuestion, formatQuestionSubItems, sanitizeMathString } from '../utils/questionUtils';
+import { hasVerificationReference } from '../utils/verificationUtils';
 
 export interface GenerateQuestionsParams {
   grade: '6' | '7' | '8' | '9';
@@ -1301,58 +1302,60 @@ Trả về JSON duy nhất:
 
     for (let i = 0; i < questions.length; i += BATCH_SIZE) {
       const batch = questions.slice(i, i + BATCH_SIZE);
+      // Do not spend an AI call on a question without any reference answer.
+      const referenceBatch = batch.filter(hasVerificationReference);
+      if (referenceBatch.length === 0) {
+        for (const q of batch) {
+          results.push({
+            questionId: q.id,
+            order: q.order || i + batch.indexOf(q) + 1,
+            currentAnswer: q.correctAnswer || '',
+            proposedAnswer: '',
+            matchesCurrentAnswer: false,
+            confidence: 'needs_review',
+            reason: 'Chưa có đáp án hoặc hướng dẫn chấm để thẩm định. Vui lòng bổ sung trước.',
+            needsReview: true
+          });
+          completedCount++;
+          onProgress?.(completedCount, questions.length);
+        }
+        continue;
+      }
+
 
       // ==========================================
       // LƯỢT 1: KIỂM TRA MỘT LẦN VỚI PROMPT GỌN
       // ==========================================
+      const excerpt = (value: string | undefined, limit: number) => {
+        const text = (value || '').trim();
+        if (text.length <= limit) return text;
+        const headLength = Math.floor(limit * 0.7);
+        return `${text.slice(0, headLength)}\n[...trích lược phần giữa vì tài liệu dài...]\n${text.slice(-(limit - headLength))}`;
+      };
       const promptL1 = `
-Bạn là Chuyên gia Thẩm định Đề thi môn Toán THCS Việt Nam (Chương trình GDPT mới, SGK Kết nối tri thức).
-Nhiệm vụ: Thẩm định tính chính xác của đáp án hiện có cho từng câu hỏi sau đây.
+Bạn là chuyên gia thẩm định Toán THCS, sử dụng Gemini 3.8 Flash.
+Nhiệm vụ: KIỂM CHỨNG đáp án/hướng dẫn chấm có sẵn, tuyệt đối không tự ý sửa đề hoặc đáp án.
+Khối: ${grade}; Chủ đề: ${topic}.
 
-THÔNG TIN ĐỀ THI:
-- Khối lớp: Toán ${grade} | Chủ đề: ${topic}
-
-DANH SÁCH CÂU HỎI CẦN THẨM ĐỊNH TRONG ĐỢT NÀY:
-${batch.map((q, idx) => `
-[Mã: ${q.id}] (Câu ${q.order || i + idx + 1})
+${referenceBatch.map((q) => {
+  const openResponse = isEssayQuestion(q) || q.type === 'short_answer';
+  return `[Mã: ${q.id}] Câu ${q.order || '?'} | Loại: ${openResponse ? 'TỰ LUẬN / TRẢ LỜI NGẮN' : 'TRẮC NGHIỆM'}
 Đề bài: ${q.question}
-${(q.options && q.options.length > 0) ? q.options.map(o => `${o.id}. ${o.text}`).join(' | ') : '(Tự luận)'}
-[Đáp án hiện tại]: ${q.correctAnswer || 'Chưa có'}
-${q.explanation ? `[Lời giải hiện tại]: ${q.explanation.substring(0, 300)}` : ''}
-`).join('\n')}
+${!openResponse && q.options?.length ? q.options.map(o => `${o.id}. ${o.text}`).join(' | ') : ''}
+[Đáp án gốc]: ${excerpt(q.correctAnswer, 4500) || '(Có lời giải/barem, chưa có đáp số riêng)'}
+${q.explanation ? `[Lời giải gốc]: ${excerpt(q.explanation, 5500)}` : ''}
+${q.rubric ? `[Hướng dẫn chấm]: ${excerpt(q.rubric, 4500)}` : ''}`;
+}).join('\n\n')}
 
-QUY TẮC THẨM ĐỊNH LƯỢT 1 (TIẾT KIỆM TỐI ĐA TOKEN):
-Mỗi câu kiểm tra đầy đủ:
-- Đề bài (question)
-- Các phương án lựa chọn (options)
-- Đáp án hiện tại (correctAnswer)
-- Lời giải hiện tại (explanation)
-- Tính nhất quán giữa đáp án và lời giải.
+QUY TẮC:
+- Với trắc nghiệm: giải độc lập, đối chiếu phương án A/B/C/D, phát hiện nhiều hoặc không có đáp án đúng.
+- Với tự luận/trả lời ngắn: kiểm tra tính đúng đắn toán học, từng ý và sự nhất quán của lời giải/barem. Đáp án tương đương về toán học (ví dụ -2/4 và -1/2, hai cách chứng minh hợp lệ) được coi là KHỚP; không so sánh chữ hoa hoặc trùng nguyên văn.
+- Không được tự động tin đáp án vì nó có sẵn. Nếu lời giải sai, thiếu dữ kiện, thiếu bước trọng yếu hoặc không thể xác minh chắc chắn, đặt needsReview=true.
+- Chỉ trả matchesCurrentAnswer=true, confidence='high', needsReview=false khi thực sự có đủ căn cứ xác minh đáp án gốc đúng. Nếu không chắc chắn, trả confidence='needs_review', needsReview=true và nêu rõ lý do.
+- proposedAnswer: đáp án dạng chữ A/B/C/D chỉ cho trắc nghiệm; tự luận ghi kết quả toán học ngắn hoặc tóm tắt kết luận, không dùng chữ A/B/C/D thay thế lời giải.
 
-1. Giải nhanh câu hỏi để tìm đáp án đúng (A, B, C, D hoặc kết quả số/biểu thức ngắn).
-2. So sánh với [Đáp án hiện tại] và kiểm tra tính nhất quán giữa [Đáp án hiện tại] và [Lời giải hiện tại].
-3. Nếu đáp án bạn giải ra TRÙNG KHỚP với [Đáp án hiện tại], và lời giải nhất quán không mâu thuẫn, options chuẩn xác:
-   => proposedAnswer = đáp án đúng, matchesCurrentAnswer = true, confidence = "high", needsReview = false, reason = "Ngắn gọn 1 câu xác nhận".
-4. Nếu có BẤT KỲ nghi ngờ nào:
-   - AI khác [Đáp án hiện tại],
-   - Độ tin cậy thấp (confidence thấp),
-   - Lời giải mâu thuẫn với đáp án,
-   - Câu thiếu dữ kiện hoặc đề bài có lỗi,
-   - Options có vấn đề (thiếu phương án, nhiều đáp án đúng, hoặc không có đáp án đúng),
-   - Hoặc needsReview = true
-   => proposedAnswer = đáp án AI tìm ra, matchesCurrentAnswer = false, confidence = "needs_review", needsReview = true, reason = "Nêu rõ lý do nghi ngờ ngắn gọn".
-
-Trả về DUY NHẤT một JSON Array theo định dạng:
-[
-  {
-    "questionId": "Mã_câu_hỏi",
-    "proposedAnswer": "A",
-    "matchesCurrentAnswer": true,
-    "confidence": "high",
-    "reason": "Lý do ngắn gọn",
-    "needsReview": false
-  }
-]
+Trả về một JSON array, mỗi mã câu hỏi đúng một phần tử:
+[{"questionId":"id","proposedAnswer":"kết quả hoặc A/B/C/D","matchesCurrentAnswer":true,"confidence":"high","reason":"căn cứ ngắn gọn","needsReview":false}]
 `;
 
       let pass1List: any[] = [];
@@ -1414,22 +1417,37 @@ Trả về DUY NHẤT một JSON Array theo định dạng:
         }
       }
 
-      // Duyệt từng câu trong batch
+      // Duyệt câu hỏi theo thứ tự gốc của đề.
       for (let bIdx = 0; bIdx < batch.length; bIdx++) {
         const q = batch[bIdx];
-        const p1Item = pass1List.find((item: any) => item.questionId === q.id)
-          || (pass1List[bIdx] && (pass1List[bIdx].questionId === q.id || !pass1List[bIdx].questionId) ? pass1List[bIdx] : undefined);
-
+        if (!hasVerificationReference(q)) {
+          results.push({
+            questionId: q.id,
+            order: q.order || i + bIdx + 1,
+            currentAnswer: q.correctAnswer || '',
+            proposedAnswer: '',
+            matchesCurrentAnswer: false,
+            confidence: 'needs_review',
+            reason: 'Chưa có đáp án hoặc hướng dẫn chấm để thẩm định. Vui lòng bổ sung trước.',
+            needsReview: true
+          });
+          completedCount++;
+          onProgress?.(completedCount, questions.length);
+          continue;
+        }
+        const isOpenResponse = isEssayQuestion(q) || q.type === 'short_answer';
+        const p1Item = pass1List.find((item: any) => String(item.questionId) === String(q.id));
         const currentNorm = String(q.correctAnswer || '').trim().toUpperCase();
-        const proposed1 = p1Item ? String(p1Item.proposedAnswer || '').trim().toUpperCase() : currentNorm;
-        
+        const proposed1 = p1Item ? String(p1Item.proposedAnswer || '').trim() : '';
+        // Trắc nghiệm so sánh ký tự; tự luận đối chiếu theo nghĩa toán học do AI xác nhận.
+        const p1Matches = p1Item?.matchesCurrentAnswer === true &&
+          (isOpenResponse || (Boolean(currentNorm) && proposed1.toUpperCase() === currentNorm));
+
         // Điều kiện PASS LƯỢT 1:
         // Proposed khớp correctAnswer, confidence === 'high', needsReview === false, không mâu thuẫn
-        const isPass1 = p1Item &&
-          p1Item.matchesCurrentAnswer === true &&
-          p1Item.confidence === 'high' &&
-          p1Item.needsReview !== true &&
-          proposed1 === currentNorm;
+        const isPass1 = p1Matches &&
+          p1Item?.confidence === 'high' &&
+          p1Item?.needsReview === false;
 
         if (isPass1) {
           // PASS LƯỢT 1: TUYỆT ĐỐI KHÔNG GỌI LƯỢT 2 (Tiết kiệm quota)
@@ -1453,27 +1471,26 @@ Trả về DUY NHẤT một JSON Array theo định dạng:
           let p2Answer = '';
           let p2Confidence: 'high' | 'medium' | 'needs_review' = 'needs_review';
           let p2Reason = '';
+          let p2Matches = false;
 
           try {
-            const promptL2 = `
-Bạn là Chuyên gia Độc lập Thẩm định Đề thi Toán THCS Việt Nam.
-Nhiệm vụ: Giải độc lập câu hỏi sau (tính toán từng bước hoặc thử ngược từng phương án vào đề bài) để xác định phương án đúng tuyệt đối ('A', 'B', 'C' hoặc 'D').
-
-Câu hỏi [Mã: ${q.id}]:
-Đề bài: ${q.question}
-${(q.options && q.options.length > 0) ? q.options.map(o => `${o.id}. ${o.text}`).join('\n') : '(Tự luận)'}
-
-LƯU Ý ĐẶC BIỆT:
-- Hãy giải độc lập hoàn toàn, tính toán cẩn thận.
-- Kiểm tra xem đề bài có sai sót, thiếu điều kiện, hoặc có nhiều đáp án đúng / không có đáp án đúng hay không.
-
-Trả về DUY NHẤT một JSON theo định dạng:
-{
-  "questionId": "${q.id}",
-  "pass2Answer": "A",
-  "confidence": "high",
-  "reason": "Giải thích ngắn gọn kết quả giải độc lập và thử ngược"
-}
+            const promptL2 = isOpenResponse ? `
+Bạn là chuyên gia Toán THCS kiểm chứng độc lập câu TỰ LUẬN / TRẢ LỜI NGẮN.
+Giải độc lập trước, sau đó đối chiếu nghĩa toán học với đáp án, lời giải hoặc barem có sẵn. Không so sánh chuỗi ký tự và không yêu cầu đáp án A/B/C/D.
+Đề bài [${q.id}]: ${q.question}
+Đáp án gốc: ${excerpt(q.correctAnswer, 4500) || '(Xem lời giải/barem)'}
+${q.explanation ? `Lời giải: ${excerpt(q.explanation, 5500)}` : ''}
+${q.rubric ? `Barem: ${excerpt(q.rubric, 4500)}` : ''}
+Chỉ xác nhận khớp nếu lời giải/barem đúng và đầy đủ; các cách giải tương đương toán học đều được chấp nhận. Thiếu dữ kiện hoặc chưa chắc chắn thì needs_review.
+Trả DUY NHẤT JSON:
+{"questionId":"${q.id}","pass2Answer":"kết quả hoặc kết luận toán học ngắn","matchesCurrentAnswer":true,"confidence":"high","reason":"căn cứ kiểm tra"}
+` : `
+Bạn là chuyên gia độc lập kiểm tra trắc nghiệm Toán THCS.
+Đề bài [${q.id}]: ${q.question}
+${(q.options || []).map(o => `${o.id}. ${o.text}`).join('\n')}
+Giải độc lập, kiểm tra thiếu dữ kiện và nhiều phương án đúng.
+Trả duy nhất JSON:
+{"questionId":"${q.id}","pass2Answer":"A","confidence":"high","reason":"căn cứ ngắn"}
 `;
             const res2 = await ai.models.generateContent({
               model,
@@ -1484,8 +1501,11 @@ Trả về DUY NHẤT một JSON theo định dạng:
             const match2 = rawText2.match(/\{[\s\S]*\}/);
             if (match2) {
               const parsed2 = JSON.parse(match2[0]);
-              p2Answer = String(parsed2.pass2Answer || '').trim().toUpperCase();
+              p2Answer = String(parsed2.pass2Answer || '').trim();
               p2Confidence = parsed2.confidence === 'high' ? 'high' : 'needs_review';
+              p2Matches = isOpenResponse
+                ? parsed2.matchesCurrentAnswer === true
+                : Boolean(currentNorm && p2Answer.toUpperCase() === currentNorm);
               p2Reason = parsed2.reason || '';
             }
           } catch (l2Err: any) {
@@ -1502,11 +1522,13 @@ Trả về DUY NHẤT một JSON theo định dạng:
 
           // Tổng hợp kết quả Lượt 1 & Lượt 2
           const p2Norm = p2Answer;
-          const isStillSuspicious = (proposed1 && proposed1 !== currentNorm) ||
-                                    (p2Norm && p2Norm !== currentNorm) ||
-                                    (p1Item?.needsReview === true) ||
-                                    (p1Item?.confidence === 'needs_review') ||
-                                    (p2Confidence === 'needs_review');
+          // Chỉ cả hai lượt nhất trí và đáng tin cậy mới tự duyệt.
+          // Nếu lượt 1 đã nghi ngờ, không tự xóa nghi ngờ sau một lượt 2 trái chiều.
+          const isStillSuspicious = !p1Matches ||
+                                    p1Item?.confidence !== 'high' ||
+                                    p1Item?.needsReview !== false ||
+                                    p2Confidence !== 'high' ||
+                                    !p2Matches;
 
           const finalConfidence = isStillSuspicious ? 'needs_review' : 'high';
           const finalNote = [
