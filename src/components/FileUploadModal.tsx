@@ -63,6 +63,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const [keySavedMessage, setKeySavedMessage] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>(aiService.getModel() || 'gemini-3.1-flash-lite');
   const [pdfParseMode, setPdfParseMode] = useState<'ai' | 'standard'>(aiService.hasApiKey() ? 'ai' : 'standard');
+  const [lastPdfReader, setLastPdfReader] = useState<'ai' | 'standard' | null>(null);
 
   // Image Paste & Upload State
   const [pastedImages, setPastedImages] = useState<StoredImage[]>([]);
@@ -97,6 +98,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       setShowKeyInput(!keyExists);
       setErrorMsg(null);
       setAiPdfIssues([]);
+      setLastPdfReader(null);
       setKeySavedMessage(null);
     } else {
       setParseResult(null);
@@ -253,7 +255,25 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
             ' mục có đủ nội dung để nhập. Có câu đã bị loại vì rỗng; phải kiểm tra PDF gốc.'
         });
       }
+      // Đối chiếu độc lập số lượng câu với phần đề trong PDF (không gọi AI).
+      // Chỉ chặn khi PDF có đáp án tự luận rõ ràng và Gemini trích thừa câu.
+      try {
+        const textReference = await FileParserService.parsePdfFile(file);
+        const hasMappedEssaySolutions = textReference.items.some(item =>
+          item.category === 'tu_luan' && Boolean(item.explanation?.trim())
+        );
+        if (hasMappedEssaySolutions && textReference.totalFound > 0 && result.questions.length > textReference.totalFound) {
+          issues.push({
+            order: 0,
+            level: 'error',
+            message: `Gemini nhận ${result.questions.length} câu, nhưng phần đề trong PDF có ${textReference.totalFound} câu/bài trước trang đáp án. Có thể Gemini đã coi lời giải là câu mới.`
+          });
+        }
+      } catch (crossCheckErr) {
+        console.warn('Không thể đối chiếu PDF dạng văn bản; giáo viên cần duyệt kỹ:', crossCheckErr);
+      }
       setAiPdfIssues(issues);
+      setLastPdfReader('ai');
       setParseResult(normalized);
     } catch (err: any) {
       console.error('PDF AI Extraction Error:', err);
@@ -276,7 +296,12 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       if (result.totalFound === 0) {
         setErrorMsg('Không tìm thấy câu hỏi dạng văn bản trong file PDF (có thể đây là file PDF scan từ ảnh chụp). Nếu bạn có API Key, hãy chuyển sang chế độ "⚡ Bóc tách bằng AI Gemini" để AI nhận diện.');
       } else {
-        setParseResult(FileParserService.normalizeParseResult(result));
+        const normalized = FileParserService.normalizeParseResult(result);
+        // Bộ kiểm tra chỉ áp dụng cho câu sắp nhập, không động vào kho cũ.
+        const questions = FileParserService.convertToQuestions(normalized.items);
+        setAiPdfIssues(auditNewMediaQuestions(questions));
+        setLastPdfReader('standard');
+        setParseResult(normalized);
       }
     } catch (err: any) {
       console.error('PDF Standard Parse Error:', err);
@@ -291,13 +316,16 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const handleProcessPdf = async (file: File) => {
     const currentKey = apiKeyInput.trim() || aiService.getApiKey();
     if (pdfParseMode === 'ai') {
-      if (currentKey) {
-        await handleProcessPdfWithAI(file);
-      } else {
-        // Tự động chuyển sang chế độ thông thường nếu chưa có key kèm thông báo thân thiện
+      if (!currentKey) {
+        // Tuyệt đối không tự chuyển từ Gemini sang PDF văn bản khi thiếu Key.
         setShowKeyInput(true);
-        await handleProcessPdfStandard(file);
+        setAiPdfIssues([]);
+        setLastPdfReader(null);
+        setParseResult(null);
+        setErrorMsg('Bạn đã chọn bóc tách bằng Gemini nhưng chưa nhập API Key. Hãy dán và lưu Key hoặc chủ động chọn “PDF văn bản”. Không tự chuyển chế độ để tránh nhận nhầm trang đáp án thành câu hỏi.');
+        return;
       }
+      await handleProcessPdfWithAI(file);
     } else {
       await handleProcessPdfStandard(file);
     }
@@ -1099,6 +1127,11 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                     </div>
                     <div className="text-xs text-slate-500 flex items-center gap-3 mt-0.5">
                       <span>Tổng cộng: <strong className="text-indigo-700">{parseResult.totalFound}</strong> câu</span>
+                      {lastPdfReader && (
+                        <span className="rounded-lg bg-blue-50 text-blue-800 px-2 py-0.5 font-bold">
+                          {lastPdfReader === 'ai' ? 'Đã bóc tách bằng Gemini' : 'Đọc PDF văn bản (không AI)'}
+                        </span>
+                      )}
                       <span>•</span>
                       <span className="text-emerald-700 font-bold">
                         Trắc nghiệm: {parseResult.multipleChoiceCount}

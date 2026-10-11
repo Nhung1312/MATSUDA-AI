@@ -3,6 +3,7 @@ import mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Question, QuestionOption, QuestionType } from '../types';
 import { formatQuestionSubItems } from '../utils/questionUtils';
+import { separatePdfAnswerSections } from '../utils/pdfAnswerSection';
 
 // Set up pdfjs worker
 try {
@@ -569,11 +570,14 @@ export class FileParserService {
       return { fileName, fileType, totalFound: 0, multipleChoiceCount: 0, essayCount: 0, items: [] };
     }
 
-    // Bóc tách bảng đáp án tổng nếu có ở cuối hoặc đầu đề
-    const globalAnswerMap = this.extractAnswerKeyMap(rawText);
+    // Chỉ với PDF mới nhập: tách phần câu hỏi khỏi trang đáp án/lời giải.
+    // Bộ parser của Word/LaTeX/JSON/text và mọi đề đã lưu được giữ nguyên.
+    const pdfSections = fileType === 'pdf' ? separatePdfAnswerSections(rawText) : null;
+    const globalAnswerMap = pdfSections?.answerText
+      ? this.extractAnswerKeyMap(pdfSections.multipleChoiceAnswers)
+      : this.extractAnswerKeyMap(rawText);
 
-    // Cắt bỏ phần Bảng đáp án ở cuối đề (nếu có) để tránh nhận diện nhầm thành một câu hỏi độc lập
-    let processedText = rawText;
+    let processedText = pdfSections?.answerText ? pdfSections.questionText : rawText;
     const tableHeaderIdx = rawText.search(/\n\s*(?:bảng\s*đáp\s*án|đáp\s*án\s*trắc\s*nghiệm)[\s\:\-]/i);
     if (tableHeaderIdx !== -1) {
       processedText = rawText.substring(0, tableHeaderIdx);
@@ -618,6 +622,11 @@ export class FileParserService {
         // Cắt lấy toàn bộ nội dung của câu hỏi này
         let blockText = processedText.substring(current.index, nextIndex).trim();
         blockText = blockText.replace(/--- Trang \d+ ---/g, '').trim(); // Xóa số trang nếu có
+        // Không gán điểm của PHẦN II cho câu trắc nghiệm cuối (trước Bài 1).
+        if (fileType === 'pdf' && essaySectionIdx !== -1 && current.index < essaySectionIdx && nextIndex > essaySectionIdx) {
+          blockText = processedText.substring(current.index, essaySectionIdx).trim();
+          blockText = blockText.replace(/\n\s*\d{1,3}\s*$/, '').trim();
+        }
 
         // Kiểm tra xem câu này có nằm sau tiêu đề Phần Tự Luận không
         const isExplicitEssaySection = essaySectionIdx !== -1 && current.index >= essaySectionIdx;
@@ -625,6 +634,15 @@ export class FileParserService {
 
         // Phân tích Trắc nghiệm / Tự luận cho riêng câu này
         const parsedItem = this.extractSingleQuestionInfo(blockText, i + 1, isExplicitEssaySection, assignedAnswerLetter);
+        if (fileType === 'pdf' && isExplicitEssaySection && parsedItem.category === 'tu_luan') {
+          const sourceSolution = pdfSections?.essaySolutions[current.num];
+          if (sourceSolution) {
+            // Lời giải gốc trong PDF được gắn lại vào chính Bài 1..N.
+            // Không tạo câu mới hoặc tự bịa đáp số ngắn.
+            parsedItem.correctAnswer = sourceSolution;
+            parsedItem.explanation = sourceSolution;
+          }
+        }
         items.push(parsedItem);
       }
     }
