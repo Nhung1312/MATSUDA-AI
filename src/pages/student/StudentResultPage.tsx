@@ -6,7 +6,7 @@ import { MathDisplay } from '../../components/MathDisplay';
 import { ImageLightboxModal } from '../../components/ImageLightboxModal';
 import { MistakeVaultModal } from '../../components/MistakeVaultModal';
 import { useMistakeVaultStore } from '../../store/useMistakeVaultStore';
-import { isEssayQuestion, getQuestionTypeLabel } from '../../utils/questionUtils';
+import { isEssayQuestion, getQuestionTypeLabel, getEssayGradingReference } from '../../utils/questionUtils';
 import { 
   Trophy, 
   RotateCcw, 
@@ -134,8 +134,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         grade: String(assignment.grade),
         topic: assignment.topic,
         maxPoints: question.points,
-        correctAnswer: question.correctAnswer,
-        rubric: question.rubric,
+        ...getEssayGradingReference(question),
         studentSolutionText: studentSolutionText || '',
         essayImages: images || []
       });
@@ -350,8 +349,8 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         studentAnswerText: studentSolutionText || '',
         essayImages: images || [],
         maxPoints: question.points,
-        correctAnswerCriteria: question.correctAnswer,
-        rubric: question.rubric,
+        correctAnswerCriteria: getEssayGradingReference(question).correctAnswer,
+        rubric: getEssayGradingReference(question).rubric,
         grade: assignment.grade,
         topicHint: question.topicHint
       });

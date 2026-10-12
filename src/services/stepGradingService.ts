@@ -7,16 +7,73 @@ import {
   RemedialGenerateResponse,
   RemedialExercise
 } from '../types';
+import { fingerprintAIInput, readAIResult, writeAIResult, loadAIImage } from '../utils/aiResultCache';
 
 /**
  * Service giao tiếp an toàn với Server AI Backend
  * KHÔNG gọi trực tiếp Gemini từ trình duyệt - Tuân thủ nguyên tắc bảo mật Đợt 4.
  */
 class StepGradingService {
+  private inFlight = new Map<string, Promise<StepGradingResponse>>();
+  private quotaUntil = 0;
   /**
    * Phân tích và chấm bài tự luận từng bước (Step-by-step Grading)
    */
-  async analyzeStepByStep(request: StepGradingRequest): Promise<StepGradingResponse> {
+  async analyzeStepByStep(request: StepGradingRequest, options: { force?: boolean; previousResult?: StepGradingResponse } = {}): Promise<StepGradingResponse> {
+    const prepared = { ...request, essayImages: [...(request.essayImages || [])] };
+    try {
+      for (let i = 0; i < prepared.essayImages.length; i++) {
+        if (!prepared.essayImages[i].startsWith('data:')) {
+          const image = await loadAIImage(prepared.essayImages[i]);
+          prepared.essayImages[i] = `data:${image.mimeType};base64,${image.data}`;
+        }
+      }
+      if (prepared.questionImageUrl && !prepared.questionImageUrl.startsWith('data:')) {
+        const image = await loadAIImage(prepared.questionImageUrl);
+        prepared.questionImageUrl = `data:${image.mimeType};base64,${image.data}`;
+      }
+    } catch {
+      return this.unavailable(request, 'Chưa đọc được đủ ảnh nguồn. Cần giáo viên kiểm tra ảnh trước khi chấm.');
+    }
+    const fingerprint = await fingerprintAIInput({ engine: 'step-grading-v4-flash', request: {
+      questionId: prepared.questionId || 'q1', questionText: prepared.questionText.trim(),
+      grade: prepared.grade || 'THCS', topic: prepared.topic || 'Toán', maxPoints: prepared.maxPoints ?? 10,
+      correctAnswer: (prepared.correctAnswer || '').trim(), rubric: (prepared.rubric || '').trim(),
+      hasExplicitRubric: prepared.hasExplicitRubric !== false && !!prepared.rubric?.trim(),
+      questionImageUrl: prepared.questionImageUrl || '', studentSolutionText: (prepared.studentSolutionText || '').trim(),
+      essayImages: prepared.essayImages
+    } });
+    if (!options.force) {
+      const cached = readAIResult<StepGradingResponse>('grading', fingerprint);
+      if (cached) return { ...cached, reusedResult: true };
+      const saved = options.previousResult;
+      if (fingerprint && saved?.requestFingerprint === fingerprint && saved.success && saved.analysisSource === 'ai' && Array.isArray(saved.analysis) && saved.analysis.length > 0 && Number.isFinite(saved.score) && saved.score >= 0 && saved.score <= (request.maxPoints || 10)) {
+        writeAIResult('grading', fingerprint, saved);
+        return { ...saved, reusedResult: true };
+      }
+    }
+    if (Date.now() < this.quotaUntil) return this.unavailable(request, 'AI đang hết hạn mức (429); đã dừng gọi lặp. Điểm đang chờ giáo viên duyệt.', 'quota');
+    if (fingerprint && this.inFlight.has(fingerprint)) return this.inFlight.get(fingerprint)!;
+    const task = this.requestAnalysis(prepared).then(result => {
+      const completed = { ...result, requestFingerprint: fingerprint || undefined };
+      if (completed.success && completed.analysisSource === 'ai' && completed.analysis?.length > 0 && Number.isFinite(completed.score)) {
+        writeAIResult('grading', fingerprint, completed);
+      }
+      return completed;
+    });
+    if (fingerprint) this.inFlight.set(fingerprint, task);
+    try { return await task; }
+    finally { if (fingerprint) this.inFlight.delete(fingerprint); }
+  }
+
+  private unavailable(request: StepGradingRequest, feedback: string, errorCode?: 'quota'): StepGradingResponse {
+    return { success: false, analysis: [], firstErrorStep: null, firstErrorType: null,
+      firstErrorExplanation: null, totalSteps: 0, correctStepsCount: 0, isAllCorrect: false,
+      score: 0, maxScore: request.maxPoints || 10, feedback, analysisSource: 'unavailable',
+      needsTeacherReview: true, errorCode };
+  }
+
+  private async requestAnalysis(request: StepGradingRequest): Promise<StepGradingResponse> {
     try {
       const res = await fetch('/api/grading/step-analysis', {
         method: 'POST',
@@ -27,11 +84,24 @@ class StepGradingService {
       });
 
       if (!res.ok) {
+        if (res.status === 429) {
+          this.quotaUntil = Date.now() + 60000;
+          return this.unavailable(request, 'AI hết hạn mức (429). Đã dừng gọi lặp; hãy duyệt điểm hoặc thử lại sau.', 'quota');
+        }
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.message || `Lỗi máy chủ: ${res.status}`);
       }
 
-      return await res.json();
+      const result: StepGradingResponse = await res.json();
+      if (!Number.isFinite(result.score) || result.score < 0 || result.score > (request.maxPoints || 10)) {
+        return this.unavailable(request, 'Điểm AI trả về không hợp lệ. Cần giáo viên kiểm tra, không tự chốt điểm.');
+      }
+      if (result.analysisSource !== 'ai' || !result.success || !Array.isArray(result.analysis) || result.analysis.length === 0) {
+        if (!Array.isArray(result.analysis)) result.analysis = [];
+        result.needsTeacherReview = true;
+        result.isAllCorrect = false;
+      }
+      return result;
     } catch (error: any) {
       console.warn('[StepGradingService] Phân tích thất bại, chuyển sang cơ chế dự phòng:', error?.message);
       // Fallback cục bộ an toàn nếu mạng mất kết nối

@@ -100,6 +100,8 @@ export interface StepGradingRequest {
   maxPoints?: number;
   correctAnswer?: string;
   rubric?: string;
+  questionImageUrl?: string;
+  hasExplicitRubric?: boolean;
   studentSolutionText?: string;
   essayImages?: string[]; // Base64 data URLs
 }

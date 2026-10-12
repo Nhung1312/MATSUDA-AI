@@ -1,3 +1,4 @@
+import { invalidateEditedVerification } from '../../utils/questionUtils';
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Assignment, ClassRoom, GradeLevel, Question, QuestionOption } from '../../types';
@@ -243,7 +244,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
       }
       const updated = [...questions];
       updated[index] = { ...updated[index], points: fromPointUnits(nextUnits) };
-      setQuestions(updated);
+      setQuestions(invalidateEditedVerification(updated, questions));
       setImportSuccessAlert(`Đã cân bằng: câu ${index + 1} = ${updated[index].points} điểm, tổng ${targetTotalPoints} điểm.`);
     } catch (error) { alert(error instanceof Error ? error.message : 'Điểm không hợp lệ.'); }
   };
@@ -319,7 +320,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
     }
 
     if (count > 0) {
-      setQuestions(updated);
+      setQuestions(invalidateEditedVerification(updated, questions));
       setShowTextQuickPaste(false);
       setTextQuickPasteInput('');
       setImportSuccessAlert(`Đã gán thành công đáp án chuẩn cho ${count} câu hỏi!`);
@@ -486,7 +487,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
       return;
     }
     const updated = questions.filter((_, i) => i !== idx).map((q, i) => ({ ...q, order: i + 1 }));
-    setQuestions(updated);
+    setQuestions(invalidateEditedVerification(updated, questions));
   };
 
   const handleUpdateQuestion = (idx: number, updates: Partial<Question>) => {
@@ -508,7 +509,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
     }
 
     updated[idx] = targetQ;
-    setQuestions(updated);
+    setQuestions(invalidateEditedVerification(updated, questions));
   };
 
   const handleUpdateOption = (qIdx: number, optId: string, text: string) => {
@@ -1793,7 +1794,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
         targetTotalPoints={targetTotalPoints}
         onUpdateTargetTotalPoints={setTargetTotalPoints}
         onApplyPoints={(updatedQuestions, message) => {
-          setQuestions(updatedQuestions);
+          setQuestions(invalidateEditedVerification(updatedQuestions, questions));
           setImportSuccessAlert(message);
         }}
       />

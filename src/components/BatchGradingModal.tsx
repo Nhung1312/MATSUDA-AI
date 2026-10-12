@@ -183,6 +183,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
     let successCount = 0;
     let reviewCount = 0;
     let errorCount = 0;
+    let stoppedForQuota = false;
 
     for (let i = 0; i < targetItems.length; i++) {
       if (abortControllerRef.current.signal.aborted) {
@@ -232,6 +233,11 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
             return it;
           })
         );
+        if (result.quotaExceeded) {
+          stoppedForQuota = true;
+          showToast('AI hết hạn mức (429). Đã lưu kết quả hiện có và dừng hàng đợi; các bài còn lại chưa bị chấm lại.', 'warning');
+          break;
+        }
       } catch (err: any) {
         if (abortControllerRef.current.signal.aborted) {
           break;
@@ -255,7 +261,8 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
 
         // Giãn cách thêm nếu dính rate limit 429
         if (errMsg.includes('429') || errMsg.toLowerCase().includes('quota')) {
-          await new Promise((r) => setTimeout(r, 2500));
+          stoppedForQuota = true;
+          break;
         }
       }
 
@@ -273,7 +280,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
     const updatedSubsList = Array.from(currentSubsMap.values());
     onSubmissionsUpdated(updatedSubsList);
 
-    if (!abortControllerRef.current.signal.aborted) {
+    if (!abortControllerRef.current.signal.aborted && !stoppedForQuota) {
       showToast(
         `Hoàn tất chấm cả lớp! Đã chấm ${successCount + reviewCount} bài (${reviewCount} bài cần duyệt, ${errorCount} lỗi).`,
         errorCount > 0 ? 'warning' : 'success'

@@ -69,6 +69,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const toFriendlyAiError = (err: any, fallback: string) => {
+    if (err?.name === 'ExamImportError') return err.message;
     const raw = String(err?.message || err || '').toLowerCase();
     if (raw.includes('429') || raw.includes('resource_exhausted') || raw.includes('quota')) {
       return 'AI đang hết lượt hoặc quá tải. Hãy chờ một lúc rồi thử lại.';
@@ -191,6 +192,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     }
 
     setIsLoading(true);
+    setParseResult(null);
     setErrorMsg(null);
     setAiProgressStatus('Đang nạp file PDF...');
 
@@ -218,7 +220,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         question: q.question,
         type: q.type,
         options: q.options || [],
-        correctAnswer: q.correctAnswer || (q.type === 'essay' ? '' : 'A'),
+        correctAnswer: q.correctAnswer || '',
         points: q.points || (q.type === 'essay' ? 1.0 : 0.5),
         explanation: q.explanation || '',
         rubric: q.rubric || '',
@@ -246,6 +248,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   // 1B. PROCESS PDF FILE STANDARD (OFFLINE / 100% FREE NO API KEY)
   const handleProcessPdfStandard = async (file: File) => {
     setIsLoading(true);
+    setParseResult(null);
     setErrorMsg(null);
     setAiProgressStatus('Đang đọc tệp PDF bằng bộ xử lý thông thường...');
 
@@ -272,9 +275,10 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       if (currentKey) {
         await handleProcessPdfWithAI(file);
       } else {
-        // Tự động chuyển sang chế độ thông thường nếu chưa có key kèm thông báo thân thiện
+        // A selected AI mode must never silently import using another parser.
         setShowKeyInput(true);
-        await handleProcessPdfStandard(file);
+        setParseResult(null);
+        setErrorMsg('Bạn đang chọn bóc tách PDF bằng AI nhưng chưa có Gemini API Key. Hãy nhập Key hoặc chủ động chọn chế độ đọc PDF thông thường. Chưa có câu hỏi nào được nhập.');
       }
     } else {
       await handleProcessPdfStandard(file);
@@ -296,6 +300,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     }
 
     setIsLoading(true);
+    setParseResult(null);
     setErrorMsg(null);
     setAiProgressStatus(`Đang chuẩn bị ${pastedImages.length} ảnh đề thi...`);
 
@@ -318,7 +323,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         question: q.question,
         type: q.type,
         options: q.options || [],
-        correctAnswer: q.correctAnswer || (q.type === 'essay' ? '' : 'A'),
+        correctAnswer: q.correctAnswer || '',
         points: q.points || (q.type === 'essay' ? 1.0 : 0.5),
         explanation: q.explanation || '',
         rubric: q.rubric || '',
@@ -353,6 +358,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     }
 
     setIsLoading(true);
+    setParseResult(null);
     setErrorMsg(null);
     try {
       const result = FileParserService.normalizeParseResult(await FileParserService.parseFile(file));
@@ -1096,6 +1102,11 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
               </div>
 
               {/* Filter Tabs & Selection Control */}
+              {!!parseResult.warnings?.length && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+                  {parseResult.warnings.map((warning, idx) => <p key={idx}>{warning}</p>)}
+                </div>
+              )}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
                 {/* Tabs */}
                 <div className="flex bg-slate-100 p-1 rounded-xl">

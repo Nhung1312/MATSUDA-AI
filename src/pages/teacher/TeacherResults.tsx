@@ -12,7 +12,7 @@ import { ImageLightboxModal } from '../../components/ImageLightboxModal';
 import { ClassCompetencyMatrix } from '../../components/ClassCompetencyMatrix';
 import { GenerateSimilarExamModal } from '../../components/GenerateSimilarExamModal';
 import { BatchGradingModal } from '../../components/BatchGradingModal';
-import { isEssayQuestion, getQuestionTypeLabel } from '../../utils/questionUtils';
+import { isEssayQuestion, getQuestionTypeLabel, getEssayGradingReference } from '../../utils/questionUtils';
 import { 
   BarChart3, 
   Users, 
@@ -298,6 +298,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   // On-demand AI Essay Grading for a single question (Step-by-step)
   const handleAiGradeSingleQuestion = async (ans: StudentAnswer, question: any) => {
     if (!selectedSubmissionDetail || !currentAssignment) return;
+    const reference = getEssayGradingReference(currentAssignment.questions.find(q => q.id === question.id) || question);
+    const studentText = ans.studentSolutionText || ans.selectedAnswer || '';
+    const studentImages = ans.essayImages?.length ? ans.essayImages : selectedSubmissionDetail.essayImages || [];
     setGradingAiInProgress(prev => ({ ...prev, [ans.questionId]: true }));
     try {
       let scoreVal = 0;
@@ -316,41 +319,23 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
         grade: String(currentAssignment.grade),
         topic: currentAssignment.topic,
         maxPoints: question.points,
-        correctAnswer: question.correctAnswer,
-        rubric: question.rubric,
-        studentSolutionText: ans.studentSolutionText || '',
-        essayImages: ans.essayImages || []
-      });
+        ...reference,
+        studentSolutionText: studentText,
+        essayImages: studentImages
+      }, { force: true });
 
-      if (stepRes && stepRes.success && Array.isArray(stepRes.analysis) && stepRes.analysis.length > 0) {
-        scoreVal = stepRes.score;
-        feedbackVal = stepRes.feedback;
-        stepAnalysisData = stepRes.analysis;
-        firstErrorStepVal = stepRes.firstErrorStep;
-        firstErrorTypeVal = stepRes.firstErrorType;
-        firstErrorExplVal = stepRes.firstErrorExplanation;
-        needsReviewVal = !!stepRes.needsTeacherReview;
-        stepResp = stepRes;
-      } else {
-        // Fallback sang aiService.gradeEssay nếu backend không trả về step analysis
-        if (!aiService.hasApiKey()) {
-          setActionNotice({ type: 'warning', text: 'AI chưa được cấu hình. Kiểm tra API key trong cài đặt hệ thống.' });
-          return;
-        }
-        const res = await aiService.gradeEssay({
-          questionText: question.question,
-          studentAnswerText: ans.studentSolutionText || '',
-          essayImages: ans.essayImages || [],
-          maxPoints: question.points,
-          correctAnswerCriteria: question.correctAnswer,
-          rubric: question.rubric,
-          grade: currentAssignment.grade,
-          topicHint: question.topicHint
-        });
-        scoreVal = res.score;
-        feedbackVal = res.feedback;
-        needsReviewVal = !!(res.needsTeacherReview || res.isProvisional || res.aiGradingError);
+      if (!stepRes.success || stepRes.analysisSource !== 'ai' || !stepRes.analysis?.length) {
+        setActionNotice({ type: 'warning', text: stepRes.feedback || 'AI chưa đủ dữ liệu để chấm. Điểm đã lưu được giữ; giáo viên có thể duyệt trực tiếp.' });
+        return;
       }
+      scoreVal = stepRes.score;
+      feedbackVal = stepRes.feedback;
+      stepAnalysisData = stepRes.analysis;
+      firstErrorStepVal = stepRes.firstErrorStep;
+      firstErrorTypeVal = stepRes.firstErrorType;
+      firstErrorExplVal = stepRes.firstErrorExplanation;
+      needsReviewVal = !!stepRes.needsTeacherReview;
+      stepResp = stepRes;
 
       let isCorrect = false;
       const hasStepError = !!firstErrorStepVal || (stepAnalysisData || []).some(s => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
@@ -363,12 +348,14 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       }
       const updatedAnswers: StudentAnswer[] = selectedSubmissionDetail.answers.map(a => {
         if (a.questionId === ans.questionId) {
+          const manualGrade = Number.isFinite(a.teacherScore) && (a.teacherReviewed === true || !/^\[(?:Gemini|Matsuda) AI\]/i.test(a.teacherFeedback || ''));
           return {
             ...a,
-            pointsEarned: scoreVal,
-            teacherScore: needsReviewVal ? undefined : scoreVal,
-            teacherFeedback: `[Matsuda AI]: ${feedbackVal}`,
-            isCorrect: needsReviewVal ? false : isCorrect,
+            pointsEarned: manualGrade ? a.teacherScore! : scoreVal,
+            teacherScore: manualGrade ? a.teacherScore : undefined,
+            teacherReviewed: manualGrade,
+            teacherFeedback: manualGrade ? a.teacherFeedback : `[Matsuda AI]: ${feedbackVal}`,
+            isCorrect: manualGrade ? a.isCorrect : needsReviewVal ? false : isCorrect,
             aiScore: scoreVal,
             aiFeedback: feedbackVal,
             aiGraded: true,
@@ -376,8 +363,8 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
             firstErrorStep: firstErrorStepVal,
             firstErrorType: firstErrorTypeVal,
             firstErrorExplanation: firstErrorExplVal,
-            needsTeacherReview: needsReviewVal,
-            isProvisional: needsReviewVal,
+            needsTeacherReview: manualGrade ? false : needsReviewVal,
+            isProvisional: manualGrade ? false : needsReviewVal,
             aiGradingError: !!(stepResp && (stepResp.analysisSource === 'rule' || stepResp.analysisSource === 'unavailable')),
             stepGradingResponse: stepResp
           };
@@ -493,6 +480,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
           ...a,
           pointsEarned: scoreVal,
           teacherScore: scoreVal,
+          teacherReviewed: true,
           teacherFeedback: fbVal,
           isCorrect,
           needsTeacherReview: false,
@@ -1919,7 +1907,14 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
 
             <div className="space-y-4">
               {[...selectedSubmissionDetail.answers]
-                .sort((a, b) => Number(isAnswerPendingTeacherReview(selectedSubmissionDetail, b)) - Number(isAnswerPendingTeacherReview(selectedSubmissionDetail, a)))
+                .sort((a, b) => {
+                  const pool = selectedSubmissionDetail.shuffledQuestions?.length
+                    ? selectedSubmissionDetail.shuffledQuestions : currentAssignment.questions;
+                  const qa = pool.find(q => q.id === a.questionId);
+                  const qb = pool.find(q => q.id === b.questionId);
+                  return Number(isEssayQuestion(qa)) - Number(isEssayQuestion(qb))
+                    || (qa?.order ?? 0) - (qb?.order ?? 0);
+                })
                 .map((ans) => {
                 const questionPool = (selectedSubmissionDetail.shuffledQuestions && selectedSubmissionDetail.shuffledQuestions.length > 0)
                   ? selectedSubmissionDetail.shuffledQuestions
@@ -1928,6 +1923,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                 if (!question) return null;
 
                 const isEssay = isEssayQuestion(question);
+                const reference = getEssayGradingReference(currentAssignment.questions.find(q => q.id === question.id) || question);
                 const isCorrect = ans.isCorrect;
                 const images = ans.essayImages || [];
                 const isLoadingAI = !!gradingAiInProgress[ans.questionId];
@@ -2069,6 +2065,16 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                           </span>
                         </div>
                       </div>
+                    )}
+
+                    {isEssay && (reference.correctAnswer || reference.rubric) && (
+                      <details className="mb-3 rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 text-xs">
+                        <summary className="cursor-pointer font-bold text-indigo-900">Đáp án và hướng dẫn chấm của đề</summary>
+                        <div className="mt-2 whitespace-pre-line space-y-2 text-slate-800">
+                          {reference.correctAnswer && <MathDisplay text={reference.correctAnswer} />}
+                          {reference.rubric && <MathDisplay text={reference.rubric} />}
+                        </div>
+                      </details>
                     )}
 
                     {/* Essay: Typed text solution */}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Question } from '../types';
 import { aiService, QuestionVerificationResult } from '../services/aiService';
+import { verificationFingerprint } from '../services/verificationOptimizer';
 import { MathDisplay } from './MathDisplay';
 import { isEssayQuestion } from '../utils/questionUtils';
 import { 
@@ -65,6 +66,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
       questions.forEach((q) => {
         const isEssay = isEssayQuestion(q);
         initialMap[q.id] = isEssay ? (q.correctAnswer || '') : (q.correctAnswer || 'A').toUpperCase();
+        if (q.teacherVerified && q.verificationStatus === 'verified' && !q.needsReview) initialDecisionMap[q.id] = 'keep';
 
         if (q.pass1Answer || q.sanityCheckNote || q.confidence || q.aiProposedAnswer || q.verificationStatus) {
           const isSuspect = q.verificationStatus === 'needs_review' || q.needsReview === true || q.confidence === 'needs_review';
@@ -116,8 +118,19 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
     setProgress({ current: 0, total: questions.length });
 
     try {
+      const checks = await Promise.all(questions.map(async q => {
+        const stale = !!q.verificationFingerprint && q.verificationFingerprint !== await verificationFingerprint(q, grade, topic);
+        return { q, stale, needed: stale || q.verificationStatus !== 'verified' || q.needsReview === true };
+      }));
+      const questionsToVerify = checks.filter(c => c.needed).map(c => c.q);
+      setManualDecisionMap(prev => {
+        const decisions = { ...prev };
+        for (const item of checks) if (item.stale) delete decisions[item.q.id];
+        return decisions;
+      });
+      setProgress({ current: 0, total: questionsToVerify.length });
       const results = await aiService.verifyExamQuestions({
-        questions,
+        questions: questionsToVerify,
         grade,
         topic,
         onProgress: (current, total) => {
@@ -125,7 +138,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
         }
       });
 
-      const newVerificationMap: Record<string, QuestionVerificationResult> = {};
+      const newVerificationMap: Record<string, QuestionVerificationResult> = { ...verificationMap };
       results.forEach((res) => {
         newVerificationMap[res.questionId] = res;
       });
@@ -290,11 +303,15 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
           pass1Answer: vInfo?.pass1Answer || q.pass1Answer,
           pass2Answer: vInfo?.pass2Answer || q.pass2Answer,
           aiProposedAnswer: vInfo?.proposedAnswer || q.aiProposedAnswer,
-          aiReason: vInfo?.reason || q.aiReason
+          aiReason: vInfo?.reason || q.aiReason,
+          teacherVerified: !!decision || (q.teacherVerified && !vInfo)
         };
       });
 
-      await onApplyAnswers(updatedQuestions);
+      const fingerprinted = await Promise.all(updatedQuestions.map(async q => ({ ...q,
+        verificationFingerprint: q.verificationStatus === 'verified' ? await verificationFingerprint(q, grade, topic) || undefined : q.verificationFingerprint
+      })));
+      await onApplyAnswers(fingerprinted);
       onClose();
     } catch (err) {
       console.error('Lỗi khi lưu đáp án:', err);
@@ -407,7 +424,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
                 <div className="text-[11px] text-slate-500 dark:text-slate-400">
                   {needsReviewCount > 0 
                     ? `Còn ${needsReviewCount} câu nghi vấn cần Thầy/Cô duyệt xác nhận bằng các nút thao tác.`
-                    : 'Tất cả câu hỏi đã được thẩm định đạt chuẩn 100% không phát hiện mâu thuẫn.'}
+                    : 'Các câu đã được AI kiểm tra hoặc giáo viên duyệt; chưa phát hiện mâu thuẫn.'}
                 </div>
               </div>
             </div>
@@ -462,7 +479,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
               ) : (
                 <>
                   <Sparkles className="w-4 h-4 text-amber-300" />
-                  <span>{Object.keys(verificationMap).length > 0 ? 'Thẩm định đối soát lại toàn bộ đề' : 'Bắt đầu AI Thẩm định đề thi'}</span>
+                  <span>{Object.keys(verificationMap).length > 0 ? 'Kiểm tra câu mới hoặc đã thay đổi' : 'Bắt đầu AI Thẩm định đề thi'}</span>
                 </>
               )}
             </button>

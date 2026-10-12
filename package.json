@@ -11,6 +11,8 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "check:imports": "tsx scripts/check-import-parsers.ts",
+    "check:exam-workflow": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-exam-workflow.ts",
+    "check:ai-efficiency": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-ai-efficiency.ts",
     "test:strikeout": "tsx scripts/test-strikeout-grading.ts",
     "test:points": "node scripts/test-point-distribution.mjs"
   },

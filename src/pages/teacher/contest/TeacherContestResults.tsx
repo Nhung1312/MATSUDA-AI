@@ -10,7 +10,7 @@ import { StorageService } from '../../../services/storageService';
 import { aiService } from '../../../services/aiService';
 import { rankContestSubmissions, formatContestDateTime } from '../../../utils/contestUtils';
 import { MathDisplay } from '../../../components/MathDisplay';
-import { isEssayQuestion } from '../../../utils/questionUtils';
+import { isEssayQuestion, getEssayGradingReference } from '../../../utils/questionUtils';
 import { ImageLightboxModal } from '../../../components/ImageLightboxModal';
 import * as XLSX from 'xlsx';
 import { 
@@ -196,8 +196,8 @@ export const TeacherContestResults: React.FC<TeacherContestResultsProps> = ({
         studentAnswerText: ans.studentSolutionText || ans.selectedAnswer || '',
         essayImages: ans.essayImages || [],
         maxPoints: q.points || 2.0,
-        correctAnswerCriteria: q.correctAnswer,
-        rubric: q.rubric,
+        correctAnswerCriteria: getEssayGradingReference(q).correctAnswer,
+        rubric: getEssayGradingReference(q).rubric,
         grade: contest?.grade
       });
 
@@ -284,8 +284,8 @@ export const TeacherContestResults: React.FC<TeacherContestResultsProps> = ({
                 studentAnswerText: ans.studentSolutionText || ans.selectedAnswer || '',
                 essayImages: ans.essayImages || [],
                 maxPoints: q.points || 2.0,
-                correctAnswerCriteria: q.correctAnswer,
-                rubric: q.rubric,
+                correctAnswerCriteria: getEssayGradingReference(q).correctAnswer,
+                rubric: getEssayGradingReference(q).rubric,
                 grade: contest.grade
               });
 

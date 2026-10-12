@@ -8,6 +8,7 @@ import { aiService, HybridAIService } from '../../services/aiService';
 import { stepGradingService } from '../../services/stepGradingService';
 import { useTheme } from '../../context/ThemeContext';
 import { shuffleAssignmentQuestionsAndOptions, formatViolationTime } from '../../utils/antiCheatUtils';
+import { placeEssayQuestionsLast, getEssayGradingReference } from '../../utils/questionUtils';
 import { isEssayQuestion, getQuestionTypeLabel } from '../../utils/questionUtils';
 import { ImageLightboxModal } from '../../components/ImageLightboxModal';
 import { soundEffects } from '../../utils/soundEffects';
@@ -159,7 +160,8 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
   // 2. SHUFFLE SYSTEM: Đề PDF giữ nguyên thứ tự 1..N; Đề Text xáo trộn ngẫu nhiên
   const [currentAssignment, setCurrentAssignment] = useState<Assignment>(() => {
     if (initialLoadedDraft?.shuffledAssignment && initialLoadedDraft.shuffledAssignment.questions?.length > 0) {
-      return initialLoadedDraft.shuffledAssignment;
+      const saved = initialLoadedDraft.shuffledAssignment;
+      return isPdfMode ? saved : { ...saved, questions: placeEssayQuestionsLast(saved.questions, assignment.questions) };
     }
     if ((assignment as any).type === 'pdf') {
       return assignment;
@@ -168,7 +170,10 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
   });
 
   const [currentIndex, setCurrentIndex] = useState<number>(() => {
-    return initialLoadedDraft?.currentIndex ?? 0;
+    const savedIndex = initialLoadedDraft?.currentIndex ?? 0;
+    const savedId = initialLoadedDraft?.shuffledAssignment?.questions[savedIndex]?.id;
+    const restoredIndex = savedId ? currentAssignment.questions.findIndex(q => q.id === savedId) : savedIndex;
+    return restoredIndex >= 0 ? restoredIndex : 0;
   });
 
   const [answers, setAnswers] = useState<Record<string, string>>(() => {
@@ -757,8 +762,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
               grade: String(currentAssignment.grade),
               topic: currentAssignment.topic,
               maxPoints: eq.points,
-              correctAnswer: eq.correctAnswer,
-              rubric: eq.rubric,
+              ...getEssayGradingReference(eq),
               studentSolutionText: solutionText,
               essayImages: images
             });

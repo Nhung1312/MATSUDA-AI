@@ -110,9 +110,14 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
       maxPoints = 10,
       correctAnswer,
       rubric,
+      questionImageUrl,
       studentSolutionText,
       essayImages
     } = body || {};
+
+    if (!Number.isFinite(maxPoints) || maxPoints <= 0) {
+      return res.status(400).json({ ...generateRuleBasedGrading(body), feedback: 'Thang điểm không hợp lệ; cần giáo viên kiểm tra.' });
+    }
 
     if (!questionText || (!studentSolutionText && (!essayImages || essayImages.length === 0))) {
       return res.status(400).json({
@@ -146,32 +151,19 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
     if (correctAnswer) {
       promptText += `ĐÁP ÁN CHUẨN THAM KHẢO / HƯỚNG DẪN CHẤM:\n${correctAnswer}\n\n`;
     }
-    if (rubric) {
+    if (rubric && body.hasExplicitRubric !== false) {
       promptText += `THANG ĐIỂM (RUBRIC):\n${rubric}\n\nQUY TẮC CHẤM: Bám đúng từng ý trong rubric, tạo scoreBreakdown tương ứng; không chia điểm đều theo số dòng. Không trừ điểm lặp cho cascading_error cùng một nguyên nhân.\n\n`;
     } else {
+      if (rubric) promptText += `LỜI GIẢI THAM KHẢO (chưa có biểu điểm cụ thể):\n${rubric}\n\n`;
       promptText += `KHÔNG CÓ RUBRIC CHI TIẾT: Có thể đề xuất điểm theo Step Analysis như fallback, nhưng phải đặt scoringMethod="step_fallback".\n\n`;
     }
     if (studentSolutionText && studentSolutionText.trim().length > 0) {
       promptText += `BÀI LÀM TỰ LUẬN DO HỌC SINH GÕ/NHẬP:\n"${studentSolutionText}"\n\n`;
     }
     if (essayImages && essayImages.length > 0) {
-      if (essayImages.length > 1) {
-        promptText += `Học sinh có tải kèm ${essayImages.length} ảnh bài làm viết tay tương ứng thứ tự pageIndex từ 0 đến ${essayImages.length - 1}. Hãy đọc tất cả các trang ảnh bài làm theo đúng trình tự. QUAN TRỌNG:
-1. Đọc và chấm ĐẦY ĐỦ TẤT CẢ CÁC DÒNG BIẾN ĐỔI của học sinh từ đầu đến đáp số cuối, tuyệt đối không dừng lại ở mỗi Bước 1.
-2. Gán đúng \`pageIndex\` (0 cho ảnh 1, 1 cho ảnh 2...) cho mỗi bước trong mảng analysis để biết bước giải nằm ở trang ảnh nào.
-3. Nhận diện chuẩn xác nét chữ viết tay, phân biệt rõ số mũ, dấu âm (-), phân số, căn thức, ký hiệu hình học, giả thiết (GT), kết luận (KL) và hình vẽ nếu có.
-4. Nếu nét chữ mờ, ảnh tối hoặc không chắc chắn: status="uncertain", gán confidence < 0.70 và giải thích rõ trong comment. TUYỆT ĐỐI không coi "không đọc rõ" là "học sinh làm sai", không trừ điểm chỉ vì chữ xấu.
-5. Viết công thức Toán bằng LaTeX chuẩn: \\frac{tử}{mẫu} cho phân số, \\cdot cho phép nhân, bọc công thức trong $...$.\n\n`;
-      } else {
-        promptText += `Học sinh có tải kèm 1 ảnh bài làm viết tay. Hãy đọc trực tiếp ảnh gốc bài làm. QUAN TRỌNG:
-1. Đọc và chấm ĐẦY ĐỦ TẤT CẢ CÁC DÒNG BIẾN ĐỔI của học sinh từ đầu đến đáp số cuối, tuyệt đối không dừng lại ở mỗi Bước 1.
-2. Gán pageIndex = 0 cho các bước.
-3. Nhận diện chuẩn xác nét chữ viết tay, phân biệt rõ số mũ, dấu âm (-), phân số, căn thức, ký hiệu hình học, giả thiết (GT), kết luận (KL) và hình vẽ nếu có.
-4. Nếu nét chữ mờ, ảnh tối hoặc không chắc chắn: status="uncertain", gán confidence < 0.70 và giải thích rõ trong comment. TUYỆT ĐỐI không coi "không đọc rõ" là "học sinh làm sai", không trừ điểm chỉ vì chữ xấu.
-5. Viết công thức Toán bằng LaTeX chuẩn: \\frac{tử}{mẫu} cho phân số, \\cdot cho phép nhân, bọc công thức trong $...$.\n\n`;
-      }
+      promptText += `Có ${essayImages.length} ảnh gốc bài làm, thứ tự pageIndex từ 0 đến ${essayImages.length - 1}. Đọc đầy đủ mọi ý và mọi bước còn hiệu lực, giữ thứ tự trang và áp dụng Geometry Vision Guard cùng Strikeout Guard trong systemInstruction. Ảnh mờ/thiếu thì chuyển giáo viên duyệt, không tự coi là học sinh bỏ bài.\n\n`;
     }
-    promptText += `YÊU CẦU ĐẦU RA:
+    promptText += `Nhận xét ngắn gọn, không lặp lại đề bài hoặc rubric; vẫn giữ đủ mọi bước và tiêu chí chấm.\nYÊU CẦU ĐẦU RA:
 1. Trả về mảng \`analysis\` chứa mọi bước biến đổi của học sinh.
 2. Xác định chính xác \`firstErrorStep\` (bước đầu tiên sai) nếu có, \`firstErrorType\`, \`firstErrorExplanation\`.
 3. Đánh dấu đúng status: "correct", "first_error", "cascading_error", "independent_error", "uncertain".
@@ -181,13 +173,22 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
 7. Với hình học, chỉ dùng quan hệ CONFIRMED làm căn cứ; quan hệ chỉ nhìn hình đoán phải coi là UNCONFIRMED.`;
 
     const parts: any[] = [{ text: promptText }];
+    if (questionImageUrl) {
+      const sourceImage = questionImageUrl.match(/^data:(image\/[^;]+);base64,([\s\S]+)$/);
+      if (!sourceImage) return res.status(400).json({ ...generateRuleBasedGrading(body), feedback: 'Chưa đọc được hình của đề bài; cần kiểm tra ảnh nguồn trước khi chấm.' });
+      parts.push({ text: 'HÌNH NGUỒN CỦA ĐỀ BÀI, không phải bài làm học sinh:' });
+      parts.push({ inlineData: { mimeType: sourceImage[1], data: sourceImage[2] } });
+    }
 
     // Thêm các ảnh bài làm viết tay dạng base64 nếu có
     if (Array.isArray(essayImages) && essayImages.length > 0) {
-      for (const imgUrl of essayImages) {
+      let attachedImages = 0;
+      for (const [imageIndex, imgUrl] of essayImages.entries()) {
         if (typeof imgUrl === 'string') {
           const match = imgUrl.match(/^data:([^;]+);base64,(.+)$/);
           if (match) {
+            attachedImages++;
+            parts.push({ text: `BÀI LÀM HỌC SINH, ảnh pageIndex = ${imageIndex}:` });
             parts.push({
               inlineData: {
                 mimeType: match[1],
@@ -197,6 +198,7 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
           }
         }
       }
+      if (attachedImages !== essayImages.length) return res.status(400).json({ ...generateRuleBasedGrading(body), feedback: 'Chưa đọc được đủ ảnh bài làm. Không tự chấm thiếu ảnh; cần giáo viên kiểm tra.' });
     }
 
     contents.push({ parts });
@@ -323,7 +325,8 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
     let resultJson: any = null;
     let usedModel = AI_CONFIG.defaultModel;
 
-    for (const modelName of AI_CONFIG.models) {
+    // One grading model per attempt; no hidden switch after a quota error.
+    for (const modelName of [AI_CONFIG.defaultModel]) {
       try {
         const resp = await ai.models.generateContent({
           model: modelName,
@@ -341,6 +344,9 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
           break;
         }
       } catch (err: any) {
+        if (Number(err?.status || err?.code) === 429 || /429|RESOURCE_EXHAUSTED|quota/i.test(String(err?.message || err))) {
+          return res.status(429).json({ ...generateRuleBasedGrading(body), errorCode: 'quota', feedback: 'AI hết hạn mức (429). Đã dừng gọi lặp; bài làm được giữ để giáo viên duyệt.' });
+        }
         console.warn(`[Step Grading] Model ${modelName} thất bại, thử mô hình dự phòng:`, err?.message || err);
         await new Promise(r => setTimeout(r, 400));
       }
@@ -361,6 +367,7 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
       // Đợt 7C: Không tự hiểu AI chắc chắn 95% khi thiếu confidence. Mặc định bảo thủ 0.60 (<0.70) để giáo viên rà soát.
       const hasExplicitConf = typeof rawStep.confidence === 'number' && !isNaN(rawStep.confidence);
       let conf = hasExplicitConf ? Math.max(0, Math.min(1, rawStep.confidence)) : 0.60;
+      if (typeof rawStep.studentLatex !== 'string' || !rawStep.studentLatex.trim()) conf = Math.min(conf, 0.60);
       
       const rawContentType = String(rawStep.contentType || '').toLowerCase();
       let contentType: HandwritingContentType = 'active';
@@ -389,6 +396,7 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
 
       let status: StepStatus = 'correct';
       const rawStatus = String(rawStep.status || '').toLowerCase();
+      if (!['correct', 'uncertain', 'unclear', 'first_error', 'cascading_error', 'independent_error', 'incorrect'].includes(rawStatus)) conf = Math.min(conf, 0.60);
       const isPureCrossedOut = contentType === 'crossed_out';
       
       if (isPureCrossedOut) {
@@ -406,6 +414,7 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
         status = detectedFirstErrorIndex === null ? 'first_error' : 'cascading_error';
       }
 
+      if (status === 'cascading_error' && detectedFirstErrorIndex === null) status = 'first_error';
       // Xác định chính xác bước sai đầu tiên (chỉ tính bước active / replacement có hiệu lực)
       if (!isPureCrossedOut && status === 'first_error' && detectedFirstErrorIndex === null) {
         detectedFirstErrorIndex = stepIdx;
@@ -455,9 +464,9 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
     const totalSteps = activeSteps.length > 0 ? activeSteps.length : normalizedAnalysis.length;
     const correctStepsCount = normalizedAnalysis.filter(s => s.status === 'correct' && s.contentType !== 'crossed_out').length;
     const hasRealError = detectedFirstErrorIndex !== null || normalizedAnalysis.some(s => s.status === 'independent_error' && s.contentType !== 'crossed_out');
-    const hasUncertainStep = normalizedAnalysis.some(s => (s.status === 'uncertain' || s.confidence < 0.70) && s.contentType !== 'crossed_out');
+    const hasUncertainStep = normalizedAnalysis.some(s => (s.status === 'uncertain' || s.confidence < 0.85) && s.contentType !== 'crossed_out');
     // Tách rõ đúng hoàn toàn: Không có lỗi thực tế, không có bước không chắc chắn, và toàn bộ bước đúng
-    const isAllCorrect = !hasRealError && !hasUncertainStep && activeSteps.length > 0 && activeSteps.every(s => s.status === 'correct');
+    let isAllCorrect = !hasRealError && !hasUncertainStep && activeSteps.length > 0 && activeSteps.every(s => s.status === 'correct');
 
     const firstError = detectedFirstErrorIndex 
       ? normalizedAnalysis.find(s => s.stepIndex === detectedFirstErrorIndex)
@@ -473,10 +482,10 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
       teacherCorrectionNotice = 'Phát hiện nội dung đã gạch xoá. Hệ thống ưu tiên lời giải sau khi sửa.';
     }
 
-    let needsTeacherReview = hasUncertainStep || anyUncertainCorrection;
+    let needsTeacherReview = hasUncertainStep || anyUncertainCorrection || activeSteps.length === 0;
     let computedScore: number;
 
-    const hasRubric = typeof rubric === 'string' && rubric.trim().length > 0;
+    const hasRubric = typeof rubric === 'string' && rubric.trim().length > 0 && body.hasExplicitRubric !== false;
     const rawScoreBreakdown: any[] = Array.isArray(resultJson.scoreBreakdown) ? resultJson.scoreBreakdown : [];
     const normalizedScoreBreakdown: ScoreBreakdownItem[] = rawScoreBreakdown
       .map((item: any) => {
@@ -507,6 +516,17 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
     const breakdownEarned = normalizedScoreBreakdown.reduce((sum, item) => sum + item.earnedPoints, 0);
     const hasUsableRubricBreakdown = hasRubric && normalizedScoreBreakdown.length > 0 && breakdownMax > 0;
     const scoringMethod: 'rubric' | 'step_fallback' = hasUsableRubricBreakdown ? 'rubric' : 'step_fallback';
+    if (scoringMethod === 'step_fallback') needsTeacherReview = true;
+    if (hasUsableRubricBreakdown) {
+      // Correct provided steps do not imply that every required subpart was done.
+      isAllCorrect = isAllCorrect && normalizedScoreBreakdown.every(item =>
+        Math.abs(item.earnedPoints - item.maxPoints) < 0.00001 && item.status !== 'not_met' && item.status !== 'partial');
+    }
+    if (rawScoreBreakdown.some(item => !Number.isFinite(item?.maxPoints) || !Number.isFinite(item?.earnedPoints)
+      || item.maxPoints <= 0 || item.earnedPoints < 0 || item.earnedPoints > item.maxPoints)) needsTeacherReview = true;
+    if (normalizedScoreBreakdown.some(item =>
+      (item.status === 'met' && Math.abs(item.earnedPoints - item.maxPoints) > 0.00001)
+      || (item.status === 'not_met' && item.earnedPoints > 0))) needsTeacherReview = true;
 
     if (normalizedScoreBreakdown.some(item => item.status === 'uncertain')) {
       needsTeacherReview = true;
@@ -523,7 +543,7 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
     if (hasUsableRubricBreakdown) {
       // Rubric là nguồn điểm chính. Nếu tổng barem lệch maxPoints, scale theo tỉ lệ và gắn cờ GV rà soát.
       const scale = breakdownMax > 0 ? maxPoints / breakdownMax : 1;
-      computedScore = Math.round(Math.min(maxPoints, Math.max(0, breakdownEarned * scale)) * 4) / 4;
+      computedScore = Math.round(Math.min(maxPoints, Math.max(0, breakdownEarned * scale)) * 10000) / 10000;
       if (Math.abs(breakdownMax - maxPoints) > 0.01) {
         needsTeacherReview = true;
       }
@@ -531,34 +551,17 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
       if ((hasRealError && computedScore >= maxPoints) || (isAllCorrect && computedScore < maxPoints)) {
         needsTeacherReview = true;
       }
-    } else if (isAllCorrect) {
-      computedScore = maxPoints;
-    } else if (hasRealError) {
-      if (aiProposedScore !== null) {
-        // SAFETY CHECK: Chống mâu thuẫn điểm số ("AI nói có lỗi nhưng vẫn cho điểm tối đa")
-        if (aiProposedScore >= maxPoints) {
-          // Áp dụng mức trần an toàn có tính đến barem và vị trí lỗi sai
-          const cap = (detectedFirstErrorIndex === 1) ? maxPoints * 0.5 : maxPoints * 0.75;
-          const ratioBased = totalSteps > 0 ? (correctStepsCount / totalSteps) * maxPoints : 0;
-          computedScore = Math.round(Math.min(cap, Math.max(0, ratioBased)) * 4) / 4;
-          needsTeacherReview = true;
-        } else {
-          // Tôn trọng mức điểm AI trừ theo barem/rubric, làm tròn đến 0.25đ chuẩn sư phạm GDPT
-          computedScore = Math.round(aiProposedScore * 4) / 4;
-        }
-      } else {
-        // Fallback khi AI không trả về trường score
-        const ratio = totalSteps > 0 ? (correctStepsCount / totalSteps) : 0;
-        computedScore = Math.round(maxPoints * ratio * 4) / 4;
-        needsTeacherReview = true;
-      }
     } else {
-      // Trường hợp không có bước sai rõ ràng nhưng có bước uncertain (không tự cho maxPoints)
-      computedScore = aiProposedScore !== null ? Math.round(aiProposedScore * 4) / 4 : 0;
+      // Without a source allocation, keep only the model's proposal for teacher
+      // review. Do not invent a maximum/percentage from the count of correct lines.
+      computedScore = aiProposedScore !== null ? Math.round(aiProposedScore * 10000) / 10000 : 0;
+      isAllCorrect = false;
       needsTeacherReview = true;
     }
 
     let feedbackText = sanitizeMathData(resultJson.feedback || 'Đã hoàn tất phân tích chi tiết từng bước.');
+    if (typeof resultJson.score !== 'number' || !Number.isFinite(resultJson.score) || resultJson.score < 0
+      || resultJson.score > maxPoints || Math.abs(resultJson.score - computedScore) > 0.01) needsTeacherReview = true;
     if (needsTeacherReview && !feedbackText.includes('giáo viên xem lại')) {
       feedbackText += ' (Lưu ý: Câu này có nét chữ chưa hoàn toàn rõ hoặc điểm số cần giáo viên đối chiếu thêm).';
     }

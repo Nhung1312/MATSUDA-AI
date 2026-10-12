@@ -49,6 +49,8 @@ export interface Question {
   aiProposedAnswer?: string; // Đáp án AI đề xuất trong đợt thẩm định
   aiReason?: string; // Lý do / căn cứ AI đưa ra
   needsReview?: boolean; // Cờ đánh dấu câu cần giáo viên duyệt lại
+  verificationFingerprint?: string;
+  teacherVerified?: boolean;
 }
 
 // ==========================================
@@ -113,6 +115,7 @@ export interface StudentAnswer {
   aiGraded?: boolean; // Đã được AI chấm
   teacherFeedback?: string; // Nhận xét của giáo viên
   teacherScore?: number; // Điểm giáo viên chấm hoặc điều chỉnh
+  teacherReviewed?: boolean; // Điểm đã được giáo viên duyệt trực tiếp
   // Optional fields cho Step-by-Step Analysis (Đợt 1 - Tương thích 100% dữ liệu cũ)
   stepAnalysis?: StepAnalysis[];
   firstErrorStep?: number | null;
@@ -478,6 +481,8 @@ export interface StepGradingRequest {
   maxPoints?: number;
   correctAnswer?: string;
   rubric?: string;
+  questionImageUrl?: string;
+  hasExplicitRubric?: boolean;
   studentSolutionText?: string;
   essayImages?: string[]; // Base64 data URLs
 }
@@ -504,6 +509,9 @@ export interface StepGradingResponse {
   needsTeacherReview?: boolean;
   modelUsed?: string;
   message?: string;
+  requestFingerprint?: string;
+  reusedResult?: boolean;
+  errorCode?: 'quota';
   // Handwriting strikeout detection metadata (Matsuda Strikeout Guard)
   hasCrossedOutDetection?: boolean;
   uncertainCorrectionDetected?: boolean;
