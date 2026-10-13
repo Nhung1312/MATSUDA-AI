@@ -7,7 +7,7 @@ import {
   RemedialGenerateResponse,
   RemedialExercise
 } from '../types';
-import { fingerprintAIInput, readAIResult, writeAIResult, loadAIImage } from '../utils/aiResultCache';
+import { fingerprintAIInput, readAIResult, writeAIResult, loadAIImage, type AIImageMemo } from '../utils/aiResultCache';
 
 /**
  * Service giao tiếp an toàn với Server AI Backend
@@ -19,17 +19,17 @@ class StepGradingService {
   /**
    * Phân tích và chấm bài tự luận từng bước (Step-by-step Grading)
    */
-  async analyzeStepByStep(request: StepGradingRequest, options: { force?: boolean; previousResult?: StepGradingResponse } = {}): Promise<StepGradingResponse> {
+  async analyzeStepByStep(request: StepGradingRequest, options: { force?: boolean; previousResult?: StepGradingResponse; imageMemo?: AIImageMemo } = {}): Promise<StepGradingResponse> {
     const prepared = { ...request, essayImages: [...(request.essayImages || [])] };
     try {
       for (let i = 0; i < prepared.essayImages.length; i++) {
         if (!prepared.essayImages[i].startsWith('data:')) {
-          const image = await loadAIImage(prepared.essayImages[i]);
+          const image = await loadAIImage(prepared.essayImages[i], options.imageMemo);
           prepared.essayImages[i] = `data:${image.mimeType};base64,${image.data}`;
         }
       }
       if (prepared.questionImageUrl && !prepared.questionImageUrl.startsWith('data:')) {
-        const image = await loadAIImage(prepared.questionImageUrl);
+        const image = await loadAIImage(prepared.questionImageUrl, options.imageMemo);
         prepared.questionImageUrl = `data:${image.mimeType};base64,${image.data}`;
       }
     } catch {

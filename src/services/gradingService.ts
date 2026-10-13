@@ -20,8 +20,8 @@ import {
 } from '../types';
 import { isEssayQuestion, formatDecimalPoint, getEssayGradingReference } from '../utils/questionUtils';
 import { stepGradingService } from './stepGradingService';
-import { StorageService } from './storageService';
-import { FirestoreService } from './firestoreService';
+import { saveSubmissionConfirmed, type SubmissionSaveResult } from './submissionSaveService';
+import type { AIImageMemo } from '../utils/aiResultCache';
 
 export interface GradeSingleSubmissionWithAiResult {
   success: boolean;
@@ -32,6 +32,7 @@ export interface GradeSingleSubmissionWithAiResult {
   firstError?: { step: number; type: StepErrorType; explanation: string };
   errorMsg?: string;
   quotaExceeded?: boolean;
+  persistence?: SubmissionSaveResult;
 }
 
 export class GradingService {
@@ -722,6 +723,7 @@ export class GradingService {
     let wrongCnt = 0;
     let overallNeedsReview = false;
     let quotaExceeded = false;
+    const imageMemo: AIImageMemo = new Map();
     let totalErrorsCount = 0;
     let firstFoundError: { step: number; type: StepErrorType; explanation: string } | undefined = undefined;
 
@@ -837,7 +839,7 @@ export class GradingService {
           ...getEssayGradingReference(q),
           studentSolutionText: solutionText,
           essayImages: images
-        }, { force: forceRegrade, previousResult: existingAns?.stepGradingResponse });
+        }, { force: forceRegrade, previousResult: existingAns?.stepGradingResponse, imageMemo });
 
         quotaExceeded ||= stepRes.errorCode === 'quota';
 
@@ -954,13 +956,7 @@ export class GradingService {
       }
     };
 
-    // Tự động lưu bền vững vào IndexedDB/LocalStorage và Firestore
-    try {
-      StorageService.saveSubmission(updatedSubmission);
-      await FirestoreService.saveResult(updatedSubmission).catch(() => {});
-    } catch (saveErr) {
-      console.warn('Lỗi lưu kết quả chấm vào bộ nhớ:', saveErr);
-    }
+    const persistence = await saveSubmissionConfirmed(updatedSubmission);
 
     return {
       success: true,
@@ -969,7 +965,8 @@ export class GradingService {
       needsTeacherReview: overallNeedsReview,
       totalErrors: totalErrorsCount,
       firstError: firstFoundError,
-      quotaExceeded
+      quotaExceeded,
+      persistence
     };
   }
 

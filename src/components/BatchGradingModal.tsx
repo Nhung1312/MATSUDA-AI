@@ -39,6 +39,7 @@ export interface BatchItem {
   firstErrorSummary?: string;
   needsTeacherReview: boolean;
   errorMsg?: string;
+  cloudSaveWarning?: string;
   updatedAt?: string;
 }
 
@@ -48,7 +49,7 @@ interface BatchGradingModalProps {
   assignment: Assignment;
   submissions: Submission[];
   classStudents?: string[];
-  onSubmissionsUpdated: (updatedSubmissions: Submission[]) => void;
+  onSubmissionsUpdated: (updatedSubmissions: Submission[], options?: { cloudHandled?: boolean }) => void;
 }
 
 export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
@@ -183,7 +184,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
     let successCount = 0;
     let reviewCount = 0;
     let errorCount = 0;
-    let stoppedForQuota = false;
+    let stoppedEarly = false;
 
     for (let i = 0; i < targetItems.length; i++) {
       if (abortControllerRef.current.signal.aborted) {
@@ -227,14 +228,20 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
                   : undefined,
                 needsTeacherReview: result.needsTeacherReview,
                 submission: result.submission,
-                errorMsg: undefined
+                errorMsg: undefined,
+                cloudSaveWarning: result.persistence?.cloudSaved === false ? 'Chưa xác nhận lưu lên cloud. Kết quả hiện có cần lưu lại; không cần chấm AI lại.' : undefined
               };
             }
             return it;
           })
         );
+        if (result.persistence?.cloudSaved === false) {
+          showToast('Chưa xác nhận lưu kết quả lên cloud. Đã giữ kết quả hiện có và dừng hàng đợi; hãy lưu lại trước khi chấm tiếp.', 'warning');
+          stoppedEarly = true;
+          break;
+        }
         if (result.quotaExceeded) {
-          stoppedForQuota = true;
+          stoppedEarly = true;
           showToast('AI hết hạn mức (429). Đã lưu kết quả hiện có và dừng hàng đợi; các bài còn lại chưa bị chấm lại.', 'warning');
           break;
         }
@@ -261,7 +268,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
 
         // Giãn cách thêm nếu dính rate limit 429
         if (errMsg.includes('429') || errMsg.toLowerCase().includes('quota')) {
-          stoppedForQuota = true;
+          stoppedEarly = true;
           break;
         }
       }
@@ -278,9 +285,9 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
 
     // Cập nhật danh sách bài nộp lên View cha
     const updatedSubsList = Array.from(currentSubsMap.values());
-    onSubmissionsUpdated(updatedSubsList);
+    onSubmissionsUpdated(updatedSubsList, { cloudHandled: true });
 
-    if (!abortControllerRef.current.signal.aborted && !stoppedForQuota) {
+    if (!abortControllerRef.current.signal.aborted && !stoppedEarly) {
       showToast(
         `Hoàn tất chấm cả lớp! Đã chấm ${successCount + reviewCount} bài (${reviewCount} bài cần duyệt, ${errorCount} lỗi).`,
         errorCount > 0 ? 'warning' : 'success'
@@ -327,7 +334,8 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
                 : undefined,
               needsTeacherReview: result.needsTeacherReview,
               submission: result.submission,
-              errorMsg: undefined
+              errorMsg: undefined,
+              cloudSaveWarning: result.persistence?.cloudSaved === false ? 'Chưa xác nhận lưu lên cloud. Kết quả hiện có cần lưu lại; không cần chấm AI lại.' : undefined
             };
           }
           return it;
@@ -335,8 +343,10 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
       );
 
       const updated = submissions.map((s) => (s.id === result.submission.id ? result.submission : s));
-      onSubmissionsUpdated(updated);
-      showToast(`Đã chấm xong bài của ${item.studentName}: ${result.submission.totalScore}đ`, 'success');
+      onSubmissionsUpdated(updated, { cloudHandled: true });
+      showToast(result.persistence?.cloudSaved === false
+        ? `Đã chấm bài của ${item.studentName}, nhưng chưa xác nhận lưu lên cloud. Hãy lưu lại kết quả.`
+        : `Đã chấm xong bài của ${item.studentName}: ${result.submission.totalScore}đ`, result.persistence?.cloudSaved === false ? 'warning' : 'success');
     } catch (err: any) {
       setItems((prev) =>
         prev.map((it) =>
@@ -902,6 +912,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
                               <span>Lỗi chấm</span>
                             </span>
                           )}
+                          {item.cloudSaveWarning && <p className="text-amber-800 text-[11px] mt-1">{item.cloudSaveWarning}</p>}
                           {item.status === 'pending' && (
                             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
                               <Clock className="w-3 h-3 text-slate-400" />

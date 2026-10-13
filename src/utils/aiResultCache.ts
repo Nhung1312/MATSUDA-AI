@@ -49,8 +49,15 @@ export function writeAIResult(namespace: string, fingerprint: string | null, val
   } catch { /* Do not discard a completed AI result because storage is full. */ }
 }
 
-/** Convert source image bytes without resizing or cropping. */
-export async function loadAIImage(url: string): Promise<{ mimeType: string; data: string }> {
+export type AIImageMemo = Map<string, Promise<{ mimeType: string; data: string }>>;
+
+/** Convert source image bytes without resizing or cropping. Memo lives in one grading run only. */
+export async function loadAIImage(url: string, memo?: AIImageMemo): Promise<{ mimeType: string; data: string }> {
+  if (memo) {
+    let pending = memo.get(url);
+    if (!pending) { pending = loadAIImage(url); memo.set(url, pending); }
+    return pending;
+  }
   const inline = url.match(/^data:(image\/[^;]+);base64,([\s\S]+)$/);
   if (inline) return { mimeType: inline[1], data: inline[2] };
   if (!/^https?:\/\//i.test(url)) throw new Error('Định dạng ảnh chưa đọc được.');
