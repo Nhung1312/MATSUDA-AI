@@ -131,6 +131,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
   const [topic, setTopic] = useState(editingAssignment?.topic || 'Đại số & Hình học THCS');
   const [classId, setClassId] = useState<string>(editingAssignment?.classId || classes[0]?.id || 'all');
   const [durationMinutes, setDurationMinutes] = useState<number>(editingAssignment?.durationMinutes ?? 45);
+  const [maxSubmissions, setMaxSubmissions] = useState<number>(editingAssignment ? (editingAssignment.maxSubmissions ?? 0) : 1);
   const [deadline, setDeadline] = useState<string>(() => {
     if (editingAssignment?.deadline) return editingAssignment.deadline;
     const d = new Date();
@@ -746,6 +747,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
           questions: finalQuestions,
           totalPoints: finalTotalPoints,
           durationMinutes: Number(durationMinutes) || 0,
+          maxSubmissions,
           deadline,
           allowViewResult,
           resultReviewMode,
@@ -765,6 +767,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
           questions: finalQuestions,
           totalPoints: finalTotalPoints,
           durationMinutes: Number(durationMinutes) || 0,
+          maxSubmissions,
           deadline,
           allowViewResult,
           resultReviewMode,
@@ -943,6 +946,18 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
                 onChange={(e) => setDeadline(e.target.value)}
                 className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm"
               />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold text-slate-700 mb-1">Số lần nộp tối đa mỗi học sinh</label>
+              <select value={maxSubmissions} onChange={e => setMaxSubmissions(Number(e.target.value))}
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm">
+                <option value={1}>1 lần (mặc định cho bài mới)</option>
+                <option value={2}>2 lần</option><option value={3}>3 lần</option>
+                <option value={5}>5 lần</option><option value={10}>10 lần</option>
+                <option value={0}>Không giới hạn</option>
+              </select>
+              <p className="text-[11px] text-slate-500 mt-1">Đếm bài nộp trực tuyến theo họ tên và lớp học sinh đã nhập, kể cả lượt đã nộp trước đó. Bài giấy giáo viên tải lên không tính vào lượt này. Điểm và bài nộp cũ được giữ nguyên.</p>
             </div>
 
             {/* Result review mode */}

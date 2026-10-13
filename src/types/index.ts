@@ -91,6 +91,7 @@ export interface Assignment {
   verificationStatus?: 'verified' | 'unverified' | 'needs_review' | 'pending'; // Trạng thái thẩm định đề thi (unverified = chưa thẩm định, needs_review = cần xem lại, verified = đã thẩm định)
   eligibleForSampleBank?: boolean; // Đủ điều kiện làm dữ liệu mẫu (khi đã verified 100%)
   totalPoints?: number; // Tổng điểm mục tiêu tùy chỉnh của đề thi (mặc định 10.0 hoặc linh hoạt: 5, 10, 15, 20, 100...)
+  maxSubmissions?: number; // 0/undefined: legacy unlimited; new assignments default to 1 online submission.
 }
 
 export interface ViolationEvent {
@@ -186,6 +187,8 @@ export interface Submission {
   violationEvents?: ViolationEvent[];
   isShuffled?: boolean;
   shuffledQuestions?: Question[]; // Snapshot danh sách câu hỏi học sinh nhìn thấy khi làm bài
+  submissionParticipantKey?: string; // Stable identity for limited online attempts, based on entered name/class.
+  attemptNumber?: number;
 }
 
 export interface QuestionAnalysis {
