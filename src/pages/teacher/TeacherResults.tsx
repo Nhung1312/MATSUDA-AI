@@ -3,6 +3,7 @@ import { Assignment, ClassRoom, Submission, QuestionAnalysis, StudentAnswer, Ste
 import { GradingService } from '../../services/gradingService';
 import { aiService } from '../../services/aiService';
 import { stepGradingService } from '../../services/stepGradingService';
+import { downloadSubmissionExport } from '../../services/submissionExportService';
 import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
 import { MathDisplay } from '../../components/MathDisplay';
@@ -111,6 +112,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; studentName: string } | null>(null);
   const [batchResultMsg, setBatchResultMsg] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<{ type: 'success' | 'warning' | 'error'; text: string } | null>(null);
+  const [exportingSubmission, setExportingSubmission] = useState(false);
+  const [exportProgress, setExportProgress] = useState({ done: 0, total: 0 });
+  const [exportNotice, setExportNotice] = useState<{ submissionId: string; text: string; warning: boolean } | null>(null);
 
   const currentAssignment = safeAssignments.find(a => a.id === selectedAsgId) || safeAssignments[0];
   const targetClass = currentAssignment ? safeClasses.find(c => c.id === currentAssignment.classId) : null;
@@ -583,6 +587,25 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     } else {
       setSelectedSubmissionDetail(finalized);
     }
+  };
+
+  const handleExportSubmission = async () => {
+    if (!selectedSubmissionDetail || !currentAssignment || exportingSubmission) return;
+    const submission = selectedSubmissionDetail;
+    setExportingSubmission(true);
+    setExportProgress({ done: 0, total: 0 });
+    setExportNotice(null);
+    try {
+      const result = await downloadSubmissionExport(currentAssignment, submission,
+        (done, total) => setExportProgress({ done, total }));
+      setExportNotice({ submissionId: submission.id, warning: result.missingAttachments > 0,
+        text: result.missingAttachments
+          ? `Đã tải ZIP nhưng thiếu ${result.missingAttachments} ảnh/tệp chưa tải được. Gửi ZIP và bổ sung các tệp gốc được ghi trong báo cáo.`
+          : 'Đã tải bài chấm đầy đủ. Gửi nguyên tệp ZIP để kiểm tra đề, barem, ảnh bài làm và nhận xét từng bước.' });
+    } catch (error) {
+      setExportNotice({ submissionId: submission.id, warning: true,
+        text: error instanceof Error ? error.message : 'Chưa xuất được bài chấm. Hãy thử lại.' });
+    } finally { setExportingSubmission(false); }
   };
 
   // Export CSV
@@ -1750,7 +1773,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       {selectedSubmissionDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-2xl max-h-[85vh] overflow-y-auto shadow-2xl border border-slate-100">
-            <div className="flex items-start justify-between pb-4 border-b border-slate-100 mb-4">
+            <div className="flex flex-col sm:flex-row items-start justify-between gap-3 pb-4 border-b border-slate-100 mb-4">
               <div>
                 <span className="bg-indigo-100 text-indigo-800 text-xs font-bold px-2.5 py-0.5 rounded-full">
                   Lớp {selectedSubmissionDetail.className}
@@ -1771,7 +1794,17 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                   {selectedPendingReviewCount > 0 && <span className="text-amber-700"> • Tạm tính</span>}
                 </p>
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportSubmission}
+                  disabled={exportingSubmission || gradingSingleInProgress}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl disabled:opacity-50 cursor-pointer"
+                  title="Tải ZIP gồm đề/barem, ảnh bài làm, điểm và phân tích từng bước đã lưu; không gọi AI"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{exportingSubmission ? `Đang xuất${exportProgress.total ? ` ${exportProgress.done}/${exportProgress.total}` : '...'}` : 'Xuất bài đã chấm'}</span>
+                </button>
                 <button
                   onClick={() => handleGradeEntireSingleSubmission(selectedSubmissionDetail)}
                   disabled={gradingSingleInProgress}
@@ -1803,6 +1836,13 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                 </button>
               </div>
             </div>
+
+            <p className="text-xs text-slate-500 mb-3">Xuất kết quả đã lưu. Nếu vừa sửa điểm hoặc lời phê, bấm Lưu ở câu đó trước khi xuất. Giải nén ZIP và mở bai-cham.html để xem; gửi nguyên ZIP để đối chiếu.</p>
+            {exportNotice?.submissionId === selectedSubmissionDetail.id && (
+              <div role="status" className={`mb-4 p-3 rounded-xl text-sm ${exportNotice.warning ? 'bg-amber-50 text-amber-900 border border-amber-200' : 'bg-emerald-50 text-emerald-900 border border-emerald-200'}`}>
+                {exportNotice.text}
+              </div>
+            )}
 
             <div className={`mb-4 rounded-2xl border px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
               selectedPendingReviewCount > 0
