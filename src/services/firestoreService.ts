@@ -13,6 +13,8 @@ import {
   orderBy,
   serverTimestamp 
 } from '../firebase';
+import { getDocFromServer } from 'firebase/firestore';
+import { assertTeacherCanDeleteSubmission, isSubmissionDeletionEnabled } from './submissionDeletionService';
 import { Assignment, Submission, ClassRoom, ExamTemplate, Contest, ContestSubmission } from '../types';
 
 export const EXAMS_COLLECTION = 'exams';
@@ -257,6 +259,33 @@ export class FirestoreService {
       console.error('[Firestore Error] Lỗi tải danh sách kết quả bài thi:', error);
       return [];
     }
+  }
+
+  /**
+   * Delete exactly one accepted submission, only for the authenticated Firebase
+   * owner of its cloud exam. Do not delete from localStorage until cloud confirms.
+   * Firestore security rules independently enforce the same owner requirement.
+   */
+  static async deleteSubmissionAsTeacher(expected: Submission): Promise<void> {
+    if (!isSubmissionDeletionEnabled()) throw new Error('Chức năng xóa đang tạm khóa; xuất ZIP vẫn hoạt động.');
+    const teacherUid = auth.currentUser?.uid;
+    if (!teacherUid) {
+      throw new Error('Cần đăng nhập giáo viên bằng Google/Firebase thực; chế độ xem thử không được xóa.');
+    }
+    const assignmentRef = doc(db, EXAMS_COLLECTION, expected.assignmentId);
+    const assignmentSnap = await getDocFromServer(assignmentRef);
+    if (!assignmentSnap.exists()) throw new Error('Không tìm thấy đề gốc trên Firebase; chưa xóa bài nào.');
+    const resultRef = doc(db, RESULTS_COLLECTION, expected.id);
+    const resultSnap = await getDocFromServer(resultRef);
+    if (!resultSnap.exists()) throw new Error('Lượt nộp đã bị xóa trên cloud; hãy đồng bộ lại danh sách.');
+    assertTeacherCanDeleteSubmission(
+      teacherUid,
+      { id: assignmentSnap.id, ...assignmentSnap.data() },
+      { id: resultSnap.id, ...(resultSnap.data() as Submission) },
+      expected
+    );
+    // Security rules MUST enforce owner via resource.assignmentId and exams.teacherId.
+    await deleteDoc(resultRef);
   }
 
   /**

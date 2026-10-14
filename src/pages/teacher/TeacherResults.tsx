@@ -3,9 +3,11 @@ import { Assignment, ClassRoom, Submission, QuestionAnalysis, StudentAnswer, Ste
 import { GradingService } from '../../services/gradingService';
 import { aiService } from '../../services/aiService';
 import { stepGradingService } from '../../services/stepGradingService';
-import { downloadSubmissionExport } from '../../services/submissionExportService';
+import { downloadSubmissionExport, downloadBatchSubmissionExport, MAX_BATCH_EXPORT_SUBMISSIONS } from '../../services/submissionExportService';
 import { saveSubmissionConfirmed, type SubmissionSaveResult } from '../../services/submissionSaveService';
 import { StorageService } from '../../services/storageService';
+import { FirestoreService } from '../../services/firestoreService';
+import { getSelectedSubmissionCopies, MAX_DELETE_SUBMISSIONS_AT_ONCE, isSubmissionDeletionEnabled } from '../../services/submissionDeletionService';
 import { MathDisplay } from '../../components/MathDisplay';
 import { StepGradingBreakdown } from '../../components/StepGradingBreakdown';
 import { PrintExamModal } from '../../components/PrintExamModal';
@@ -26,6 +28,7 @@ import {
   XCircle, 
   Sparkles, 
   Download,
+  Trash2,
   BookOpen, 
   Filter, 
   Eye, 
@@ -55,6 +58,7 @@ interface TeacherResultsProps {
   submissions: Submission[];
   initialAssignmentId?: string;
   onOpenShare: (assignment: Assignment) => void;
+  onRefreshData?: () => void | Promise<void>;
   onNavigate?: (tab: string, params?: any) => void;
 }
 
@@ -64,6 +68,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   submissions = [],
   initialAssignmentId,
   onOpenShare,
+  onRefreshData,
   onNavigate
 }) => {
   const safeAssignments = useMemo(() => Array.isArray(assignments) ? assignments.filter((a): a is Assignment => Boolean(a && typeof a === 'object')) : [], [assignments]);
@@ -113,6 +118,14 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   const [batchResultMsg, setBatchResultMsg] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<{ type: 'success' | 'warning' | 'error'; text: string } | null>(null);
   const [exportingSubmission, setExportingSubmission] = useState(false);
+  const [exportingBatchArchive, setExportingBatchArchive] = useState(false);
+  const [batchArchiveProgress, setBatchArchiveProgress] = useState({ done: 0, total: 0, studentName: '' });
+  const [batchArchiveNotice, setBatchArchiveNotice] = useState<{ assignmentId: string; text: string; warning: boolean } | null>(null);
+  const batchArchiveLock = useRef(false);
+  const deleteSubmissionLock = useRef(false);
+  const [deletingSubmissions, setDeletingSubmissions] = useState(false);
+  const [selectedDeletionIds, setSelectedDeletionIds] = useState<string[]>([]);
+  const [deletionNotice, setDeletionNotice] = useState<{ assignmentId: string; warning: boolean; text: string } | null>(null);
   const [exportProgress, setExportProgress] = useState({ done: 0, total: 0 });
   const [exportNotice, setExportNotice] = useState<{ submissionId: string; text: string; warning: boolean } | null>(null);
   const reviewOperationLock = useRef(false);
@@ -121,6 +134,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   const [savingSubmission, setSavingSubmission] = useState(false);
   const [reviewSaveNotice, setReviewSaveNotice] = useState<{ submissionId: string; text: string; warning: boolean } | null>(null);
   const reviewBusy = savingSubmission || gradingSingleInProgress || Object.values(gradingAiInProgress).some(Boolean);
+  const submissionDeletionEnabled = isSubmissionDeletionEnabled();
 
   const currentAssignment = safeAssignments.find(a => a.id === selectedAsgId) || safeAssignments[0];
   const targetClass = currentAssignment ? safeClasses.find(c => c.id === currentAssignment.classId) : null;
@@ -654,6 +668,111 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     } finally { setExportingSubmission(false); }
   };
 
+  // Teacher cleanup: export the selected original records before deleting only those IDs.
+  const handleDeleteSelectedSubmissions = async () => {
+    if (!currentAssignment || deleteSubmissionLock.current || exportingBatchArchive || reviewBusy) return;
+    const assignment = currentAssignment;
+    let selected: Submission[];
+    if (!submissionDeletionEnabled) {
+      setDeletionNotice({ assignmentId: assignment.id, warning: true, text: 'Chức năng xóa đang tạm khóa; xuất ZIP vẫn hoạt động.' });
+      return;
+    }
+    try {
+      selected = getSelectedSubmissionCopies(assignment, currentSubmissions, selectedDeletionIds);
+    } catch (error) {
+      setDeletionNotice({ assignmentId: assignment.id, warning: true,
+        text: error instanceof Error ? error.message : 'Chưa thể xác định các lượt nộp cần xóa.' });
+      return;
+    }
+    if (!window.confirm(
+      'Bạn đã chọn ' + selected.length + ' lượt nộp để xóa khỏi Firebase và thiết bị này.\n' +
+      'Hệ thống sẽ tải ZIP sao lưu TRƯỚC khi xóa. Nếu bạn chỉ cần loại khỏi thống kê mà chưa chắc bài lỗi, hãy hủy.\n\n' +
+      'Tiếp tục tải bản sao?'
+    )) return;
+    deleteSubmissionLock.current = true;
+    setDeletingSubmissions(true);
+    setDeletionNotice(null);
+    try {
+      const backup = await downloadBatchSubmissionExport(assignment, selected);
+      if (backup.missingAttachments) {
+        setDeletionNotice({ assignmentId: assignment.id, warning: true,
+          text: 'Đã tải ZIP nhưng thiếu ' + backup.missingAttachments +
+            ' tệp ảnh/PDF. Chưa xóa lượt nào. Hãy bổ sung tệp gốc hoặc lưu bản sao đầy đủ trước.' });
+        return;
+      }
+      if (window.prompt('Kiểm tra ZIP vừa tải đã được lưu an toàn. Xóa vĩnh viễn ' +
+        selected.length + ' lượt nộp có thể làm thay đổi số lượt còn được phép nộp của học sinh. ' +
+        'Nhập đúng XOA để xác nhận (để trống để hủy):') !== 'XOA') {
+        setDeletionNotice({ assignmentId: assignment.id, warning: false,
+          text: 'Đã tải bản sao ZIP. Chưa xóa lượt nộp nào.' });
+        return;
+      }
+      let deleted = 0;
+      const errors: string[] = [];
+      for (const submission of selected) {
+        try {
+          await FirestoreService.deleteSubmissionAsTeacher(submission);
+          // Cloud first; only remove the confirmed deleted entry from local cache.
+          StorageService.setSubmissions(StorageService.getSubmissions().filter(s => s.id !== submission.id));
+          deleted++;
+        } catch (error) {
+          errors.push(submission.studentName + ': ' +
+            (error instanceof Error ? error.message : 'Không thể xóa trên Firebase.'));
+          // Stop on the first failure to avoid a cascade of partial operations.
+          break;
+        }
+      }
+      setSelectedDeletionIds(previous => previous.filter(id => !selected.slice(0, deleted).some(s => s.id === id)));
+      setSelectedSubmissionDetail(previous => previous && selected.slice(0, deleted).some(s => s.id === previous.id) ? null : previous);
+      try { await onRefreshData?.(); }
+      catch (error) { errors.push('Không làm mới được danh sách từ cloud; hãy tải lại trang.'); }
+      setDeletionNotice({ assignmentId: assignment.id, warning: errors.length > 0,
+        text: 'Đã xóa ' + deleted + '/' + selected.length + ' lượt nộp đã chọn.' +
+          (errors.length ? ' Dừng vì lỗi: ' + errors[0] : ' Những lượt khác được giữ nguyên. ZIP sao lưu đã được tải.') });
+    } catch (error) {
+      setDeletionNotice({ assignmentId: assignment.id, warning: true,
+        text: 'Không thể sao lưu ZIP nên chưa xóa dữ liệu: ' +
+          (error instanceof Error ? error.message : 'Lỗi không xác định.') });
+    } finally {
+      deleteSubmissionLock.current = false;
+      setDeletingSubmissions(false);
+    }
+  };
+
+  // Only export the visible, filtered attempts. The original saved grades are never modified.
+  const handleBatchArchiveExport = async () => {
+    if (!currentAssignment || batchArchiveLock.current || sortedSubmissions.length === 0) return;
+    const assignment = currentAssignment;
+    const selected = [...sortedSubmissions];
+    if (selected.length > MAX_BATCH_EXPORT_SUBMISSIONS) {
+      setBatchArchiveNotice({ assignmentId: assignment.id, warning: true,
+        text: 'Có ' + selected.length + ' lượt nộp. Mỗi ZIP tối đa ' + MAX_BATCH_EXPORT_SUBMISSIONS +
+          ' lượt: hãy lọc theo tên hoặc trạng thái rồi xuất theo đợt.' });
+      return;
+    }
+    if (!window.confirm('Xuất ' + selected.length + ' lượt nộp của đề này thành một ZIP? ' +
+      'ZIP sẽ chứa thông tin, ảnh bài làm và điểm của học sinh. Bao gồm cả các lượt nộp trùng nếu có; không tự gộp điểm.')) return;
+    batchArchiveLock.current = true;
+    setExportingBatchArchive(true);
+    setBatchArchiveProgress({ done: 0, total: selected.length, studentName: '' });
+    setBatchArchiveNotice(null);
+    try {
+      const result = await downloadBatchSubmissionExport(assignment, selected,
+        (done, total, studentName) => setBatchArchiveProgress({ done, total, studentName }));
+      setBatchArchiveNotice({ assignmentId: assignment.id, warning: result.missingAttachments > 0,
+        text: 'Đã tải ZIP tổng gồm ' + result.exportedCount + ' lượt nộp thuộc ' +
+          result.distinctStudentGroups + ' nhóm họ tên/lớp (không đồng nghĩa số học sinh xác minh).' +
+          (result.missingAttachments ? ' Thiếu ' + result.missingAttachments + ' tệp ảnh/PDF; cần bổ sung bản gốc.' : '') +
+          ' Xem BANG_KE_LUOT_NOP.csv để tách các lượt nộp lại trước khi thống kê dự thi.' });
+    } catch (error) {
+      setBatchArchiveNotice({ assignmentId: assignment.id, warning: true,
+        text: error instanceof Error ? error.message : 'Không xuất được ZIP hàng loạt. Chưa có dữ liệu nào bị thay đổi.' });
+    } finally {
+      batchArchiveLock.current = false;
+      setExportingBatchArchive(false);
+    }
+  };
+
   // Export CSV
   const handleExportCSV = () => {
     if (currentSubmissions.length === 0) return;
@@ -723,6 +842,8 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
               value={selectedAsgId}
               onChange={(e) => {
                 setSelectedAsgId(e.target.value);
+                setSelectedDeletionIds([]);
+                setDeletionNotice(null);
                 setAiReport(null);
                 setSelectedSubmissionDetail(null);
               }}
@@ -1589,7 +1710,67 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                   {label}
                 </button>
               ))}
+
+              <button
+                type="button"
+                onClick={() => {
+                  const selected = sortedSubmissions.map(item => item.id);
+                  if (selected.length > MAX_DELETE_SUBMISSIONS_AT_ONCE) {
+                    setDeletionNotice({ assignmentId: currentAssignment.id, warning: true,
+                      text: 'Có hơn ' + MAX_DELETE_SUBMISSIONS_AT_ONCE +
+                        ' lượt trong danh sách. Hãy lọc bớt trước khi chọn tất cả.' });
+                    return;
+                  }
+                  setSelectedDeletionIds(selected);
+                }}
+                disabled={deletingSubmissions || sortedSubmissions.length === 0}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >Chọn các lượt đang lọc</button>
+              {selectedDeletionIds.length > 0 && (
+                <button type="button"
+                  onClick={() => setSelectedDeletionIds([])}
+                  disabled={deletingSubmissions}
+                  className="rounded-xl px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100"
+                >Bỏ chọn ({selectedDeletionIds.length})</button>
+              )}
+              <button
+                type="button"
+                onClick={handleDeleteSelectedSubmissions}
+                disabled={!submissionDeletionEnabled || deletingSubmissions || exportingBatchArchive || reviewBusy || selectedDeletionIds.length === 0}
+                className="inline-flex items-center gap-1 rounded-xl bg-rose-600 px-3 py-2 text-xs font-bold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                title={submissionDeletionEnabled ? 'Sao lưu ZIP trước, xác nhận rõ, rồi xóa đúng các lượt đã chọn khỏi Firebase và bản cục bộ' : 'Chức năng xóa đang tạm khóa; xuất ZIP vẫn hoạt động.'}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {deletingSubmissions ? 'Đang xử lý...' : 'Xóa lượt đã chọn (' + selectedDeletionIds.length + ')'}
+              </button>
+              <button
+                type="button"
+                onClick={handleBatchArchiveExport}
+                disabled={exportingBatchArchive || sortedSubmissions.length === 0}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Tải một ZIP chứa từng bài chấm đầy đủ và bảng kê lượt nộp; không chấm lại, không xóa dữ liệu"
+              >
+                <Download className="h-4 w-4" />
+                <span>{exportingBatchArchive
+                  ? 'Đang xuất ' + batchArchiveProgress.done + '/' + batchArchiveProgress.total
+                  : 'Xuất ZIP hàng loạt (' + sortedSubmissions.length + ')'}</span>
+              </button>
             </div>
+            {deletionNotice?.assignmentId === currentAssignment.id && (
+              <div role="status" className={'rounded-xl border px-3 py-2 text-xs font-medium ' +
+                (deletionNotice.warning ? 'border-amber-300 bg-amber-50 text-amber-900' :
+                  'border-emerald-200 bg-emerald-50 text-emerald-900')}>
+                {deletionNotice.text}
+              </div>
+            )}
+            {batchArchiveNotice?.assignmentId === currentAssignment.id && (
+              <div role="status" className={'rounded-xl border p-3 text-xs font-medium ' +
+                (batchArchiveNotice.warning
+                  ? 'border-amber-200 bg-amber-50 text-amber-900'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-900')}>
+                {batchArchiveNotice.text}
+              </div>
+            )}
           </div>
 
           {sortedSubmissions.length === 0 ? (
@@ -1749,6 +1930,20 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                           })}
                         </td>
                         <td className="py-3 px-4 text-right">
+                          <label className="mr-2 inline-flex items-center gap-1 align-middle text-[11px] text-slate-600">
+                            <input
+                              type="checkbox"
+                              aria-label={'Chọn xóa lượt nộp của ' + sub.studentName + ' lúc ' + sub.submittedAt}
+                              checked={selectedDeletionIds.includes(sub.id)}
+                              disabled={deletingSubmissions}
+                              onChange={event => setSelectedDeletionIds(previous =>
+                                event.target.checked
+                                  ? previous.includes(sub.id) ? previous : [...previous, sub.id]
+                                  : previous.filter(id => id !== sub.id)
+                              )}
+                            />
+                            Chọn
+                          </label>
                           <button
                             onClick={() => setSelectedSubmissionDetail(sub)}
                             className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors inline-flex items-center gap-1 text-xs font-bold"

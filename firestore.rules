@@ -32,7 +32,12 @@ service cloud.firestore {
       allow read: if true;
       allow create: if true;
       allow update: if true;
-      allow delete: if true;
+      // Only the Firebase-authenticated owner of the cloud assignment can
+      // permanently delete a result. A fake localStorage session is not auth.
+      allow delete: if request.auth != null
+        && resource.data.assignmentId is string
+        && exists(/databases/$(database)/documents/exams/$(resource.data.assignmentId))
+        && get(/databases/$(database)/documents/exams/$(resource.data.assignmentId)).data.teacherId == request.auth.uid;
     }
 
     // 4. BỘ SƯU TẬP LỚP HỌC & DANH SÁCH HỌC SINH (classes)
@@ -87,7 +92,9 @@ service cloud.firestore {
     // Quy tắc mặc định cho các tài liệu khác
     match /{document=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow create, update: if request.auth != null;
+      // Do not reopen collection-specific delete permissions via wildcard.
+      allow delete: if false;
     }
   }
 }
