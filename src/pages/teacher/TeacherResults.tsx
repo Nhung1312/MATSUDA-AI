@@ -7,7 +7,7 @@ import { downloadSubmissionExport, downloadBatchSubmissionExport, MAX_BATCH_EXPO
 import { saveSubmissionConfirmed, type SubmissionSaveResult } from '../../services/submissionSaveService';
 import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
-import { getSelectedSubmissionCopies, MAX_DELETE_SUBMISSIONS_AT_ONCE } from '../../services/submissionDeletionService';
+import { getSelectedSubmissionCopies, MAX_DELETE_SUBMISSIONS_AT_ONCE, isSubmissionDeletionEnabled } from '../../services/submissionDeletionService';
 import { MathDisplay } from '../../components/MathDisplay';
 import { StepGradingBreakdown } from '../../components/StepGradingBreakdown';
 import { PrintExamModal } from '../../components/PrintExamModal';
@@ -134,6 +134,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   const [savingSubmission, setSavingSubmission] = useState(false);
   const [reviewSaveNotice, setReviewSaveNotice] = useState<{ submissionId: string; text: string; warning: boolean } | null>(null);
   const reviewBusy = savingSubmission || gradingSingleInProgress || Object.values(gradingAiInProgress).some(Boolean);
+  const submissionDeletionEnabled = isSubmissionDeletionEnabled();
 
   const currentAssignment = safeAssignments.find(a => a.id === selectedAsgId) || safeAssignments[0];
   const targetClass = currentAssignment ? safeClasses.find(c => c.id === currentAssignment.classId) : null;
@@ -672,6 +673,10 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     if (!currentAssignment || deleteSubmissionLock.current || exportingBatchArchive || reviewBusy) return;
     const assignment = currentAssignment;
     let selected: Submission[];
+    if (!submissionDeletionEnabled) {
+      setDeletionNotice({ assignmentId: assignment.id, warning: true, text: 'Chức năng xóa đang tạm khóa; xuất ZIP vẫn hoạt động.' });
+      return;
+    }
     try {
       selected = getSelectedSubmissionCopies(assignment, currentSubmissions, selectedDeletionIds);
     } catch (error) {
@@ -1731,9 +1736,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
               <button
                 type="button"
                 onClick={handleDeleteSelectedSubmissions}
-                disabled={deletingSubmissions || exportingBatchArchive || reviewBusy || selectedDeletionIds.length === 0}
+                disabled={!submissionDeletionEnabled || deletingSubmissions || exportingBatchArchive || reviewBusy || selectedDeletionIds.length === 0}
                 className="inline-flex items-center gap-1 rounded-xl bg-rose-600 px-3 py-2 text-xs font-bold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Sao lưu ZIP trước, xác nhận rõ, rồi xóa đúng các lượt đã chọn khỏi Firebase và bản cục bộ"
+                title={submissionDeletionEnabled ? 'Sao lưu ZIP trước, xác nhận rõ, rồi xóa đúng các lượt đã chọn khỏi Firebase và bản cục bộ' : 'Chức năng xóa đang tạm khóa; xuất ZIP vẫn hoạt động.'}
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 {deletingSubmissions ? 'Đang xử lý...' : 'Xóa lượt đã chọn (' + selectedDeletionIds.length + ')'}

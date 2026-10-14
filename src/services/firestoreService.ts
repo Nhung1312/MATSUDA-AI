@@ -14,7 +14,7 @@ import {
   serverTimestamp 
 } from '../firebase';
 import { getDocFromServer } from 'firebase/firestore';
-import { assertTeacherCanDeleteSubmission } from './submissionDeletionService';
+import { assertTeacherCanDeleteSubmission, isSubmissionDeletionEnabled } from './submissionDeletionService';
 import { Assignment, Submission, ClassRoom, ExamTemplate, Contest, ContestSubmission } from '../types';
 
 export const EXAMS_COLLECTION = 'exams';
@@ -267,6 +267,7 @@ export class FirestoreService {
    * Firestore security rules independently enforce the same owner requirement.
    */
   static async deleteSubmissionAsTeacher(expected: Submission): Promise<void> {
+    if (!isSubmissionDeletionEnabled()) throw new Error('Chức năng xóa đang tạm khóa; xuất ZIP vẫn hoạt động.');
     const teacherUid = auth.currentUser?.uid;
     if (!teacherUid) {
       throw new Error('Cần đăng nhập giáo viên bằng Google/Firebase thực; chế độ xem thử không được xóa.');

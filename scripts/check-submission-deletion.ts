@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { assertTeacherCanDeleteSubmission, getSelectedSubmissionCopies, MAX_DELETE_SUBMISSIONS_AT_ONCE } from '../src/services/submissionDeletionService';
+import { assertTeacherCanDeleteSubmission, getSelectedSubmissionCopies, MAX_DELETE_SUBMISSIONS_AT_ONCE, isSubmissionDeletionEnabled } from '../src/services/submissionDeletionService';
+import { FirestoreService } from '../src/services/firestoreService';
 import type { Assignment, Submission } from '../src/types';
 
 const assignment = { id: 'exam-owned', title: 'Toán 7', teacherId: 'teacher-real' } as Assignment & { teacherId: string };
@@ -32,4 +33,9 @@ assert.throws(() => getSelectedSubmissionCopies(assignment, attempts, ['unknown'
 assert.throws(() => getSelectedSubmissionCopies(assignment, attempts,
   Array.from({ length: MAX_DELETE_SUBMISSIONS_AT_ONCE + 1 }, (_, n) => 'id-' + n)), /tối đa/);
 assert.equal(MAX_DELETE_SUBMISSIONS_AT_ONCE, 25);
+assert.equal(isSubmissionDeletionEnabled(), false);
+for (const value of [undefined, null, false, true, 'false', '', 'TRUE', 1]) assert.equal(isSubmissionDeletionEnabled(value), false);
+assert.equal(isSubmissionDeletionEnabled('true'), true);
+await assert.rejects(FirestoreService.deleteSubmissionAsTeacher(attempts[0]), /tạm khóa/);
+console.log('PASS: production deletion is disabled by default and stops before any Firebase access.');
 console.log('PASS: teacher ownership, cloud record identity, missing records, preview account, duplicate selection, and delete batch limits.');

@@ -2,6 +2,12 @@ import type { Assignment, Submission } from '../types';
 
 export const MAX_DELETE_SUBMISSIONS_AT_ONCE = 25;
 
+// Enable only after the owner-only Firestore rules have been deployed and verified.
+// Merging the export UI must never implicitly enable permanent deletion.
+export function isSubmissionDeletionEnabled(value: unknown = import.meta.env?.VITE_SUBMISSION_DELETION_RULES_VERIFIED): boolean {
+  return value === 'true';
+}
+
 // This is a client-side preflight only. Firestore rules must also verify ownership.
 export function assertTeacherCanDeleteSubmission(
   teacherUid: string | null | undefined,
