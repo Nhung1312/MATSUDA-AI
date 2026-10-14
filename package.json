@@ -16,7 +16,8 @@
     "check:submission-limits": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-limits.ts",
     "check:batch-export": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-batch-submission-export.ts",
     "test:strikeout": "tsx scripts/test-strikeout-grading.ts",
-    "test:points": "node scripts/test-point-distribution.mjs"
+    "test:points": "node scripts/test-point-distribution.mjs",
+    "check:submission-deletion": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-deletion.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

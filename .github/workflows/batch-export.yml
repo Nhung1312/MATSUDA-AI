@@ -1,4 +1,4 @@
-name: Verify batch graded submission export
+name: Verify batch graded export and teacher cleanup
 
 on:
   push:
@@ -7,6 +7,11 @@ on:
   pull_request:
     paths:
       - 'src/services/submissionExportService.ts'
+      - 'src/services/submissionDeletionService.ts'
+      - 'src/services/firestoreService.ts'
+      - 'src/pages/teacher/TeacherLayout.tsx'
+      - 'firestore.rules'
+      - 'scripts/check-submission-deletion.ts'
       - 'src/pages/teacher/TeacherResults.tsx'
       - 'scripts/check-batch-submission-export.ts'
       - 'package.json'
@@ -32,6 +37,8 @@ jobs:
         run: npm run build
       - name: Batch archive regression
         run: npm run check:batch-export
+      - name: Deletion authorization and selection regression
+        run: npm run check:submission-deletion
       - name: Individual archive regression
         run: node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-export.ts /tmp/pro-ta-individual-export.zip
       - name: Submission limits regression
