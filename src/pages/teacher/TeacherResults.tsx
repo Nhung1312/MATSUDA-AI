@@ -3,7 +3,7 @@ import { Assignment, ClassRoom, Submission, QuestionAnalysis, StudentAnswer, Ste
 import { GradingService } from '../../services/gradingService';
 import { aiService } from '../../services/aiService';
 import { stepGradingService } from '../../services/stepGradingService';
-import { downloadSubmissionExport } from '../../services/submissionExportService';
+import { downloadSubmissionExport, downloadBatchSubmissionExport, MAX_BATCH_EXPORT_SUBMISSIONS } from '../../services/submissionExportService';
 import { saveSubmissionConfirmed, type SubmissionSaveResult } from '../../services/submissionSaveService';
 import { StorageService } from '../../services/storageService';
 import { MathDisplay } from '../../components/MathDisplay';
@@ -113,6 +113,10 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   const [batchResultMsg, setBatchResultMsg] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<{ type: 'success' | 'warning' | 'error'; text: string } | null>(null);
   const [exportingSubmission, setExportingSubmission] = useState(false);
+  const [exportingBatchArchive, setExportingBatchArchive] = useState(false);
+  const [batchArchiveProgress, setBatchArchiveProgress] = useState({ done: 0, total: 0, studentName: '' });
+  const [batchArchiveNotice, setBatchArchiveNotice] = useState<{ assignmentId: string; text: string; warning: boolean } | null>(null);
+  const batchArchiveLock = useRef(false);
   const [exportProgress, setExportProgress] = useState({ done: 0, total: 0 });
   const [exportNotice, setExportNotice] = useState<{ submissionId: string; text: string; warning: boolean } | null>(null);
   const reviewOperationLock = useRef(false);
@@ -652,6 +656,40 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       setExportNotice({ submissionId: submission.id, warning: true,
         text: error instanceof Error ? error.message : 'Chưa xuất được bài chấm. Hãy thử lại.' });
     } finally { setExportingSubmission(false); }
+  };
+
+  // Only export the visible, filtered attempts. The original saved grades are never modified.
+  const handleBatchArchiveExport = async () => {
+    if (!currentAssignment || batchArchiveLock.current || sortedSubmissions.length === 0) return;
+    const assignment = currentAssignment;
+    const selected = [...sortedSubmissions];
+    if (selected.length > MAX_BATCH_EXPORT_SUBMISSIONS) {
+      setBatchArchiveNotice({ assignmentId: assignment.id, warning: true,
+        text: 'Có ' + selected.length + ' lượt nộp. Mỗi ZIP tối đa ' + MAX_BATCH_EXPORT_SUBMISSIONS +
+          ' lượt: hãy lọc theo tên hoặc trạng thái rồi xuất theo đợt.' });
+      return;
+    }
+    if (!window.confirm('Xuất ' + selected.length + ' lượt nộp của đề này thành một ZIP? ' +
+      'ZIP sẽ chứa thông tin, ảnh bài làm và điểm của học sinh. Bao gồm cả các lượt nộp trùng nếu có; không tự gộp điểm.')) return;
+    batchArchiveLock.current = true;
+    setExportingBatchArchive(true);
+    setBatchArchiveProgress({ done: 0, total: selected.length, studentName: '' });
+    setBatchArchiveNotice(null);
+    try {
+      const result = await downloadBatchSubmissionExport(assignment, selected,
+        (done, total, studentName) => setBatchArchiveProgress({ done, total, studentName }));
+      setBatchArchiveNotice({ assignmentId: assignment.id, warning: result.missingAttachments > 0,
+        text: 'Đã tải ZIP tổng gồm ' + result.exportedCount + ' lượt nộp thuộc ' +
+          result.distinctStudentGroups + ' nhóm họ tên/lớp (không đồng nghĩa số học sinh xác minh).' +
+          (result.missingAttachments ? ' Thiếu ' + result.missingAttachments + ' tệp ảnh/PDF; cần bổ sung bản gốc.' : '') +
+          ' Xem BANG_KE_LUOT_NOP.csv để tách các lượt nộp lại trước khi thống kê dự thi.' });
+    } catch (error) {
+      setBatchArchiveNotice({ assignmentId: assignment.id, warning: true,
+        text: error instanceof Error ? error.message : 'Không xuất được ZIP hàng loạt. Chưa có dữ liệu nào bị thay đổi.' });
+    } finally {
+      batchArchiveLock.current = false;
+      setExportingBatchArchive(false);
+    }
   };
 
   // Export CSV
@@ -1589,7 +1627,28 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                   {label}
                 </button>
               ))}
+
+              <button
+                type="button"
+                onClick={handleBatchArchiveExport}
+                disabled={exportingBatchArchive || sortedSubmissions.length === 0}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Tải một ZIP chứa từng bài chấm đầy đủ và bảng kê lượt nộp; không chấm lại, không xóa dữ liệu"
+              >
+                <Download className="h-4 w-4" />
+                <span>{exportingBatchArchive
+                  ? 'Đang xuất ' + batchArchiveProgress.done + '/' + batchArchiveProgress.total
+                  : 'Xuất ZIP hàng loạt (' + sortedSubmissions.length + ')'}</span>
+              </button>
             </div>
+            {batchArchiveNotice?.assignmentId === currentAssignment.id && (
+              <div role="status" className={'rounded-xl border p-3 text-xs font-medium ' +
+                (batchArchiveNotice.warning
+                  ? 'border-amber-200 bg-amber-50 text-amber-900'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-900')}>
+                {batchArchiveNotice.text}
+              </div>
+            )}
           </div>
 
           {sortedSubmissions.length === 0 ? (

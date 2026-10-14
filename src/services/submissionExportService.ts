@@ -162,3 +162,116 @@ export async function downloadSubmissionExport(assignment: Assignment, submissio
   try { link.click(); } finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000); }
   return result;
 }
+
+
+// Export saved submissions in one archive without AI calls or database writes.
+// Each sub-archive is identical in format to "Xuất bài đã chấm" for one student.
+export const MAX_BATCH_EXPORT_SUBMISSIONS = 25;
+const MAX_BATCH_EXPORT_BYTES = 120 * 1024 * 1024;
+
+const safeArchivePart = (text: string) =>
+  String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd').replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 48) || 'unknown';
+
+const csvValue = (value: unknown): string => {
+  // Prevent spreadsheet formula execution when opening a student-supplied name.
+  const raw = String(value ?? '');
+  const safe = /^[\s]*[=+\-@]/.test(raw) ? "'" + raw : raw;
+  return '"' + safe.replace(/"/g, '""') + '"';
+};
+
+export async function buildBatchSubmissionExport(
+  assignment: Assignment,
+  submissions: Submission[],
+  onProgress?: (done: number, total: number, studentName: string) => void
+) {
+  if (!submissions.length) throw new Error('Chưa có bài nộp nào trong bộ lọc để xuất.');
+  if (submissions.length > MAX_BATCH_EXPORT_SUBMISSIONS) {
+    throw new Error('Mỗi lần xuất tối đa ' + MAX_BATCH_EXPORT_SUBMISSIONS + ' lượt nộp. Hãy lọc theo tên hoặc chia thành nhiều đợt.');
+  }
+  // Validate the complete selection before fetching any attachment.
+  const ids = new Set<string>();
+  for (const item of submissions) {
+    if (!item.id || item.assignmentId !== assignment.id || ids.has(item.id)) {
+      throw new Error('Danh sách bài nộp không hợp lệ hoặc trùng ID; chưa xuất ZIP.');
+    }
+    ids.add(item.id);
+  }
+
+  const exportedAt = new Date().toISOString();
+  const entries: Entry[] = [];
+  const manifest: Array<Record<string, unknown>> = [];
+  const counts = new Map<string, number>();
+  let bytesTotal = 0, missingAttachments = 0;
+  for (let i = 0; i < submissions.length; i++) {
+    const item = submissions[i];
+    const result = await buildSubmissionExport(assignment, item);
+    bytesTotal += result.bytes.byteLength;
+    if (bytesTotal > MAX_BATCH_EXPORT_BYTES) {
+      throw new Error('Bộ ảnh/bài làm vượt giới hạn 120 MB cho một lần xuất. Hãy lọc và xuất ít bài hơn.');
+    }
+    const index = String(i + 1).padStart(3, '0');
+    const path = 'bai-cham/' + index + '_' + safeArchivePart(item.studentName) + '.zip';
+    entries.push({ path, bytes: result.bytes });
+    missingAttachments += result.missingAttachments;
+    const groupKey = [item.studentName, item.className].map(s =>
+      String(s || '').normalize('NFC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi')).join('|');
+    const order = (counts.get(groupKey) || 0) + 1;
+    counts.set(groupKey, order);
+    manifest.push({
+      stt: i + 1, file: path, submissionId: item.id,
+      studentName: item.studentName, className: item.className,
+      submittedAt: item.submittedAt, attemptNumber: item.attemptNumber ?? null,
+      sameNameClassOccurrence: order, submissionSource: item.submissionSource || 'unknown',
+      gradingStatus: item.gradingStatus || 'unknown',
+      needsTeacherReview: Boolean(item.needsTeacherReview || item.isProvisional),
+      score: item.totalScore, maxScore: item.maxScore,
+      missingAttachments: result.missingAttachments
+    });
+    onProgress?.(i + 1, submissions.length, item.studentName);
+  }
+
+  const columns = [
+    'STT', 'File ZIP', 'ID lượt nộp', 'Họ tên', 'Lớp', 'Thời điểm nộp',
+    'Số lượt đã lưu', 'Thứ tự cùng họ tên/lớp trong bộ xuất', 'Nguồn bài',
+    'Trạng thái chấm', 'Chờ giáo viên duyệt', 'Điểm', 'Điểm tối đa', 'Tệp đính kèm thiếu'
+  ];
+  const csvRows: unknown[][] = manifest.map(row => [
+    row.stt, row.file, row.submissionId, row.studentName, row.className, row.submittedAt,
+    row.attemptNumber, row.sameNameClassOccurrence, row.submissionSource,
+    row.gradingStatus, row.needsTeacherReview ? 'Có' : 'Không',
+    row.score, row.maxScore, row.missingAttachments
+  ]);
+  entries.push(textEntry('BANG_KE_LUOT_NOP.csv', '\uFEFF' + [columns, ...csvRows].map(row => row.map(csvValue).join(',')).join('\r\n')));
+  entries.push(textEntry('THONG_TIN_XUAT.json', JSON.stringify({
+    format: 'matsuda-batch-graded-submissions', version: 1, exportedAt,
+    assignmentId: assignment.id, assignmentTitle: assignment.title,
+    exportedSubmissions: submissions.length, distinctNameClassGroups: counts.size,
+    missingAttachments, note: 'Mỗi hàng là một lượt nộp, KHÔNG phải một học sinh duy nhất; các lượt cùng tên/lớp có thể là nộp lại. Không tự kết luận lượt nào là lỗi hoặc điểm cuối cùng.',
+    submissions: manifest
+  }, null, 2)));
+  entries.push(textEntry('HUONG_DAN.txt',
+    'Giải nén ZIP tổng. Mỗi tệp trong bai-cham/ là ZIP độc lập chứa bai-cham.html, du-lieu-cham.json và ảnh/PDF gốc đã lưu.\n' +
+    'Mở BANG_KE_LUOT_NOP.csv để đối chiếu từng lượt nộp; KHÔNG tính số lượt nộp thành số học sinh.\n' +
+    'Có thể lọc trên màn hình kết quả trước khi xuất. Bản xuất KHÔNG gọi AI, KHÔNG sửa điểm, KHÔNG xóa lượt nộp.\n' +
+    'Chỉ chia sẻ dữ liệu học sinh với người được phép. Những tệp không tải được sẽ được báo số lượng; cần gửi tệp gốc bổ sung.\n'));
+  const bytes = zip(entries);
+  return {
+    bytes, filename: 'Bai_cham_hang_loat_' + safeArchivePart(assignment.assignmentCode || assignment.id) +
+      '_' + exportedAt.replace(/[:.]/g, '-') + '.zip',
+    exportedCount: submissions.length, distinctStudentGroups: counts.size, missingAttachments
+  };
+}
+
+export async function downloadBatchSubmissionExport(
+  assignment: Assignment, submissions: Submission[],
+  onProgress?: (done: number, total: number, studentName: string) => void
+) {
+  const result = await buildBatchSubmissionExport(assignment, submissions, onProgress);
+  const url = URL.createObjectURL(new Blob([result.bytes.buffer as ArrayBuffer], { type: 'application/zip' }));
+  const link = document.createElement('a');
+  link.href = url; link.download = result.filename;
+  document.body.appendChild(link);
+  try { link.click(); } finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000); }
+  return result;
+}
