@@ -1,5 +1,6 @@
 import type { Assignment, Submission } from '../types';
 import { getEssayGradingReference, getQuestionTypeLabel, isEssayQuestion } from '../utils/questionUtils';
+import { getSubmissionSummary, getSubmissionSourceIssue, getStudentQuestion, getMultipleChoiceSelectionIssue, isSubmissionAnswerPending, hasTeacherGrade } from '../utils/submissionReviewUtils';
 
 type Entry = { path: string; bytes: Uint8Array };
 type Attachment = { source: string; path: string | null; error?: string };
@@ -75,6 +76,8 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
   const source: Assignment = JSON.parse(JSON.stringify(assignment));
   const saved: Submission = JSON.parse(JSON.stringify(submission));
   const exportedAt = new Date().toISOString();
+  const audit = getSubmissionSummary(source, saved);
+  const sourceIssue = getSubmissionSourceIssue(source, saved);
   const questions = saved.shuffledQuestions?.length ? saved.shuffledQuestions : source.questions;
   const sources = [...new Set([
     source.pdfUrl, ...(source.questions || []).map(q => q.imageUrl),
@@ -113,7 +116,8 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
     const steps = response?.analysis?.length ? response.analysis : answer.stepAnalysis || [];
     const selectedText = answer.selectedOptionText || q?.options?.find(o => o.id === answer.selectedAnswer)?.text;
     const essay = q ? isEssayQuestion(q) : !!(answer.studentSolutionText || answer.essayImages?.length);
-    const pending = answer.teacherScore === undefined && !answer.teacherReviewed && !!(answer.needsTeacherReview || answer.isProvisional || answer.aiGradingError || response?.needsTeacherReview || (saved.gradingStatus === 'pending_teacher_grading' && essay));
+    const pending = isSubmissionAnswerPending(source, saved, answer);
+    const selectionIssue = !hasTeacherGrade(answer) && getMultipleChoiceSelectionIssue(getStudentQuestion(source, saved, answer.questionId), answer);
     const photos = (answer.essayImages || []).map((url, i) => image(url, `Ảnh bài làm câu này ${i + 1}`)).join('');
     const rows = steps.map(step => `<tr><td>${escape(step.stepIndex)}${step.pageIndex === undefined ? '' : `<br>Ảnh ${escape(step.pageIndex + 1)}`}</td><td class="text">${escape(step.studentLatex || step.studentText)}</td><td>${escape(step.status)}<br>${escape(step.contentType || '')}<br>Tin cậy: ${escape(step.confidence)}</td><td class="text">${escape(step.comment)}${step.correctionLatex ? `<br>Sửa: ${escape(step.correctionLatex)}` : ''}${step.crossedOutExplanation ? `<br>Gạch bỏ: ${escape(step.crossedOutExplanation)}` : ''}</td></tr>`).join('');
     const breakdown = response?.scoreBreakdown?.map(item => `<tr><td class="text">${escape(item.criterion)}</td><td>${escape(item.earnedPoints)}/${escape(item.maxPoints)}</td><td class="text">${escape(item.reason)}</td></tr>`).join('');
@@ -125,6 +129,7 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
       ${block('Đáp án theo đề học sinh', answer.correctAnswer || q?.correctAnswer)}
       ${block('Đáp án nguồn hiện tại', reference.correctAnswer)}${block('Lời giải nguồn', original?.explanation || q?.explanation)}${block('Barem/hướng dẫn chấm nguồn', original?.rubric || q?.rubric)}
       ${block('Bài làm học sinh', essay ? answer.studentSolutionText || answer.selectedAnswer : `${answer.selectedAnswer || 'Chưa trả lời'}${selectedText ? ` — ${selectedText}` : ''}`)}${photos}
+      ${selectionIssue ? `<p class="warning">${escape(selectionIssue)} Điểm cũ và dữ liệu JSON được giữ nguyên.</p>` : ''}
       <p><b>Điểm đã lưu: ${escape(answer.pointsEarned)}/${escape(answer.maxPoints)}</b> · Điểm AI: ${escape(answer.aiScore ?? response?.score ?? 'Chưa có')} · Điểm giáo viên: ${escape(answer.teacherScore ?? 'Chưa nhập')}</p>
       <p>${pending ? 'Cần giáo viên kiểm tra' : 'Theo trạng thái đã lưu'} · ${answer.teacherReviewed ? 'Giáo viên đã duyệt' : ''}</p>
       ${block('Nhận xét AI', answer.aiFeedback || response?.feedback)}${block('Nhận xét giáo viên', answer.teacherFeedback)}
@@ -139,6 +144,8 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
     body{font:16px/1.6 Arial,sans-serif;color:#17213c;margin:24px auto;padding:0 20px;max-width:1100px}h1{font-size:26px}h2{font-size:21px;color:#3730a3}h4{margin-bottom:6px}.text{white-space:pre-wrap;overflow-wrap:anywhere}section{border-top:2px solid #cbd5e1;padding:16px 0;margin-top:20px}table{border-collapse:collapse;width:100%;font-size:14px}td,th{border:1px solid #cbd5e1;padding:8px;text-align:left;vertical-align:top}th{background:#eef2ff}img{display:block;max-width:100%;height:auto}figure{margin:16px 0}figcaption{font-size:13px;color:#475569}.warning{background:#fff7ed;padding:12px;color:#9a3412}@media print{body{margin:0;max-width:none}h2,h4{break-after:avoid}tr,figure{break-inside:avoid}th{background:#eee}}
     </style><body><h1>Bài làm và kết quả chấm đã lưu</h1><p><b>${escape(saved.studentName)}</b> · Lớp ${escape(saved.className)} · ${escape(source.title)}</p><p>Điểm: <b>${escape(saved.totalScore)}/${escape(saved.maxScore)}</b> · Trạng thái: ${escape(saved.gradingStatus || '')} ${saved.isProvisional || saved.needsTeacherReview ? '— cần giáo viên duyệt' : ''}</p><p>Nộp: ${escape(saved.submittedAt)} · Xuất: ${escape(exportedAt)}</p><p>Bản này giữ kết quả đã lưu tại thời điểm xuất. Công thức trong dữ liệu được giữ nguyên để đối chiếu với ảnh gốc.</p>
     ${missing ? `<p class="warning">Thiếu ${missing} tệp ảnh/PDF chưa tải được. Cần gửi bổ sung để kiểm tra đủ căn cứ.</p>` : ''}
+    ${audit.pendingCount ? `<p class="warning">Có ${audit.pendingCount} câu cần đối chiếu theo dữ liệu đã lưu. Bản xuất không tự chấm lại hoặc sửa điểm.</p>` : ''}
+    ${sourceIssue ? `<p class="warning">${escape(sourceIssue)}</p>` : ''}
     ${source.pdfUrl && assetPaths.get(source.pdfUrl) ? `<p><a href="${escape(assetPaths.get(source.pdfUrl))}">Mở đề PDF gốc</a></p>` : ''}
     ${saved.teacherFeedback ? block('Nhận xét chung của giáo viên', saved.teacherFeedback) : ''}
     ${(saved.essayImages || []).map((url, i) => image(url, `Ảnh bài làm đính kèm chung ${i + 1}`)).join('')}${sections}</body></html>`;
@@ -198,6 +205,11 @@ export async function buildBatchSubmissionExport(
     ids.add(item.id);
   }
 
+  // Capture the whole batch before the first asynchronous photo download. An edit
+  // or filter change during export must not mix different versions of saved grades.
+  assignment = JSON.parse(JSON.stringify(assignment));
+  submissions = JSON.parse(JSON.stringify(submissions));
+
   const exportedAt = new Date().toISOString();
   const entries: Entry[] = [];
   const manifest: Array<Record<string, unknown>> = [];
@@ -205,6 +217,8 @@ export async function buildBatchSubmissionExport(
   let bytesTotal = 0, missingAttachments = 0;
   for (let i = 0; i < submissions.length; i++) {
     const item = submissions[i];
+    const audit = getSubmissionSummary(assignment, item);
+    const sourceReviewIssue = getSubmissionSourceIssue(assignment, item);
     const result = await buildSubmissionExport(assignment, item);
     bytesTotal += result.bytes.byteLength;
     if (bytesTotal > MAX_BATCH_EXPORT_BYTES) {
@@ -224,7 +238,9 @@ export async function buildBatchSubmissionExport(
       submittedAt: item.submittedAt, attemptNumber: item.attemptNumber ?? null,
       sameNameClassOccurrence: order, submissionSource: item.submissionSource || 'unknown',
       gradingStatus: item.gradingStatus || 'unknown',
-      needsTeacherReview: Boolean(item.needsTeacherReview || item.isProvisional),
+      needsTeacherReview: Boolean(item.needsTeacherReview || item.isProvisional || audit.pendingCount || sourceReviewIssue),
+      savedNeedsTeacherReview: Boolean(item.needsTeacherReview || item.isProvisional),
+      pendingAnswerCount: audit.pendingCount, sourceReviewIssue,
       score: item.totalScore, maxScore: item.maxScore,
       missingAttachments: result.missingAttachments
     });
@@ -234,13 +250,13 @@ export async function buildBatchSubmissionExport(
   const columns = [
     'STT', 'File ZIP', 'ID lượt nộp', 'Họ tên', 'Lớp', 'Thời điểm nộp',
     'Số lượt đã lưu', 'Thứ tự cùng họ tên/lớp trong bộ xuất', 'Nguồn bài',
-    'Trạng thái chấm', 'Chờ giáo viên duyệt', 'Điểm', 'Điểm tối đa', 'Tệp đính kèm thiếu'
+    'Trạng thái chấm đã lưu', 'Cần giáo viên đối chiếu', 'Điểm', 'Điểm tối đa', 'Tệp đính kèm thiếu', 'Số câu cần đối chiếu'
   ];
   const csvRows: unknown[][] = manifest.map(row => [
     row.stt, row.file, row.submissionId, row.studentName, row.className, row.submittedAt,
     row.attemptNumber, row.sameNameClassOccurrence, row.submissionSource,
     row.gradingStatus, row.needsTeacherReview ? 'Có' : 'Không',
-    row.score, row.maxScore, row.missingAttachments
+    row.score, row.maxScore, row.missingAttachments, row.pendingAnswerCount
   ]);
   entries.push(textEntry('BANG_KE_LUOT_NOP.csv', '\uFEFF' + [columns, ...csvRows].map(row => row.map(csvValue).join(',')).join('\r\n')));
   entries.push(textEntry('THONG_TIN_XUAT.json', JSON.stringify({

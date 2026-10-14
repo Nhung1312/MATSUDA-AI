@@ -129,6 +129,7 @@ export interface StudentAnswer {
   hasCrossedOutDetection?: boolean;
   uncertainCorrectionDetected?: boolean;
   teacherCorrectionNotice?: string;
+  selectionReviewIssue?: string; // Contradictory MC label/text: preserve points until explicit teacher review.
 }
 
 export interface EssayGradingResult {

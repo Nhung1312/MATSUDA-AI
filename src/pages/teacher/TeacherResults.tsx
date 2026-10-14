@@ -9,8 +9,10 @@ import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
 import { getSelectedSubmissionCopies, MAX_DELETE_SUBMISSIONS_AT_ONCE, isSubmissionDeletionEnabled } from '../../services/submissionDeletionService';
 import { MathDisplay } from '../../components/MathDisplay';
+import { getStudentQuestion, getMultipleChoiceSelectionIssue, getCorrectOptionLabel, isSubmissionAnswerPending, refreshSubmissionTotals, confirmMultipleChoiceSelection, getSubmissionSourceIssue } from '../../utils/submissionReviewUtils';
 import { StepGradingBreakdown } from '../../components/StepGradingBreakdown';
 import { PrintExamModal } from '../../components/PrintExamModal';
+import { SubmissionPrintModal } from '../../components/SubmissionPrintModal';
 import { ImageLightboxModal } from '../../components/ImageLightboxModal';
 import { ClassCompetencyMatrix } from '../../components/ClassCompetencyMatrix';
 import { GenerateSimilarExamModal } from '../../components/GenerateSimilarExamModal';
@@ -85,6 +87,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   const [submissionReviewFilter, setSubmissionReviewFilter] = useState<'all' | 'pending' | 'final'>('all');
   const [selectedSubmissionDetail, setSelectedSubmissionDetail] = useState<Submission | null>(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [submissionPrintData, setSubmissionPrintData] = useState<{ assignment: Assignment; submission: Submission } | null>(null);
   const [showSimilarExamModal, setShowSimilarExamModal] = useState(false);
 
   // AI Weakness Analysis state
@@ -135,19 +138,14 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   const [reviewSaveNotice, setReviewSaveNotice] = useState<{ submissionId: string; text: string; warning: boolean } | null>(null);
   const reviewBusy = savingSubmission || gradingSingleInProgress || Object.values(gradingAiInProgress).some(Boolean);
   const submissionDeletionEnabled = isSubmissionDeletionEnabled();
+  const [mcqReviewChoice, setMcqReviewChoice] = useState<Record<string, string>>({});
 
   const currentAssignment = safeAssignments.find(a => a.id === selectedAsgId) || safeAssignments[0];
   const targetClass = currentAssignment ? safeClasses.find(c => c.id === currentAssignment.classId) : null;
   const classStudents = targetClass?.students || [];
 
   const isAnswerPendingTeacherReview = (submission: Submission, ans: StudentAnswer) => {
-    if (ans.teacherScore !== undefined) return false;
-    if (ans.needsTeacherReview || ans.isProvisional || ans.aiGradingError) return true;
-    if (submission.gradingStatus === 'pending_teacher_grading' && currentAssignment) {
-      const q = currentAssignment.questions.find(item => item.id === ans.questionId);
-      return Boolean(q && isEssayQuestion(q));
-    }
-    return false;
+    return currentAssignment ? isSubmissionAnswerPending(currentAssignment, submission, ans) : false;
   };
 
   const getPendingReviewCount = (submission: Submission) =>
@@ -213,6 +211,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
 
   useEffect(() => {
     editedTeacherInputs.current.clear();
+    setMcqReviewChoice({});
     if (!selectedSubmissionDetail) {
       setTeacherScoreInput({});
       setTeacherFeedbackInput({});
@@ -331,6 +330,8 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   };
 
   const persistReviewSubmission = async (submission: Submission) => {
+    submission = refreshSubmissionTotals(currentAssignment, submission);
+    setSelectedSubmissionDetail(submission);
     setReviewSaveNotice({ submissionId: submission.id, warning: false, text: 'Đang lưu kết quả và xác nhận đồng bộ cloud...' });
     const result = await saveSubmissionConfirmed(submission);
     showSubmissionSaveResult(submission, result);
@@ -346,9 +347,24 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     finally { reviewOperationLock.current = false; setSavingSubmission(false); }
   };
 
+  const handleConfirmMcqSelection = async (questionId: string) => {
+    if (!selectedSubmissionDetail || !currentAssignment || reviewOperationLock.current || !mcqReviewChoice[questionId]) return;
+    reviewOperationLock.current = true;
+    setSavingSubmission(true);
+    try {
+      const updated = confirmMultipleChoiceSelection(currentAssignment, selectedSubmissionDetail, questionId, mcqReviewChoice[questionId]);
+      const result = await persistReviewSubmission(updated);
+      setSavedGradeSuccess(previous => ({ ...previous, [questionId]: result.cloudSaved }));
+    } catch (error) {
+      setActionNotice({ type: 'warning', text: error instanceof Error ? error.message : 'Chưa xác nhận được lựa chọn.' });
+    } finally { reviewOperationLock.current = false; setSavingSubmission(false); }
+  };
+
   // On-demand AI Essay Grading for a single question (Step-by-step)
   const handleAiGradeSingleQuestion = async (ans: StudentAnswer, question: any) => {
     if (!selectedSubmissionDetail || !currentAssignment || reviewOperationLock.current) return;
+    const sourceIssue = getSubmissionSourceIssue(currentAssignment, selectedSubmissionDetail);
+    if (sourceIssue) { setActionNotice({ type: 'warning', text: sourceIssue }); return; }
     reviewOperationLock.current = true;
     const reference = getEssayGradingReference(currentAssignment.questions.find(q => q.id === question.id) || question);
     const studentText = ans.studentSolutionText || ans.selectedAnswer || '';
@@ -630,13 +646,13 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
 
       const currentId = selectedSubmissionDetail.id;
       const next = pendingReviewSubmissions.find(s => s.id !== currentId) || null;
-      const finalized: Submission = {
+      const finalized: Submission = refreshSubmissionTotals(currentAssignment, {
         ...selectedSubmissionDetail,
         needsTeacherReview: false,
         isProvisional: false,
         ungradedCount: 0,
         gradingStatus: 'graded'
-      };
+      });
 
       const saved = await persistReviewSubmission(finalized);
 
@@ -2046,6 +2062,11 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                   <Download className="w-3.5 h-3.5" />
                   <span>{exportingSubmission ? `Đang xuất${exportProgress.total ? ` ${exportProgress.done}/${exportProgress.total}` : '...'}` : 'Xuất bài đã chấm'}</span>
                 </button>
+                <button type="button" disabled={reviewBusy} onClick={() => setSubmissionPrintData({ assignment: currentAssignment, submission: selectedSubmissionDetail })}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-700 hover:bg-sky-800 text-white font-bold text-xs rounded-xl disabled:opacity-50"
+                  title="Phiếu A4 gồm điểm đã lưu, nhận xét từng bước, barem và ảnh gốc; không chấm AI lại">
+                  <Printer className="w-3.5 h-3.5" /> Phiếu PDF / In
+                </button>
                 <button
                   onClick={() => handleGradeEntireSingleSubmission(selectedSubmissionDetail)}
                   disabled={reviewBusy}
@@ -2210,7 +2231,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                 const questionPool = (selectedSubmissionDetail.shuffledQuestions && selectedSubmissionDetail.shuffledQuestions.length > 0)
                   ? selectedSubmissionDetail.shuffledQuestions
                   : currentAssignment.questions;
-                const question = questionPool.find(q => q.id === ans.questionId) || currentAssignment.questions.find(q => q.id === ans.questionId);
+                const question = getStudentQuestion(currentAssignment, selectedSubmissionDetail, ans.questionId);
                 if (!question) return null;
 
                 const isEssay = isEssayQuestion(question);
@@ -2220,6 +2241,8 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                 const isLoadingAI = !!gradingAiInProgress[ans.questionId];
                 const isSaved = !!savedGradeSuccess[ans.questionId];
                 const isPendingReview = isAnswerPendingTeacherReview(selectedSubmissionDetail, ans);
+                const selectionIssue = !isEssay && ans.teacherReviewed !== true
+                  ? getMultipleChoiceSelectionIssue(question, ans) || ans.selectionReviewIssue : null;
 
                 const currentScore = teacherScoreInput[ans.questionId] !== undefined
                   ? teacherScoreInput[ans.questionId]
@@ -2290,10 +2313,22 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                     {/* Multiple choice response */}
                     {!isEssay && (
                       <div className="space-y-2 mb-2">
+                        {selectionIssue && <div role="alert" className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-900 space-y-2">
+                          <p className="font-bold">Cần đối chiếu lựa chọn: {selectionIssue}</p>
+                          <p>Điểm cũ được giữ. Chọn phương án học sinh thực sự đã chọn trên đề đã đảo rồi xác nhận để tính lại câu này.</p>
+                          <select aria-label={`Lựa chọn đối chiếu câu ${question.order}`} value={mcqReviewChoice[ans.questionId] || ''}
+                            disabled={reviewBusy} onChange={event => setMcqReviewChoice(previous => ({ ...previous, [ans.questionId]: event.target.value }))}
+                            className="w-full border border-amber-300 rounded-lg p-2 bg-white">
+                            <option value="">Chọn sau khi đối chiếu bài gốc</option>
+                            {(question.options || []).map(option => <option key={option.id} value={option.id}>{option.id}. {option.text}</option>)}
+                          </select>
+                          <button type="button" disabled={reviewBusy || !mcqReviewChoice[ans.questionId]} onClick={() => handleConfirmMcqSelection(ans.questionId)}
+                            className="px-3 py-2 rounded-lg bg-amber-700 text-white font-bold disabled:opacity-50">Xác nhận lựa chọn và lưu điểm</button>
+                        </div>}
                         {question.options && question.options.length > 0 && (
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 my-2">
                             {question.options.map((opt) => {
-                              const effectiveCorrect = ans.correctAnswer || (ans.isCorrect ? ans.selectedAnswer : '') || question.correctAnswer;
+                              const effectiveCorrect = getCorrectOptionLabel(question);
                               const isStudentPick = ans.selectedAnswer === opt.id || (!ans.selectedAnswer && ans.selectedOptionText && opt.text && ans.selectedOptionText.trim() === opt.text.trim());
                               const isRightPick = effectiveCorrect === opt.id || (opt.text && effectiveCorrect.trim() === opt.text.trim());
 
@@ -2319,7 +2354,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                                   <span className="flex-1 min-w-0">
                                     <MathDisplay text={opt.text} />
                                   </span>
-                                  {isStudentPick && (
+                                  {isStudentPick && !selectionIssue && (
                                     <span className={`ml-2 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded shrink-0 ${isCorrect ? 'bg-emerald-700 text-white' : 'bg-rose-600 text-white'}`}>
                                       {isCorrect ? '✓ Đúng' : '✗ Chọn'}
                                     </span>
@@ -2631,6 +2666,8 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       />
 
       {/* Modal: Print Exam Paper */}
+      {submissionPrintData && <SubmissionPrintModal assignment={submissionPrintData.assignment} submission={submissionPrintData.submission}
+        onClose={() => setSubmissionPrintData(null)} />}
       {showPrintModal && (
         <PrintExamModal
           isOpen={showPrintModal}

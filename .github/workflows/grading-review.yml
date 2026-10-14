@@ -1,0 +1,44 @@
+name: Verify saved grading review and printable reports
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/services/gradingService.ts'
+      - 'src/services/submissionPrintService.ts'
+      - 'src/services/submissionExportService.ts'
+      - 'src/utils/submissionReviewUtils.ts'
+      - 'src/utils/questionUtils.ts'
+      - 'src/components/SubmissionPrintModal.tsx'
+      - 'src/components/ExamResultSheetView.tsx'
+      - 'src/pages/teacher/TeacherResults.tsx'
+      - 'src/pages/student/StudentResultPage.tsx'
+      - 'scripts/check-submission-review.ts'
+      - 'scripts/check-submission-print.ts'
+      - 'scripts/check-review-save.ts'
+      - 'scripts/test-point-distribution.mjs'
+      - 'package.json'
+      - '.github/workflows/grading-review.yml'
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run check:submission-review
+      - run: npm run check:submission-print
+      - run: npm run check:exam-workflow
+      - run: npm run check:ai-efficiency
+      - run: npm run check:submission-limits
+      - run: npm run check:batch-export
+      - run: npm run check:submission-deletion
+      - run: node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-review-save.ts
+      - run: node --import ./scripts/offline-test-guard.mjs scripts/test-point-distribution.mjs

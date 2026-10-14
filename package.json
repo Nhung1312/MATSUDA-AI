@@ -15,6 +15,8 @@
     "check:ai-efficiency": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-ai-efficiency.ts",
     "check:submission-limits": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-limits.ts",
     "check:batch-export": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-batch-submission-export.ts",
+    "check:submission-review": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-review.ts",
+    "check:submission-print": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-print.ts",
     "test:strikeout": "tsx scripts/test-strikeout-grading.ts",
     "test:points": "node scripts/test-point-distribution.mjs",
     "check:submission-deletion": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-deletion.ts"

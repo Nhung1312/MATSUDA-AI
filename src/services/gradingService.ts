@@ -22,6 +22,7 @@ import { isEssayQuestion, formatDecimalPoint, getEssayGradingReference } from '.
 import { stepGradingService } from './stepGradingService';
 import { saveSubmissionConfirmed, type SubmissionSaveResult } from './submissionSaveService';
 import type { AIImageMemo } from '../utils/aiResultCache';
+import { getCorrectOptionLabel, getMultipleChoiceSelectionIssue, hasTeacherGrade, refreshSubmissionTotals, getSubmissionSourceIssue } from '../utils/submissionReviewUtils';
 
 export interface GradeSingleSubmissionWithAiResult {
   success: boolean;
@@ -265,26 +266,7 @@ export class GradingService {
         if (q.type === 'short_answer') {
           studentExamCorrectAnswer = q.correctAnswer || '';
         } else {
-          // Nếu học sinh đã chọn đúng: đáp án chuẩn trên đề học sinh đang làm chắc chắn là đáp án học sinh đã chọn
-          if (isCorrect && selected) {
-            studentExamCorrectAnswer = selected;
-          } else {
-            const cleanCorrect = (q.correctAnswer || '').trim().toUpperCase();
-            const strippedCorrect = cleanCorrect.replace(/[^A-Z0-9]/g, '');
-            const correctOpt = q.options?.find(opt => {
-              const optOrigId = ((opt as any).originalId || '').trim().toUpperCase();
-              return optOrigId === cleanCorrect ||
-                     (strippedCorrect.length > 0 && optOrigId.replace(/[^A-Z0-9]/g, '') === strippedCorrect);
-            }) || q.options?.find(opt => {
-              const optText = (opt.text || '').trim().toUpperCase();
-              return optText && optText === cleanCorrect;
-            }) || q.options?.find(opt => {
-              const optId = (opt.id || '').trim().toUpperCase();
-              return optId === cleanCorrect ||
-                     (strippedCorrect.length > 0 && optId.replace(/[^A-Z0-9]/g, '') === strippedCorrect);
-            });
-            studentExamCorrectAnswer = correctOpt?.id || q.correctAnswer || '';
-          }
+          studentExamCorrectAnswer = getCorrectOptionLabel(q);
         }
       }
 
@@ -497,26 +479,7 @@ export class GradingService {
         if (q.type === 'short_answer') {
           studentExamCorrectAnswer = q.correctAnswer || '';
         } else {
-          // Nếu học sinh đã chọn đúng: đáp án chuẩn trên đề học sinh đang làm chắc chắn là đáp án học sinh đã chọn
-          if (isCorrect && selected) {
-            studentExamCorrectAnswer = selected;
-          } else {
-            const cleanCorrect = (q.correctAnswer || '').trim().toUpperCase();
-            const strippedCorrect = cleanCorrect.replace(/[^A-Z0-9]/g, '');
-            const correctOpt = q.options?.find(opt => {
-              const optOrigId = ((opt as any).originalId || '').trim().toUpperCase();
-              return optOrigId === cleanCorrect ||
-                     (strippedCorrect.length > 0 && optOrigId.replace(/[^A-Z0-9]/g, '') === strippedCorrect);
-            }) || q.options?.find(opt => {
-              const optText = (opt.text || '').trim().toUpperCase();
-              return optText && optText === cleanCorrect;
-            }) || q.options?.find(opt => {
-              const optId = (opt.id || '').trim().toUpperCase();
-              return optId === cleanCorrect ||
-                     (strippedCorrect.length > 0 && optId.replace(/[^A-Z0-9]/g, '') === strippedCorrect);
-            });
-            studentExamCorrectAnswer = correctOpt?.id || q.correctAnswer || '';
-          }
+          studentExamCorrectAnswer = getCorrectOptionLabel(q);
         }
       }
 
@@ -715,6 +678,12 @@ export class GradingService {
       throw new Error('Quá trình chấm bài đã bị tạm dừng bởi người dùng.');
     }
 
+    if (submission.answers.some(answer => !assignment.questions.some(q => q.id === answer.questionId))) {
+      throw new Error('Bài đã nộp có câu không còn trong đề nguồn. Cần đối chiếu trước khi chấm lại; điểm và bài cũ được giữ.');
+    }
+    const sourceIssue = getSubmissionSourceIssue(assignment, submission);
+    if (sourceIssue) throw Error(sourceIssue);
+
     onProgress?.(`Bắt đầu phân tích bài làm của ${submission.studentName}...`);
 
     let totalEarned = 0;
@@ -753,8 +722,24 @@ export class GradingService {
 
       const maxPoints = q.points || 1.0;
       totalMax += maxPoints;
+      const hasManualGrade = !!existingAns && hasTeacherGrade(existingAns);
+
+      if (!forceRegrade && existingAns && hasManualGrade) {
+        const earned = existingAns.teacherScore!;
+        totalEarned += earned;
+        if (existingAns.isCorrect) correctCnt++; else wrongCnt++;
+        updatedAnswers.push({ ...existingAns, pointsEarned: earned, needsTeacherReview: false, isProvisional: false });
+        continue;
+      }
 
       if (!isEssay) {
+        const issue = existingAns && getMultipleChoiceSelectionIssue(q, existingAns);
+        if (issue) {
+          overallNeedsReview = true;
+          totalEarned += existingAns.pointsEarned || 0;
+          updatedAnswers.push({ ...existingAns, selectionReviewIssue: issue, needsTeacherReview: true, isProvisional: true, maxPoints });
+          continue;
+        }
         // Trắc nghiệm & trả lời ngắn: Đánh giá tức thì
         const selected = (existingAns?.selectedAnswer || '').trim();
         let isCorrect = false;
@@ -790,14 +775,6 @@ export class GradingService {
       }
 
       // TỰ LUẬN: Đọc trực tiếp từ ảnh gốc (Vision) & Phân tích từng bước (Step-by-step)
-      const hasManualGrade = Number.isFinite(existingAns?.teacherScore) && (existingAns?.teacherReviewed === true || !/^\[(?:Gemini|Matsuda) AI\]/i.test(existingAns?.teacherFeedback || ''));
-      if (!forceRegrade && hasManualGrade) {
-        const earned = Math.min(maxPoints, Math.max(0, existingAns!.teacherScore!));
-        totalEarned += earned;
-        if (existingAns!.isCorrect) correctCnt++; else wrongCnt++;
-        updatedAnswers.push({ ...existingAns!, pointsEarned: earned, needsTeacherReview: false, isProvisional: false });
-        continue;
-      }
       onProgress?.(`Đang chấm tự luận câu ${qIdx + 1}/${assignment.questions.length}...`);
 
       const solutionText = existingAns?.studentSolutionText || existingAns?.selectedAnswer || '';
@@ -933,7 +910,7 @@ export class GradingService {
 
     const hasAnyProvisional = updatedAnswers.some(a => a.isProvisional || (a.needsTeacherReview && a.teacherScore === undefined));
 
-    const updatedSubmission: Submission = {
+    const updatedSubmission: Submission = refreshSubmissionTotals(assignment, {
       ...submission,
       answers: updatedAnswers,
       shuffledQuestions: submission.shuffledQuestions?.map(saved => {
@@ -954,7 +931,7 @@ export class GradingService {
         firstErrorType: firstFoundError?.type || null,
         firstErrorExplanation: firstFoundError?.explanation || null
       }
-    };
+    });
 
     const persistence = await saveSubmissionConfirmed(updatedSubmission);
 

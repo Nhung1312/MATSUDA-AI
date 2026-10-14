@@ -5,6 +5,7 @@ import { StorageService } from '../src/services/storageService';
 import { FirestoreService } from '../src/services/firestoreService';
 import { saveSubmissionConfirmed } from '../src/services/submissionSaveService';
 import { stepGradingService } from '../src/services/stepGradingService';
+import { refreshSubmissionTotals, confirmMultipleChoiceSelection, getSubmissionSourceIssue } from '../src/utils/submissionReviewUtils';
 
 assert.ok(String(globalThis.fetch).includes('__examOfflineFetch'), 'Mandatory offline guard is missing');
 const local = new Map<string, string>();
@@ -39,13 +40,14 @@ let cloud: (submission: any) => Promise<void> = async () => {};
 FirestoreService.saveResult = async submission => { cloudCalls.push(clone(submission)); await cloud(submission); };
 
 function harness(initial: any, questions: any[]) {
-  const state: any = { selected: initial, inputs: {}, feedback: {}, saved: {}, lock: { current: false }, dirty: { current: new Set<string>() }, pending: { current: null }, notice: null, aiCalls: 0, wholeCalls: 0 };
+  const state: any = { selected: initial, inputs: {}, choices: {}, feedback: {}, saved: {}, lock: { current: false }, dirty: { current: new Set<string>() }, pending: { current: null }, notice: null, aiCalls: 0, wholeCalls: 0 };
   const assignment = { id: 'a', grade: '7', topic: 'Toán', questions };
   let ai: (request: any) => Promise<any> = async () => response(.5);
   const dependencies = (): Record<string, any> => ({
     selectedSubmissionDetail: state.selected, currentAssignment: assignment,
     reviewOperationLock: state.lock, editedTeacherInputs: state.dirty, pendingCloudSave: state.pending,
     teacherScoreInput: state.inputs, teacherFeedbackInput: state.feedback,
+    mcqReviewChoice: state.choices, confirmMultipleChoiceSelection, getSubmissionSourceIssue,
     stepGradingService: { analyzeStepByStep: async (request: any) => { state.aiCalls++; return ai(request); } },
     GradingService: { gradeSingleSubmissionWithAI: async () => { state.wholeCalls++; throw Error('Unexpected whole grading'); } },
     getEssayGradingReference: (q: any) => ({ correctAnswer: q.correctAnswer, rubric: q.rubric }), isEssayQuestion: (q: any) => q.type === 'essay',
@@ -54,7 +56,7 @@ function harness(initial: any, questions: any[]) {
     setTeacherScoreInput: (fn: any) => { state.inputs = fn(state.inputs); }, setTeacherFeedbackInput: (fn: any) => { state.feedback = fn(state.feedback); },
     setSavedGradeSuccess: (fn: any) => { state.saved = fn(state.saved); },
     setSavingSubmission: (value: boolean) => { state.saving = value; }, setReviewSaveNotice: (notice: any) => { state.notice = notice; },
-    saveSubmissionConfirmed, setTimeout: () => {}, pendingReviewSubmissions: [], getPendingReviewCount: () => 0,
+    saveSubmissionConfirmed, refreshSubmissionTotals, setTimeout: () => {}, pendingReviewSubmissions: [], getPendingReviewCount: () => 0,
     setSubmissionReviewFilter: () => {}
   });
   const deps = () => {
@@ -89,6 +91,30 @@ try {
   await h.call('handleSaveTeacherManualGrade', h.state.selected.answers[0], q);
   assert.equal(h.state.selected.answers[0].teacherScore, .8);
   console.log('PASS: AI refresh plus Save retains both the approved teacher score and feedback');
+
+  const mcq: any = { id: 'mcq', type: 'multiple_choice', question: 'Tìm x', points: 1, correctAnswer: 'B',
+    options: [{ id: 'A', text: 'x=2' }, { id: 'B', text: 'x=1' }] };
+  const legacyChoice: any = { id: 'legacy-choice-ui', assignmentId: 'a', maxScore: 1, totalScore: 1, gradingStatus: 'graded',
+    shuffledQuestions: [{ ...mcq, correctAnswer: 'A', options: [{ id: 'A', originalId: 'B', text: 'x=1' }, { id: 'B', originalId: 'A', text: 'x=2' }] }],
+    answers: [{ questionId: 'mcq', selectedAnswer: 'A', selectedOptionText: 'x=2', originalSelectedLabel: 'A', pointsEarned: 1, maxPoints: 1, isCorrect: true }] };
+  const mcqUI = harness(legacyChoice, [mcq]);
+  cloudCalls = [];
+  await mcqUI.call('handleConfirmMcqSelection', 'mcq');
+  assert.equal(cloudCalls.length, 0, 'An empty choice cannot confirm or change any grade');
+  mcqUI.state.choices.mcq = 'B';
+  let finishChoice: () => void = () => {};
+  cloud = () => new Promise<void>(resolve => { finishChoice = resolve; });
+  const choiceSave = mcqUI.call('handleConfirmMcqSelection', 'mcq');
+  await flush(); await flush();
+  await mcqUI.call('handleConfirmMcqSelection', 'mcq');
+  assert.equal(cloudCalls.length, 1); assert.equal(mcqUI.state.saved.mcq, undefined);
+  finishChoice(); await choiceSave;
+  assert.equal(mcqUI.state.selected.answers[0].selectedAnswer, 'B');
+  assert.equal(mcqUI.state.selected.answers[0].teacherScore, 0);
+  assert.equal(mcqUI.state.selected.totalScore, 0); assert.equal(mcqUI.state.saved.mcq, true);
+  assert.equal(mcqUI.state.aiCalls, 0); assert.equal(mcqUI.state.lock.current, false);
+  cloud = async () => {};
+  console.log('PASS: exact MC confirmation handler requires an explicit choice, serializes double click, waits for cloud and changes no AI result');
 
   const q2 = question('q2');
   const two: any = { id: 'two', assignmentId: 'a', maxScore: 2, gradingStatus: 'needs_review', answers: [answer(q.id), answer(q2.id)] };

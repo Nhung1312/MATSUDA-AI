@@ -79,6 +79,36 @@ const manifest = JSON.parse(new TextDecoder().decode(files.get('THONG_TIN_XUAT.j
 assert.equal(manifest.distinctNameClassGroups, 2);
 assert.deepEqual(manifest.submissions.map((row: any) => row.sameNameClassOccurrence), [1, 2, 1]);
 
+const editingAssignment = JSON.parse(JSON.stringify(assignment));
+const editingSubmissions = JSON.parse(JSON.stringify(submissions));
+const frozenExport = await buildBatchSubmissionExport(editingAssignment, editingSubmissions, done => {
+  if (done === 1) { editingAssignment.title = 'Changed during export'; editingSubmissions[1].totalScore = 0; }
+});
+const frozenFiles = readStoredZip(frozenExport.bytes);
+const secondBytes = [...frozenFiles].find(([name]) => name.startsWith('bai-cham/002_'))?.[1];
+assert.ok(secondBytes);
+const secondZip = readStoredZip(secondBytes);
+const secondSaved = JSON.parse(new TextDecoder().decode(secondZip.get('du-lieu-cham.json')!));
+assert.equal(secondSaved.assignment.title, assignment.title); assert.equal(secondSaved.submission.totalScore, 1);
+console.log('PASS: batch captures all grades and source questions before asynchronous export; later UI edits do not mix report versions');
+
+const mcq: any = { id: 'mcq-audit', order: 1, type: 'multiple_choice', question: 'Tìm x', points: 1,
+  options: [{ id: 'A', text: 'x=2' }, { id: 'B', text: 'x=1' }], correctAnswer: 'B' };
+const auditedAssignment = { ...assignment, questions: [mcq] };
+const ambiguous = { ...submissions[0], gradingStatus: 'graded' as const, needsTeacherReview: false,
+  shuffledQuestions: [{ ...mcq, correctAnswer: 'A', options: [{ id: 'A', originalId: 'B', text: 'x=1' }, { id: 'B', originalId: 'A', text: 'x=2' }] }],
+  answers: [{ questionId: mcq.id, selectedAnswer: 'A', selectedOptionText: 'x=2', originalSelectedLabel: 'A',
+    pointsEarned: 1, maxPoints: 1, isCorrect: true }] };
+const auditedZip = readStoredZip((await buildBatchSubmissionExport(auditedAssignment, [ambiguous])).bytes);
+const auditManifest = JSON.parse(new TextDecoder().decode(auditedZip.get('THONG_TIN_XUAT.json')!));
+assert.equal(auditManifest.submissions[0].gradingStatus, 'graded');
+assert.equal(auditManifest.submissions[0].savedNeedsTeacherReview, false);
+assert.equal(auditManifest.submissions[0].needsTeacherReview, true); assert.equal(auditManifest.submissions[0].pendingAnswerCount, 1);
+const auditedChild = readStoredZip([...auditedZip].find(([name]) => name.startsWith('bai-cham/'))![1]);
+assert.match(new TextDecoder().decode(auditedChild.get('bai-cham.html')!), /Có 1 câu cần đối chiếu/);
+assert.equal(JSON.parse(new TextDecoder().decode(auditedChild.get('du-lieu-cham.json')!)).submission.needsTeacherReview, false);
+console.log('PASS: CSV/manifest/HTML flag contradictory saved choices while raw JSON scores and original grading flags remain untouched');
+
 await assert.rejects(buildBatchSubmissionExport(assignment, []), /Chưa có/);
 await assert.rejects(buildBatchSubmissionExport(assignment, [submissions[0], submissions[0]]), /trùng ID/);
 await assert.rejects(buildBatchSubmissionExport(assignment, [

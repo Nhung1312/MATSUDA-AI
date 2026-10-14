@@ -276,9 +276,9 @@ export function sanitizeMathString(val?: string | null): string {
     .replace(/(?:\\+f+|\f)+\\*(?:frac\{|rac\{)/g, '\\frac{')
     .replace(/\x08egin\{/g, '\\begin{')
     .replace(/\x08oxed\{/g, '\\boxed{')
-    .replace(/\t(imes|ext|riangle|heta|au|o)\b/g, '\\$1')
-    .replace(/\r(ight|ho)\b/g, '\\$1')
-    .replace(/\n(eq)\b/g, '\\$1');
+    .replace(/\t(imes|ext|riangle|heta|au|o)(?![a-zA-Z])/g, '\\t$1')
+    .replace(/\r(ight|ho)(?![a-zA-Z])/g, '\\r$1')
+    .replace(/\n(eq)(?![a-zA-Z])/g, '\\n$1');
 }
 
 /**
