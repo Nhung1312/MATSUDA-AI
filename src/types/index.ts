@@ -49,7 +49,8 @@ export interface Question {
   aiProposedAnswer?: string; // Đáp án AI đề xuất trong đợt thẩm định
   aiReason?: string; // Lý do / căn cứ AI đưa ra
   needsReview?: boolean; // Cờ đánh dấu câu cần giáo viên duyệt lại
-  verificationFingerprint?: string; // Phiên bản nội dung đã được duyệt, dùng phát hiện sửa đề/đáp án
+  verificationFingerprint?: string;
+  teacherVerified?: boolean;
 }
 
 // ==========================================
@@ -90,6 +91,7 @@ export interface Assignment {
   verificationStatus?: 'verified' | 'unverified' | 'needs_review' | 'pending'; // Trạng thái thẩm định đề thi (unverified = chưa thẩm định, needs_review = cần xem lại, verified = đã thẩm định)
   eligibleForSampleBank?: boolean; // Đủ điều kiện làm dữ liệu mẫu (khi đã verified 100%)
   totalPoints?: number; // Tổng điểm mục tiêu tùy chỉnh của đề thi (mặc định 10.0 hoặc linh hoạt: 5, 10, 15, 20, 100...)
+  maxSubmissions?: number; // 0/undefined: legacy unlimited; new assignments default to 1 online submission.
 }
 
 export interface ViolationEvent {
@@ -104,16 +106,21 @@ export interface StudentAnswer {
   selectedOptionText?: string; // Nội dung văn bản của phương án học sinh đã chọn
   originalSelectedLabel?: string; // Nhãn phương án tương ứng trên đề gốc (trước khi đảo đề)
   correctAnswer?: string; // Đáp án chuẩn theo đề học sinh đang làm (đã map chính xác theo đề xáo trộn)
+  // Source supplied to the saved automatic grading, independent of later exam edits.
+  // Teacher scores/feedback remain authoritative and are not inferred from this reference.
+  gradingReference?: Pick<Question, 'correctAnswer' | 'rubric' | 'explanation' | 'imageUrl' | 'points'>;
+  aiGradingReference?: StudentAnswer['gradingReference']; // New AI analysis alongside a protected teacher grade.
   isCorrect: boolean;
   pointsEarned: number;
   maxPoints: number;
-  essayImages?: string[]; // Ảnh chụp bài làm tự luận / nháp
+  essayImages?: string[]; // Ảnh riêng của câu; rỗng thì dùng Submission.essayImages nếu có.
   studentSolutionText?: string; // Lời giải tự luận học sinh gõ (nếu có)
   aiFeedback?: string; // Nhận xét của AI
   aiScore?: number; // Điểm do AI đề xuất
   aiGraded?: boolean; // Đã được AI chấm
   teacherFeedback?: string; // Nhận xét của giáo viên
   teacherScore?: number; // Điểm giáo viên chấm hoặc điều chỉnh
+  teacherReviewed?: boolean; // Điểm đã được giáo viên duyệt trực tiếp
   // Optional fields cho Step-by-Step Analysis (Đợt 1 - Tương thích 100% dữ liệu cũ)
   stepAnalysis?: StepAnalysis[];
   firstErrorStep?: number | null;
@@ -126,6 +133,7 @@ export interface StudentAnswer {
   hasCrossedOutDetection?: boolean;
   uncertainCorrectionDetected?: boolean;
   teacherCorrectionNotice?: string;
+  selectionReviewIssue?: string; // Contradictory MC label/text: preserve points until explicit teacher review.
 }
 
 export interface EssayGradingResult {
@@ -184,6 +192,8 @@ export interface Submission {
   violationEvents?: ViolationEvent[];
   isShuffled?: boolean;
   shuffledQuestions?: Question[]; // Snapshot danh sách câu hỏi học sinh nhìn thấy khi làm bài
+  submissionParticipantKey?: string; // Stable identity for limited online attempts, based on entered name/class.
+  attemptNumber?: number;
 }
 
 export interface QuestionAnalysis {
@@ -479,6 +489,8 @@ export interface StepGradingRequest {
   maxPoints?: number;
   correctAnswer?: string;
   rubric?: string;
+  questionImageUrl?: string;
+  hasExplicitRubric?: boolean;
   studentSolutionText?: string;
   essayImages?: string[]; // Base64 data URLs
 }
@@ -505,6 +517,9 @@ export interface StepGradingResponse {
   needsTeacherReview?: boolean;
   modelUsed?: string;
   message?: string;
+  requestFingerprint?: string;
+  reusedResult?: boolean;
+  errorCode?: 'quota';
   // Handwriting strikeout detection metadata (Matsuda Strikeout Guard)
   hasCrossedOutDetection?: boolean;
   uncertainCorrectionDetected?: boolean;

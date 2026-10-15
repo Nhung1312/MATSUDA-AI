@@ -11,8 +11,22 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "check:imports": "tsx scripts/check-import-parsers.ts",
+    "check:exam-workflow": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-exam-workflow.ts",
+    "check:ai-efficiency": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-ai-efficiency.ts",
+    "check:submission-limits": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-limits.ts",
+    "check:batch-export": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-batch-submission-export.ts",
+    "check:submission-review": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-review.ts",
+    "check:submission-print": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-print.ts",
+    "check:batch-print": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-batch-print.ts",
+    "check:saved-report-source": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-saved-report-source.ts",
+    "check:batch-grading-filters": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-batch-grading-filters.ts",
+    "check:batch-pause-images": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-batch-pause-images.ts",
+    "check:grading-concurrency-stats": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-grading-concurrency-stats.ts",
     "test:strikeout": "tsx scripts/test-strikeout-grading.ts",
-    "test:points": "node scripts/test-point-distribution.mjs"
+    "test:points": "node scripts/test-point-distribution.mjs",
+    "check:submission-deletion": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-deletion.ts",
+    "check:media-import": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-media-import-review.ts",
+    "check:verification-review": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-verification-review.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

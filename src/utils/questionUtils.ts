@@ -4,6 +4,7 @@ import { Question, QuestionOption } from '../types';
  * Các từ khóa và cụm từ đặc trưng của câu hỏi Tự luận / Chứng minh / Tính toán hình học & đại số THCS
  */
 const ESSAY_MATH_KEYWORDS = [
+  'thực hiện phép tính',
   'chứng minh',
   'chứng minh rằng',
   'chứng tỏ',
@@ -55,7 +56,7 @@ export function isEssayQuestion(q: Question | any): boolean {
   if (q.type === 'essay' || q.category === 'tu_luan') {
     return true;
   }
-  if (q.type === 'short_answer' || q.type === 'multiple_choice' || q.type === 'true_false') {
+  if (q.type === 'short_answer' || q.type === 'true_false') {
     return false;
   }
 
@@ -73,6 +74,16 @@ export function isEssayQuestion(q: Question | any): boolean {
     }
     return true;
   });
+
+  // Older imports sometimes label an essay as multiple_choice and populate only
+  // empty/default options. Respect real MC options; recover essays with clear evidence.
+  if (q.type === 'multiple_choice') {
+    if (validNonEmptyOptions.length >= 2) return false;
+    const essayEvidence = /(?:^|\n|\s)(?:[a-d]\)|[1-4]\))\s+/i.test(rawQuestionText)
+      || ESSAY_MATH_KEYWORDS.some(kw => rawQuestionText.includes(kw))
+      || !!String(q.rubric || '').trim();
+    return validNonEmptyOptions.length === 0 && essayEvidence;
+  }
 
   // Nếu số lượng đáp án thực tế ít hơn 2 -> Chắc chắn là câu hỏi Tự luận (không thể bấm chọn trắc nghiệm)
   if (validNonEmptyOptions.length < 2) {
@@ -93,11 +104,61 @@ export function isEssayQuestion(q: Question | any): boolean {
   return false;
 }
 
+/** Stable partition only: never reshuffle options or change IDs/answers. */
+export function placeEssayQuestionsLast(questions: Question[], sourceQuestions: Question[] = []): Question[] {
+  const sourceById = new Map(sourceQuestions.map(q => [q.id, q]));
+  const before: Question[] = [];
+  const essays: Question[] = [];
+  for (const q of questions) {
+    const isEssay = isEssayQuestion(q) || isEssayQuestion(sourceById.get(q.id));
+    (isEssay ? essays : before).push(isEssay ? { ...q, type: 'essay', options: [] } : { ...q });
+  }
+  return [...before, ...essays].map((q, idx) => ({ ...q, order: idx + 1 }));
+}
+
+/** Use the imported source solution when no separate marking rubric was supplied. */
+export function hasSourcePointAllocation(text: string): boolean {
+  if (/(?:maxPoints["']?\s*[:=：]|(?:điểm|pts?)\s*[:=：]?)\s*\d+/i.test(text)) return true;
+  const points = /(\d+(?:[.,]\d+)?)\s*(?:điểm|đ|pts?)(?=\s|[;,:.)\]]|$)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = points.exec(text)) !== null) {
+    if (/[.,]/.test(match[1])) return true;
+    const following = text.slice(points.lastIndex).trimStart();
+    // '3 điểm A, B, C thẳng hàng' describes geometry, not three scoring points.
+    if (/^[A-Z]{1,4}(?=\s|[,.;])/.test(following) || /^(?:thẳng|không\s*thẳng|nằm|thuộc|phân\s*biệt|khác\s*nhau|tạo\s*thành)/i.test(following)) continue;
+    return true;
+  }
+  return false;
+}
+
+export function getEssayGradingReference(q: Pick<Question, 'correctAnswer' | 'rubric' | 'explanation'> & Partial<Pick<Question, 'imageUrl'>>): { correctAnswer: string; rubric: string; questionImageUrl?: string; hasExplicitRubric: boolean } {
+  const answer = String(q.correctAnswer || '').trim();
+  const placeholder = /^(?:xem\s+lời\s+giải(?:\s+chi\s+tiết)?|theo\s+(?:lời\s+giải|biểu\s+điểm)|chưa\s+có)$/i.test(answer);
+  return {
+    correctAnswer: placeholder ? '' : answer,
+    questionImageUrl: q.imageUrl,
+    hasExplicitRubric: hasSourcePointAllocation(String(q.rubric || '')) || hasSourcePointAllocation(String(q.explanation || '')),
+    rubric: [q.rubric, q.explanation && q.explanation !== q.rubric ? q.explanation : ''].filter(Boolean).join('\n\n')
+  };
+}
+
 /**
  * Lấy nhãn hiển thị cho loại câu hỏi
  */
 export function getQuestionTypeLabel(q: Question | any): 'Tự luận' | 'Trắc nghiệm' {
   return isEssayQuestion(q) ? 'Tự luận' : 'Trắc nghiệm';
+}
+
+/** Editing source content invalidates approval; reordering alone preserves it. */
+export function invalidateEditedVerification(next: Question[], previous: Question[]): Question[] {
+  const fields: (keyof Question)[] = ['question', 'type', 'options', 'correctAnswer', 'explanation', 'rubric', 'points', 'imageUrl'];
+  return next.map(q => {
+    const old = previous.find(item => item.id === q.id);
+    if (!old || !fields.some(field => JSON.stringify(old[field]) !== JSON.stringify(q[field]))) return q;
+    return { ...q, verificationStatus: undefined, needsReview: undefined, confidence: undefined,
+      verificationFingerprint: undefined, teacherVerified: undefined,
+      pass1Answer: undefined, pass2Answer: undefined, aiProposedAnswer: undefined, aiReason: undefined, sanityCheckNote: undefined };
+  });
 }
 
 /**
@@ -215,9 +276,9 @@ export function sanitizeMathString(val?: string | null): string {
     .replace(/(?:\\+f+|\f)+\\*(?:frac\{|rac\{)/g, '\\frac{')
     .replace(/\x08egin\{/g, '\\begin{')
     .replace(/\x08oxed\{/g, '\\boxed{')
-    .replace(/\t(imes|ext|riangle|heta|au|o)\b/g, '\\$1')
-    .replace(/\r(ight|ho)\b/g, '\\$1')
-    .replace(/\n(eq)\b/g, '\\$1');
+    .replace(/\t(imes|ext|riangle|heta|au|o)(?![a-zA-Z])/g, '\\t$1')
+    .replace(/\r(ight|ho)(?![a-zA-Z])/g, '\\r$1')
+    .replace(/\n(eq)(?![a-zA-Z])/g, '\\n$1');
 }
 
 /**

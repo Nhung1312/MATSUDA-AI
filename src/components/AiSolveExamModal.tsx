@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Question } from '../types';
 import { aiService, QuestionVerificationResult } from '../services/aiService';
+import { verificationFingerprint } from '../services/verificationOptimizer';
 import { MathDisplay } from './MathDisplay';
 import { isEssayQuestion } from '../utils/questionUtils';
-import { getQuestionVerificationFingerprint, hasVerificationReference, isQuestionVerifiedCurrent, shouldVerifyQuestion } from '../utils/verificationUtils';
+import { hasVerificationReference } from '../utils/verificationUtils';
 import { 
   Sparkles, 
   CheckCircle2, 
@@ -55,9 +56,25 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
   const [hasApiKey, setHasApiKey] = useState<boolean>(aiService.hasApiKey());
   const [tempApiKey, setTempApiKey] = useState<string>('');
 
+  const [isChecking, setIsChecking] = useState(true);
+  const [staleQuestionIds, setStaleQuestionIds] = useState<Set<string>>(new Set());
+  const verificationOperationLock = useRef(false);
+  const verificationBusy = isChecking || isSolving || isSaving || reverifyingId !== null;
+  const isQuestionVerifiedCurrent = (q: Question) => hasVerificationReference(q)
+    && q.verificationStatus === 'verified' && !q.needsReview && !staleQuestionIds.has(q.id);
+  const shouldVerifyQuestion = (q: Question) => !isQuestionVerifiedCurrent(q);
+
   // Khởi tạo state khi mở modal
   useEffect(() => {
-    if (isOpen && questions.length > 0) {
+    if (!isOpen) return;
+    let cancelled = false;
+    setIsChecking(true);
+    void (async () => {
+      const checks = await Promise.all(questions.map(async q => ({ id: q.id,
+        stale: !!q.verificationFingerprint && q.verificationFingerprint !== await verificationFingerprint(q, grade, topic) })));
+      if (cancelled) return;
+      const staleIds = new Set(checks.filter(check => check.stale).map(check => check.id));
+      setStaleQuestionIds(staleIds);
       setHasApiKey(aiService.hasApiKey());
       const initialMap: Record<string, string> = {};
       const initialVerificationMap: Record<string, QuestionVerificationResult> = {};
@@ -66,18 +83,19 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
       questions.forEach((q) => {
         const isEssay = isEssayQuestion(q) || q.type === 'short_answer';
         initialMap[q.id] = isEssay ? (q.correctAnswer || '') : (q.correctAnswer || 'A').toUpperCase();
+        if (q.teacherVerified && q.verificationStatus === 'verified' && !q.needsReview && !staleIds.has(q.id) && hasVerificationReference(q)) initialDecisionMap[q.id] = 'keep';
 
         if (q.pass1Answer || q.sanityCheckNote || q.confidence || q.aiProposedAnswer || q.verificationStatus) {
-          const isSuspect = q.verificationStatus === 'needs_review' || q.needsReview === true || q.confidence === 'needs_review' ||
-            (q.verificationStatus === 'verified' && !isQuestionVerifiedCurrent(q));
+          const isSuspect = !hasVerificationReference(q) || staleIds.has(q.id) || q.verificationStatus === 'needs_review' || q.needsReview === true || q.confidence === 'needs_review';
           initialVerificationMap[q.id] = {
             questionId: q.id,
+            inputFingerprint: q.verificationFingerprint,
             order: q.order,
             currentAnswer: q.correctAnswer || (isEssay ? '' : 'A'),
             proposedAnswer: q.aiProposedAnswer || q.pass1Answer || q.correctAnswer || 'A',
             matchesCurrentAnswer: !isSuspect,
             confidence: (q.confidence as any) || (isSuspect ? 'needs_review' : 'high'),
-            reason: q.aiReason || q.sanityCheckNote || (isSuspect ? 'Phát hiện nghi vấn cần giáo viên xem lại' : 'Trùng khớp đáp án hiện tại'),
+            reason: staleIds.has(q.id) ? 'Nội dung đã thay đổi; cần thẩm định hoặc giáo viên duyệt lại.' : q.aiReason || q.sanityCheckNote || (isSuspect ? 'Phát hiện nghi vấn cần giáo viên xem lại' : 'Trùng khớp đáp án hiện tại'),
             needsReview: isSuspect,
             pass1Answer: q.pass1Answer,
             pass2Answer: q.pass2Answer,
@@ -90,8 +108,11 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
       setVerificationMap(initialVerificationMap);
       setManualDecisionMap(initialDecisionMap);
       setProgress({ current: 0, total: questions.length });
-    }
-  }, [isOpen, questions]);
+    })().catch(error => {
+      if (!cancelled) { setStaleQuestionIds(new Set(questions.map(q => q.id))); console.warn('Chưa kiểm tra được trạng thái thẩm định:', error); }
+    }).finally(() => { if (!cancelled) setIsChecking(false); });
+    return () => { cancelled = true; };
+  }, [isOpen, questions, grade, topic]);
 
   if (!isOpen) return null;
 
@@ -107,52 +128,41 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
     alert('Đã lưu Gemini API Key thành công! Giờ Thầy/Cô có thể bấm "Bắt đầu AI Thẩm định đề thi".');
   };
 
-  // Mặc định chỉ thẩm định câu chưa xác nhận hoặc đã thay đổi nội dung.
-  // Chạy lại toàn bộ chỉ khi giáo viên yêu cầu rõ ràng (tốn lượt AI).
+  // Default action checks only pending/changed questions; forcing a new call is explicit.
   const handleStartVerification = async (forceAll = false) => {
-    const pendingQuestions = forceAll ? questions : questions.filter(shouldVerifyQuestion);
-    if (pendingQuestions.length === 0) {
-      alert('Tất cả câu hỏi đã được duyệt, không cần gọi AI lại.');
-      return;
-    }
-    if (!aiService.hasApiKey()) {
-      alert('Chưa có Gemini API Key. Thầy/Cô vui lòng nhập API Key ở thanh màu vàng bên trên hoặc trong mục Cài Đặt.');
-      return;
-    }
-
+    if (isChecking || verificationOperationLock.current) return;
+    verificationOperationLock.current = true;
     setIsSolving(true);
-    setProgress({ current: 0, total: pendingQuestions.length });
-
     try {
-      const results = await aiService.verifyExamQuestions({
-        questions: pendingQuestions,
-        grade,
-        topic,
-        onProgress: (current, total) => setProgress({ current, total })
-      });
-
-      const updates: Record<string, QuestionVerificationResult> = {};
-      for (const result of results) updates[result.questionId] = result;
-      setVerificationMap(prev => ({ ...prev, ...updates }));
-      // Không dùng một lựa chọn thủ công từ trước để che kết quả đối soát mới.
-      setManualDecisionMap(prev => {
-        const next = { ...prev };
-        for (const q of pendingQuestions) delete next[q.id];
+      const checks = await Promise.all(questions.map(async q => {
+        const stale = !!q.verificationFingerprint && q.verificationFingerprint !== await verificationFingerprint(q, grade, topic);
+        return { q, needed: forceAll || stale || !hasVerificationReference(q) || q.verificationStatus !== 'verified' || q.needsReview === true };
+      }));
+      const questionsToVerify = checks.filter(check => check.needed).map(check => check.q);
+      if (!questionsToVerify.length) { alert('Tất cả câu hỏi đã được duyệt, không cần gọi AI lại.'); return; }
+      if (questionsToVerify.some(hasVerificationReference) && !aiService.hasApiKey()) {
+        alert('Chưa có Gemini API Key. Hãy nhập API Key trước khi thẩm định.'); return;
+      }
+      setManualDecisionMap(previous => {
+        const next = { ...previous };
+        for (const question of questionsToVerify) delete next[question.id];
         return next;
       });
-      if (results.some(r => r.needsReview || !r.matchesCurrentAnswer || r.confidence === 'needs_review')) {
-        setFilterMode('needs_review');
-      }
-    } catch (err: any) {
-      console.error('Lỗi khi AI thẩm định đề:', err);
-      alert(err?.message || 'Có lỗi trong quá trình thẩm định. Vui lòng kiểm tra mạng hoặc Gemini API Key.');
-    } finally {
-      setIsSolving(false);
-    }
+      setProgress({ current: 0, total: questionsToVerify.length });
+      const results = await aiService.verifyExamQuestions({ questions: questionsToVerify, grade, topic, force: forceAll,
+        onProgress: (current, total) => setProgress({ current, total }) });
+      setVerificationMap(previous => ({ ...previous, ...Object.fromEntries(results.map(result => [result.questionId, result])) }));
+      if (results.some(result => result.needsReview || !result.matchesCurrentAnswer || result.confidence === 'needs_review')) setFilterMode('needs_review');
+    } catch (error: any) {
+      console.error('Lỗi khi AI thẩm định đề:', error);
+      alert(error?.message || 'Không thể thẩm định lúc này. Hãy kiểm tra mạng hoặc API Key.');
+    } finally { setIsSolving(false); verificationOperationLock.current = false; }
   };
 
   // Thẩm định lại 1 câu hỏi đơn lẻ
   const handleSolveSingle = async (q: Question) => {
+    if (isChecking || verificationOperationLock.current) return;
+    verificationOperationLock.current = true;
     setReverifyingId(q.id);
     try {
       const res = await aiService.verifySingleQuestion({
@@ -160,23 +170,20 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
         grade,
         topic
       });
-      setVerificationMap(prev => ({
-        ...prev,
-        [q.id]: res
-      }));
+      setVerificationMap(prev => ({ ...prev, [q.id]: res }));
+      setManualDecisionMap(previous => { const next = { ...previous }; delete next[q.id]; return next; });
     } catch (err: any) {
       alert(err?.message || 'Không thể đối soát lại câu này lúc này.');
     } finally {
       setReverifyingId(null);
+      verificationOperationLock.current = false;
     }
   };
 
   // 1. DUYỆT CÂU NGHI NGỜ: [Giữ đáp án hiện tại] (Requirement E)
   const handleKeepCurrent = (q: Question) => {
-    if (!hasVerificationReference(q)) {
-      alert('Câu chưa có đáp án hoặc hướng dẫn chấm. Hãy bổ sung trước khi xác nhận.');
-      return;
-    }
+    if (verificationBusy || verificationOperationLock.current) return;
+    if (!hasVerificationReference(q)) { alert('Câu chưa có đáp án hoặc hướng dẫn chấm. Hãy bổ sung trước khi xác nhận.'); return; }
     const isEssay = isEssayQuestion(q) || q.type === 'short_answer';
     const orig = q.correctAnswer || (isEssay ? '' : 'A');
     setUserSelectedMap(prev => ({ ...prev, [q.id]: orig }));
@@ -185,6 +192,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
 
   // 2. DUYỆT CÂU NGHI NGỜ: [Chấp nhận đáp án AI] (Requirement E)
   const handleAcceptAi = (q: Question, aiAns: string) => {
+    if (verificationBusy || verificationOperationLock.current) return;
     if (!aiAns) return;
     setUserSelectedMap(prev => ({ ...prev, [q.id]: aiAns }));
     setManualDecisionMap(prev => ({ ...prev, [q.id]: 'accept_ai' }));
@@ -192,12 +200,14 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
 
   // 3. DUYỆT CÂU NGHI NGỜ: [Tự sửa] (Requirement E)
   const handleCustomAnswer = (q: Question, customAns: string) => {
+    if (verificationBusy || verificationOperationLock.current) return;
     setUserSelectedMap(prev => ({ ...prev, [q.id]: customAns }));
     setManualDecisionMap(prev => ({ ...prev, [q.id]: 'custom' }));
   };
 
   // Dán nhanh chuỗi đáp án (1A 2B 3C... hoặc ABCD...)
   const handleApplyQuickPaste = () => {
+    if (verificationBusy || verificationOperationLock.current) return;
     if (!quickPasteText.trim()) return;
 
     const text = quickPasteText.trim();
@@ -250,14 +260,16 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
     if (v) {
       return v.needsReview || !v.matchesCurrentAnswer || v.confidence === 'needs_review';
     }
-    return q.verificationStatus === 'needs_review' || q.needsReview === true ||
-      (q.verificationStatus === 'verified' && !isQuestionVerifiedCurrent(q));
+    return !hasVerificationReference(q) || staleQuestionIds.has(q.id) || q.verificationStatus === 'needs_review' || q.needsReview === true;
   };
 
   // Xác nhận và lưu kết quả thẩm định (Requirement G)
   const handleConfirmApply = async () => {
+    if (isChecking || verificationOperationLock.current) return;
+    verificationOperationLock.current = true;
     setIsSaving(true);
     try {
+      const sourceFingerprints = new Map(await Promise.all(questions.map(async q => [q.id, await verificationFingerprint(q, grade, topic)] as const)));
       const updatedQuestions: Question[] = questions.map((q) => {
         const isEssay = isEssayQuestion(q) || q.type === 'short_answer';
         const chosenAnswer = isEssay
@@ -266,14 +278,18 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
         const vInfo = verificationMap[q.id];
         const decision = manualDecisionMap[q.id];
 
-        let vStatus: 'verified' | 'needs_review';
+        let vStatus: Question['verificationStatus'];
         let needsRev: boolean;
 
-        if (decision) {
-          // Chỉ xác nhận khi đã có đáp án/barem sau thay đổi.
-          const hasReference = hasVerificationReference({ ...q, correctAnswer: chosenAnswer });
-          vStatus = hasReference ? 'verified' : 'needs_review';
-          needsRev = !hasReference;
+        const hasReference = hasVerificationReference({ ...q, correctAnswer: chosenAnswer });
+        const stale = !!q.verificationFingerprint && q.verificationFingerprint !== sourceFingerprints.get(q.id);
+        const freshAi = !!vInfo?.inputFingerprint && vInfo.inputFingerprint === sourceFingerprints.get(q.id);
+        if (!hasReference || (stale && !decision && !freshAi)) {
+          vStatus = 'needs_review'; needsRev = true;
+        } else if (decision) {
+          // Giáo viên đã duyệt câu này (Giữ hiện tại, chấp nhận AI, hoặc tự sửa) => verified!
+          vStatus = 'verified';
+          needsRev = false;
         } else if (vInfo) {
           if (vInfo.needsReview || !vInfo.matchesCurrentAnswer || vInfo.confidence === 'needs_review') {
             vStatus = 'needs_review';
@@ -283,47 +299,39 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
             needsRev = false;
           }
         } else {
-          vStatus = q.verificationStatus === 'verified' && isQuestionVerifiedCurrent(q) ? 'verified' : 'needs_review';
-          needsRev = vStatus !== 'verified';
+          vStatus = (q.verificationStatus as any) || 'unverified';
+          needsRev = q.needsReview || false;
         }
 
-        // Fingerprint must use the exact values persisted below. Legacy questions may
-        // have no type; changing that on save must not immediately invalidate approval.
-        const savedType = q.type === 'short_answer' ? 'short_answer' : (isEssay ? 'essay' : (q.type || 'multiple_choice'));
-        const verifiedSource = {
-          ...q,
-          type: savedType,
-          correctAnswer: chosenAnswer,
-          explanation: q.explanation || '',
-          rubric: q.rubric || ''
-        };
         return {
           ...q,
-          type: savedType,
+          type: q.type === 'short_answer' ? 'short_answer' : isEssay ? 'essay' : (q.type || 'multiple_choice'),
           correctAnswer: chosenAnswer,
           explanation: q.explanation || '',
           rubric: q.rubric || '',
           verificationStatus: vStatus,
           needsReview: needsRev,
-          verificationFingerprint: vStatus === 'verified'
-            ? getQuestionVerificationFingerprint(verifiedSource)
-            : undefined,
           sanityCheckNote: vInfo?.sanityCheckNote || q.sanityCheckNote,
           confidence: vInfo?.confidence || q.confidence,
           pass1Answer: vInfo?.pass1Answer || q.pass1Answer,
           pass2Answer: vInfo?.pass2Answer || q.pass2Answer,
           aiProposedAnswer: vInfo?.proposedAnswer || q.aiProposedAnswer,
-          aiReason: vInfo?.reason || q.aiReason
+          aiReason: vInfo?.reason || q.aiReason,
+          teacherVerified: !!decision || (q.teacherVerified && !vInfo)
         };
       });
 
-      await onApplyAnswers(updatedQuestions);
+      const fingerprinted = await Promise.all(updatedQuestions.map(async q => ({ ...q,
+        verificationFingerprint: q.verificationStatus === 'verified' ? await verificationFingerprint(q, grade, topic) || undefined : q.verificationFingerprint
+      })));
+      await onApplyAnswers(fingerprinted);
       onClose();
     } catch (err) {
       console.error('Lỗi khi lưu đáp án:', err);
       alert('Có lỗi khi lưu đáp án. Vui lòng thử lại.');
     } finally {
       setIsSaving(false);
+      verificationOperationLock.current = false;
     }
   };
 
@@ -377,7 +385,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
 
             <button
               onClick={onClose}
-              disabled={isSolving || isSaving}
+              disabled={verificationBusy}
               className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
@@ -474,7 +482,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => void handleStartVerification(false)}
-              disabled={isSolving || (!questions.some(shouldVerifyQuestion))}
+              disabled={verificationBusy || (!questions.some(shouldVerifyQuestion))}
               className="px-4 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
             >
               {isSolving ? (
@@ -498,7 +506,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
                     void handleStartVerification(true);
                   }
                 }}
-                disabled={isSolving}
+                disabled={verificationBusy}
                 className="px-3 py-2 rounded-xl border border-amber-300 text-amber-800 dark:text-amber-300 text-xs font-bold disabled:opacity-50"
               >
                 Thẩm định lại tất cả (tốn lượt AI)
@@ -710,7 +718,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
                             <button
                               type="button"
                               onClick={() => handleSolveSingle(q)}
-                              disabled={isReverifying}
+                              disabled={verificationBusy}
                               className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 border border-indigo-200 hover:bg-indigo-50 cursor-pointer flex items-center gap-1 shadow-2xs"
                             >
                               {isReverifying ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
@@ -980,7 +988,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
           <div className="flex items-center space-x-2 w-full sm:w-auto">
             <button
               onClick={onClose}
-              disabled={isSaving}
+              disabled={verificationBusy}
               className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs sm:text-sm hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             >
               Hủy bỏ
@@ -988,7 +996,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
 
             <button
               onClick={handleConfirmApply}
-              disabled={isSaving}
+              disabled={verificationBusy}
               className={`flex-1 sm:flex-none px-6 py-2.5 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 ${
                 needsReviewCount === 0 && (verifiedCount > 0 || Object.keys(manualDecisionMap).length > 0)
                   ? 'bg-emerald-600 hover:bg-emerald-700 ring-2 ring-emerald-400/50'

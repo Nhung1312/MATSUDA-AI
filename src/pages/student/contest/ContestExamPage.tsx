@@ -10,6 +10,7 @@ import { FirestoreService } from '../../../services/firestoreService';
 import { StorageService } from '../../../services/storageService';
 import { GradingService } from '../../../services/gradingService';
 import { shuffleContestQuestions, getContestStatus } from '../../../utils/contestUtils';
+import { placeEssayQuestionsLast } from '../../../utils/questionUtils';
 import { MathDisplay } from '../../../components/MathDisplay';
 import { isEssayQuestion, getQuestionTypeLabel } from '../../../utils/questionUtils';
 import { ScientificCalculatorModal } from '../../../components/ScientificCalculatorModal';
@@ -130,7 +131,7 @@ export const ContestExamPage: React.FC = () => {
       if (draftData && draftData.startedAt && draftData.examQuestions) {
         // Khôi phục từ draft
         startedAt = draftData.startedAt;
-        preparedQuestions = draftData.examQuestions;
+        preparedQuestions = placeEssayQuestionsLast(draftData.examQuestions, found.questions);
         setAnswers(draftData.answers || {});
         setSolutions(draftData.solutions || {});
         setEssayImages(draftData.essayImages || {});

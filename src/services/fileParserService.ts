@@ -3,6 +3,7 @@ import mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Question, QuestionOption, QuestionType } from '../types';
 import { formatQuestionSubItems } from '../utils/questionUtils';
+import { separateQuestionAndSolution } from '../utils/examImportUtils';
 
 // Set up pdfjs worker
 try {
@@ -35,6 +36,7 @@ export interface ParseResult {
   multipleChoiceCount: number;
   essayCount: number;
   items: ParsedItem[];
+  warnings?: string[];
 }
 
 export class FileParserService {
@@ -513,7 +515,16 @@ export class FileParserService {
       for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
         const page = await pdf.getPage(pageNum);
         const textContent = await page.getTextContent();
-        const pageText = textContent.items.map((item: any) => item.str).join(' ');
+        // Keep source line boundaries so answer-sheet headings remain distinguishable
+        // from per-question inline answers. No image/crop changes or AI calls.
+        let previousY: number | undefined;
+        const pageText = textContent.items.map((item: any) => {
+          if (typeof item.str !== 'string') return '';
+          const y = item.transform?.[5];
+          const newLine = previousY !== undefined && typeof y === 'number' && Math.abs(y - previousY) > 3;
+          if (typeof y === 'number') previousY = y;
+          return `${newLine ? '\n' : ''}${item.str}${item.hasEOL ? '\n' : ' '}`;
+        }).join('');
         fullText += `\n` + pageText;
       }
 
@@ -533,10 +544,14 @@ export class FileParserService {
 
     // 1. Tìm khu vực có chữ "Bảng đáp án", "Đáp án trắc nghiệm", "Đáp án tham khảo", "Key:"
     const tableHeaderMatch = text.match(/(?:bảng\s*đáp\s*án|đáp\s*án\s*trắc\s*nghiệm|đáp\s*án\s*chi\s*tiết|đáp\s*án|phiếu\s*trả\s*lời|hướng\s*dẫn\s*chấm|key)[\s\:\-]+([\s\S]+)$/i);
-    const searchArea = tableHeaderMatch ? tableHeaderMatch[1] : text;
+    // Never infer an answer key from question text (e.g. geometry labels '1 A').
+    if (!tableHeaderMatch) return map;
+    const answerArea = tableHeaderMatch[1];
+    const essayStart = answerArea.search(/(?:^|\n|\s)(?:phần\s*(?:ii|2|b)|ii[.):]|b[.):])\s*[.:\-]?\s*tự\s*luận|đáp\s*án\s*tự\s*luận/i);
+    const searchArea = essayStart >= 0 ? answerArea.slice(0, essayStart) : answerArea;
 
     // Quét các cặp số + ký tự A-D: "1A", "1.A", "1:A", "1-A", "Câu 1: A", "Câu 1. A"
-    const pairRegex = /(?:Câu|Bài)?\s*(\d+)[\.\:\-\s]+([A-D])\b/gi;
+    const pairRegex = /(?:Câu|Question)?\s*(\d+)[\.\:\-\s]+([A-D])\b/g;
     let match;
     while ((match = pairRegex.exec(searchArea)) !== null) {
       const qNum = parseInt(match[1], 10);
@@ -561,6 +576,27 @@ export class FileParserService {
     return map;
   }
 
+  private static splitExamAndAnswers(text: string): { questionText: string; answerText: string } {
+    const heading = /(?:^|\n)[ \t]*(?:(?:[IVX]+|\d+|[A-C])[.)\-:][ \t]*)?(?:Bảng[ \t]*đáp[ \t]*án|Đáp[ \t]*án(?:[ \t]+(?:và|&)[ \t]+hướng[ \t]*dẫn[ \t]*chấm|[ \t]*[\-–—][ \t]*thang[ \t]*điểm|[ \t]+(?:trắc[ \t]*nghiệm|tự[ \t]*luận|chi[ \t]*tiết|tham[ \t]*khảo))?|Hướng[ \t]*dẫn[ \t]*(?:chấm|giải)|Lời[ \t]*giải[ \t]*chi[ \t]*tiết)[ \t]*[:：\-]?[ \t]*(?=\n|$|(?:Câu|Bài|Question)[ \t]*\d|\d[ .:\-]*[A-D]\b)/gi;
+    let match: RegExpExecArray | null;
+    while ((match = heading.exec(text)) !== null) {
+      const before = text.slice(0, match.index);
+      const after = text.slice(heading.lastIndex);
+      const firstAfter = after.match(/(?:^|\n|\s)(Câu|Bài|Question)\s*(\d+)/i);
+      const sourceMarkers = [...before.matchAll(/(?:^|\n|\s)(Câu|Bài|Question)\s*(\d+)/gi)];
+      const repeatsSource = firstAfter && sourceMarkers.some(m => m[1].toLowerCase() === firstAfter[1].toLowerCase() && m[2] === firstAfter[2]);
+      const globalHeading = /bảng|và|&|thang|trắc\s*nghiệm|tự\s*luận|tham\s*khảo/i.test(match[0]);
+      const numberedAnswers = /^\s*\d+[.):]\s+/i.test(after);
+      if (!globalHeading && !repeatsSource && !numberedAnswers && sourceMarkers.length > 0) continue;
+      // A compact key may be placed before the actual exam.
+      if (sourceMarkers.length === 0 && /bảng/i.test(match[0]) && firstAfter) {
+        return { questionText: after.slice(firstAfter.index), answerText: match[0] + after.slice(0, firstAfter.index) };
+      }
+      return { questionText: before, answerText: text.slice(match.index) };
+    }
+    return { questionText: text, answerText: '' };
+  }
+
   /**
    * Thông minh: Cắt chuỗi và tự động phân biệt Trắc nghiệm / Tự luận, tự động bắt đáp án và ngắt ý a), b), c)
    */
@@ -569,14 +605,11 @@ export class FileParserService {
       return { fileName, fileType, totalFound: 0, multipleChoiceCount: 0, essayCount: 0, items: [] };
     }
 
-    // Bóc tách bảng đáp án tổng nếu có ở cuối hoặc đầu đề
-    const globalAnswerMap = this.extractAnswerKeyMap(rawText);
-
-    // Cắt bỏ phần Bảng đáp án ở cuối đề (nếu có) để tránh nhận diện nhầm thành một câu hỏi độc lập
-    let processedText = rawText;
-    const tableHeaderIdx = rawText.search(/\n\s*(?:bảng\s*đáp\s*án|đáp\s*án\s*trắc\s*nghiệm)[\s\:\-]/i);
-    if (tableHeaderIdx !== -1) {
-      processedText = rawText.substring(0, tableHeaderIdx);
+    const { questionText: processedText, answerText } = this.splitExamAndAnswers(rawText);
+    const globalAnswerMap = this.extractAnswerKeyMap(answerText);
+    const warnings: string[] = [];
+    if (!processedText.trim()) {
+      return { fileName, fileType, totalFound: 0, multipleChoiceCount: 0, essayCount: 0, items: [], warnings: ['Tài liệu chỉ có đáp án/hướng dẫn chấm; cần bổ sung đề bài gốc.'] };
     }
 
     // Nhận diện phân vùng: "PHẦN I. TRẮC NGHIỆM" và "PHẦN II. TỰ LUẬN"
@@ -609,7 +642,8 @@ export class FileParserService {
 
     if (matches.length === 0) {
       // Nếu không tìm thấy chữ "Câu X" hay "Bài X", xử lý toàn bộ như 1 câu tự luận
-      items.push(this.buildFallbackItem(processedText, 1));
+      const fallback = this.buildFallbackItem(processedText, 1);
+      if (fallback.question) items.push(fallback);
     } else {
       for (let i = 0; i < matches.length; i++) {
         const current = matches[i];
@@ -618,14 +652,48 @@ export class FileParserService {
         // Cắt lấy toàn bộ nội dung của câu hỏi này
         let blockText = processedText.substring(current.index, nextIndex).trim();
         blockText = blockText.replace(/--- Trang \d+ ---/g, '').trim(); // Xóa số trang nếu có
+        const followingSection = blockText.search(/(?:\n|[ \t]+)(?:phần[ \t]*(?:i{1,3}|[1-3]|[ab])|i{1,3}[.)]|[ab][.)])[ \t]*[.:\-]?[ \t]*(?:trắc[ \t]*nghiệm|tự[ \t]*luận)/i);
+        if (followingSection >= 0) blockText = blockText.slice(0, followingSection).trim();
 
         // Kiểm tra xem câu này có nằm sau tiêu đề Phần Tự Luận không
         const isExplicitEssaySection = essaySectionIdx !== -1 && current.index >= essaySectionIdx;
-        const assignedAnswerLetter = globalAnswerMap[current.num] || globalAnswerMap[i + 1];
+        const assignedAnswerLetter = isExplicitEssaySection ? undefined : globalAnswerMap[current.num];
 
         // Phân tích Trắc nghiệm / Tự luận cho riêng câu này
         const parsedItem = this.extractSingleQuestionInfo(blockText, i + 1, isExplicitEssaySection, assignedAnswerLetter);
         items.push(parsedItem);
+      }
+    }
+
+    // Attach the answer sheet to source question numbers; do not count it as questions.
+    if (answerText) {
+      const answerMarkers = [...answerText.matchAll(/(?:^|\n|\s)(?:Câu|Bài|Question)\s*(\d+)(?:\s*\([^)]*\))?[.:\s]*/gi)];
+      const answerEssayStart = answerText.search(/(?:^|\n|\s)(?:phần\s*(?:ii|2|b)|ii[.):]|b[.):])\s*[.:\-]?\s*tự\s*luận|đáp\s*án\s*tự\s*luận/i);
+      for (let idx = 0; idx < answerMarkers.length; idx++) {
+        const marker = answerMarkers[idx];
+        const sourceNum = Number(marker[1]);
+        const end = idx + 1 < answerMarkers.length ? answerMarkers[idx + 1].index : answerText.length;
+        const body = answerText.slice(marker.index! + marker[0].length, end).trim();
+        const essayAnswer = /Bài/i.test(marker[0]) || (answerEssayStart >= 0 && marker.index! >= answerEssayStart);
+        let candidates = matches.map((source, itemIdx) => ({ source, item: items[itemIdx] }))
+          .filter(({ source }) => source.num === sourceNum);
+        if (essayAnswer) candidates = candidates.filter(({ item }) => item.category === 'tu_luan');
+        else if (candidates.length > 1 && /^[A-D](?:[.\s]|$)/i.test(body)) candidates = candidates.filter(({ item }) => item.category === 'trac_nghiem');
+        if (candidates.length !== 1) {
+          warnings.push(`Chưa ghép chắc chắn đáp án Câu/Bài ${sourceNum} với đề gốc; giáo viên cần đối chiếu.`);
+          continue;
+        }
+        const item = candidates[0].item;
+        const solution = separateQuestionAndSolution(body);
+        const content = solution.solution || body;
+        if (item.category === 'tu_luan') {
+          item.explanation = [item.explanation, content].filter(Boolean).join('\n\n');
+          if (/điểm|barem|rubric|(?:0[.,]\d+)\s*đ/i.test(content)) item.rubric = content;
+        } else {
+          const answerLetter = body.match(/^(?:Đáp\s*án\s*[:：]?\s*)?([A-D])(?:[.\s]|$)/i);
+          if (answerLetter) item.correctAnswer = answerLetter[1].toUpperCase();
+          if (solution.solution) item.explanation = solution.solution;
+        }
       }
     }
 
@@ -661,7 +729,8 @@ export class FileParserService {
       totalFound: items.length,
       multipleChoiceCount: mcCount,
       essayCount: essayCount,
-      items
+      items,
+      warnings
     };
   }
 
@@ -759,13 +828,9 @@ export class FileParserService {
     } else {
       // XỬ LÝ CÂU HỎI TỰ LUẬN
       // 1. Tách phần Lời giải / Hướng dẫn chấm / Đáp số nếu có
-      const essaySolutionMatch = blockText.match(/(?:\n|\s+)(?:Lời\s*giải\s*chi\s*tiết|Lời\s*giải|Hướng\s*dẫn\s*chấm|Hướng\s*dẫn\s*giải|Đáp\s*số)[\s\:\-]+([\s\S]+)$/i);
-      if (essaySolutionMatch) {
-        solutionText = essaySolutionMatch[1].trim();
-        questionContent = blockText.substring(0, essaySolutionMatch.index).trim();
-      } else {
-        questionContent = blockText;
-      }
+      const essaySolution = separateQuestionAndSolution(blockText);
+      solutionText = essaySolution.solution;
+      questionContent = essaySolution.question;
 
       // 2. Tự động ngắt dòng và thụt lề định dạng đẹp mắt cho các ý con a), b), c)... hoặc 1), 2), 3)...
       questionContent = formatQuestionSubItems(questionContent);
@@ -811,7 +876,7 @@ export class FileParserService {
             { id: 'D', text: optD || 'Phương án D' }
           ]
         : [],
-      correctAnswer: isMultipleChoice ? (detectedCorrectLetter || 'A') : (solutionText ? 'Xem lời giải chi tiết' : ''),
+      correctAnswer: isMultipleChoice ? (detectedCorrectLetter || '') : (solutionText ? 'Xem lời giải chi tiết' : ''),
       points: finalPoints,
       explanation: solutionText,
       rubric: rubricText,
@@ -823,7 +888,8 @@ export class FileParserService {
 
   private static buildFallbackItem(text: string, order: number): ParsedItem {
     // Format ngắt ý con a), b), c)... hoặc 1), 2), 3)... cho văn bản fallback
-    const formatted = formatQuestionSubItems(text.trim());
+    const separated = separateQuestionAndSolution(text);
+    const formatted = formatQuestionSubItems(separated.question);
     return {
       id: `q_parsed_${Date.now()}_${order}`,
       order: order,
@@ -833,6 +899,8 @@ export class FileParserService {
       options: [],
       correctAnswer: '',
       points: 1.0,
+      explanation: separated.solution,
+      rubric: /điểm|barem|rubric/i.test(separated.solution) ? separated.solution : '',
       topicHint: 'Toán THCS',
       selected: true
     };
@@ -850,7 +918,7 @@ export class FileParserService {
         question: item.question,
         type: isEssay ? 'essay' : 'multiple_choice',
         options: isEssay ? [] : item.options,
-        correctAnswer: item.correctAnswer || (isEssay ? '' : 'A'),
+        correctAnswer: item.correctAnswer || '',
         points: item.points || (isEssay ? 1.0 : 0.5),
         explanation: item.explanation || '',
         rubric: item.rubric || '',
