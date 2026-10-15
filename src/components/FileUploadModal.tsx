@@ -1103,8 +1103,8 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                 </button>
               </div>
 
-              <div className={`rounded-2xl px-4 py-3 border text-xs flex items-start gap-2 ${reviewCount > 0 ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900'}`}>
-                {reviewCount > 0 ? (
+              <div className={`rounded-2xl px-4 py-3 border text-xs flex items-start gap-2 ${reviewCount > 0 || aiPdfIssues.length > 0 ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900'}`}>
+                {reviewCount > 0 || aiPdfIssues.length > 0 ? (
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
                 ) : (
                   <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
@@ -1112,8 +1112,10 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                 <div>
                   <div className="font-black">
                     {reviewCount > 0
-                      ? `Có ${reviewCount} câu cần kiểm tra lại trước khi giao bài`
-                      : 'Cấu trúc câu hỏi ổn'}
+                      ? `Có ${reviewCount} câu trắc nghiệm cần kiểm tra trước khi giao bài`
+                      : aiPdfIssues.length > 0
+                        ? `Có ${aiPdfIssues.length} cảnh báo PDF cần giáo viên đối chiếu`
+                        : 'Cấu trúc câu hỏi ổn'}
                   </div>
                   <div className="mt-0.5 opacity-80">Giáo viên duyệt trước khi giao.</div>
                 </div>
