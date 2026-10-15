@@ -19,6 +19,7 @@ import { FileParserService, ParsedItem, ParseResult } from '../services/filePars
 import { aiService } from '../services/aiService';
 import { Question } from '../types';
 import { MathDisplay } from './MathDisplay';
+import { auditNewMediaQuestions, type MediaImportIssue } from '../utils/mediaImportGuard';
 
 interface FileUploadModalProps {
   isOpen: boolean;
@@ -48,6 +49,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [aiProgressStatus, setAiProgressStatus] = useState<string>('');
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
+  const [aiPdfIssues, setAiPdfIssues] = useState<MediaImportIssue[]>([]);
   const [filterCategory, setFilterCategory] = useState<'all' | 'trac_nghiem' | 'tu_luan'>('all');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isTakingLong, setIsTakingLong] = useState(false);
@@ -93,9 +95,11 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       setSelectedModel(aiService.getModel() || 'gemini-3.1-flash-lite');
       setShowKeyInput(!keyExists);
       setErrorMsg(null);
+      setAiPdfIssues([]);
       setKeySavedMessage(null);
     } else {
       setParseResult(null);
+      setAiPdfIssues([]);
       setPastedImages([]);
       setIsLoading(false);
       setPreviewingImage(null);
@@ -193,6 +197,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
 
     setIsLoading(true);
     setParseResult(null);
+    setAiPdfIssues([]);
     setErrorMsg(null);
     setAiProgressStatus('Đang nạp file PDF...');
 
@@ -228,6 +233,8 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         selected: true
       }));
 
+      setAiPdfIssues(auditNewMediaQuestions(result.questions));
+
       setParseResult(FileParserService.normalizeParseResult({
         fileName: file.name,
         fileType: 'pdf',
@@ -249,6 +256,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const handleProcessPdfStandard = async (file: File) => {
     setIsLoading(true);
     setParseResult(null);
+    setAiPdfIssues([]);
     setErrorMsg(null);
     setAiProgressStatus('Đang đọc tệp PDF bằng bộ xử lý thông thường...');
 
@@ -301,6 +309,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
 
     setIsLoading(true);
     setParseResult(null);
+    setAiPdfIssues([]);
     setErrorMsg(null);
     setAiProgressStatus(`Đang chuẩn bị ${pastedImages.length} ảnh đề thi...`);
 
@@ -359,6 +368,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
 
     setIsLoading(true);
     setParseResult(null);
+    setAiPdfIssues([]);
     setErrorMsg(null);
     try {
       const result = FileParserService.normalizeParseResult(await FileParserService.parseFile(file));
@@ -448,6 +458,14 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     const selectedItems = parseResult.items.filter(i => i.selected);
     if (selectedItems.length === 0) {
       setErrorMsg('Hãy chọn ít nhất 1 câu hỏi trước khi thêm vào đề.');
+      return;
+    }
+    // Block structurally incomplete NEW AI PDF imports only. Ordinary files
+    // and legacy exams keep their existing import flow.
+    const blockingIssues = aiPdfIssues.filter(issue => issue.level === 'error'
+      && (issue.order === 0 || selectedItems.some(item => item.order === issue.order)));
+    if (blockingIssues.length > 0) {
+      setErrorMsg('Chưa nhập đề: ' + blockingIssues.map(issue => issue.message).join(' | '));
       return;
     }
 
@@ -1078,7 +1096,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setParseResult(null)}
+                  onClick={() => { setParseResult(null); setAiPdfIssues([]); }}
                   className="text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-200 px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
                 >
                   Tệp khác
@@ -1101,6 +1119,17 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                 </div>
               </div>
 
+              {/* New Gemini PDF evidence warnings - never auto-fix the maths. */}
+              {aiPdfIssues.length > 0 && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900 space-y-1">
+                  <strong>Kiểm tra dữ liệu PDF trước khi thêm câu hỏi:</strong>
+                  {aiPdfIssues.map((issue, idx) => (
+                    <p key={idx} className={issue.level === 'error' ? 'font-bold text-rose-700' : ''}>
+                      {issue.level === 'error' ? '⛔' : '⚠️'} {issue.order ? `Câu ${issue.order}: ` : ''}{issue.message}
+                    </p>
+                  ))}
+                </div>
+              )}
               {/* Filter Tabs & Selection Control */}
               {!!parseResult.warnings?.length && (
                 <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900">
@@ -1239,6 +1268,15 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                         </div>
                       )}
 
+                      {/* Original answer/rubric must be visible to the teacher before importing essays. */}
+                      {!isMC && (
+                        <div className="mt-2 ml-6 space-y-1 text-xs text-slate-700">
+                          <div><strong>Đáp án gốc:</strong> {item.correctAnswer
+                            ? <MathDisplay text={item.correctAnswer} inline={true} />
+                            : <span className="text-amber-700">Chưa có — giáo viên cần đối chiếu PDF</span>}</div>
+                          {item.rubric && <div><strong>Barem nguồn:</strong> <MathDisplay text={item.rubric} inline={true} /></div>}
+                        </div>
+                      )}
                       {/* Explanation if any */}
                       {item.explanation && (
                         <div className="mt-2 pl-6 text-[11px] text-slate-600 italic bg-amber-50/60 p-2 rounded-xl border border-amber-200">

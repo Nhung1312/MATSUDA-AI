@@ -1,5 +1,6 @@
 import type { Question } from '../types';
 import { formatQuestionSubItems } from './questionUtils';
+import { resolveGeminiEssayReference } from './mediaImportGuard';
 
 export class ExamImportError extends Error {
   name = 'ExamImportError';
@@ -48,7 +49,22 @@ export function normalizeMediaExamQuestions(payload: any): Question[] {
       throw new ExamImportError(`Có nhiều đáp án nguồn cho Câu ${order}; cần đối chiếu trước khi nhập.`);
     }
     const answer = sourceAnswer[0];
-    const rawCorrect = String(answer?.correctAnswer ?? q.correctAnswer ?? '').trim();
+    // Prefer the actual supplied source answer. Empty Gemini fields must not
+    // overwrite a valid answer/solution from another source field.
+    // No maths are solved or invented during extraction.
+    const rawCorrect = isEssay
+      ? resolveGeminiEssayReference({
+          correctAnswer: answer?.correctAnswer || q.correctAnswer,
+          answer: answer?.answer || q.answer,
+          essayAnswer: answer?.essayAnswer || q.essayAnswer,
+          expectedAnswer: answer?.expectedAnswer || q.expectedAnswer,
+          explanation: answer?.explanation || q.explanation,
+          solution: answer?.solution || q.solution,
+          detailedSolution: answer?.detailedSolution || q.detailedSolution,
+          rubric: answer?.rubric || q.rubric,
+          markingGuide: answer?.markingGuide || q.markingGuide
+        })
+      : String(answer?.correctAnswer || q.correctAnswer || '').trim();
     let correctAnswer = rawCorrect;
     if (!isEssay) {
       const originalIndex = q.options.findIndex((opt: any, optIdx: number) =>
@@ -56,8 +72,8 @@ export function normalizeMediaExamQuestions(payload: any): Question[] {
       correctAnswer = originalIndex >= 0 ? options[originalIndex].id
         : /^[A-D]$/i.test(rawCorrect) && options.some((opt: any) => opt.id === rawCorrect.toUpperCase()) ? rawCorrect.toUpperCase() : '';
     }
-    const explanation = String(answer?.explanation || answer?.solution || answer?.question || split.solution || q.explanation || '').trim();
-    const rubric = String(answer?.rubric || q.rubric || '').trim();
+    const explanation = String(answer?.explanation || answer?.solution || answer?.detailedSolution || answer?.question || split.solution || q.explanation || q.solution || '').trim();
+    const rubric = String(answer?.rubric || answer?.markingGuide || q.rubric || q.markingGuide || '').trim();
     return {
       id: `ai_media_${Date.now()}_${order}_${idx}`,
       order,

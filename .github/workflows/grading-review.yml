@@ -15,6 +15,10 @@ on:
       - 'scripts/check-submission-review.ts'
       - 'scripts/check-submission-print.ts'
       - 'scripts/check-review-save.ts'
+      - 'scripts/check-media-import-review.ts'
+      - 'src/utils/mediaImportGuard.ts'
+      - 'src/utils/examImportUtils.ts'
+      - 'src/components/FileUploadModal.tsx'
       - 'scripts/test-point-distribution.mjs'
       - 'package.json'
       - '.github/workflows/grading-review.yml'
@@ -33,6 +37,7 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run lint
       - run: npm run build
+      - run: npm run check:media-import
       - run: npm run check:submission-review
       - run: npm run check:submission-print
       - run: npm run check:exam-workflow
