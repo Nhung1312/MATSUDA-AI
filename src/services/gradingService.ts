@@ -23,6 +23,9 @@ import { stepGradingService } from './stepGradingService';
 import { saveSubmissionConfirmed, type SubmissionSaveResult } from './submissionSaveService';
 import type { AIImageMemo } from '../utils/aiResultCache';
 import { getCorrectOptionLabel, getMultipleChoiceSelectionIssue, hasTeacherGrade, refreshSubmissionTotals, getSubmissionSourceIssue } from '../utils/submissionReviewUtils';
+import { captureGradingReference } from '../utils/submissionReportUtils';
+import { compactSubmissionImages } from '../utils/submissionImageUtils';
+import { selectLatestStudentSubmissions } from '../utils/studentSubmissionUtils';
 
 export interface GradeSingleSubmissionWithAiResult {
   success: boolean;
@@ -505,6 +508,7 @@ export class GradingService {
         isCorrect,
         pointsEarned,
         maxPoints: q.points,
+        gradingReference: captureGradingReference(q, q),
         aiFeedback: aiEval?.feedback,
         aiScore: aiEval?.score,
         aiGraded: aiEval?.graded,
@@ -580,6 +584,7 @@ export class GradingService {
     totalClassStudents: number,
     submissions: Submission[]
   ): AssignmentStats {
+    submissions = selectLatestStudentSubmissions(assignment, submissions);
     const submittedCount = submissions.length;
     const unsubmittedCount = Math.max(0, totalClassStudents - submittedCount);
 
@@ -769,7 +774,8 @@ export class GradingService {
           isCorrect,
           pointsEarned: points,
           maxPoints,
-          correctAnswer: q.correctAnswer
+          correctAnswer: q.correctAnswer,
+          gradingReference: captureGradingReference(q, submission.shuffledQuestions?.find(saved => saved.id === q.id) || q)
         });
         continue;
       }
@@ -796,7 +802,8 @@ export class GradingService {
           maxPoints,
           aiFeedback: 'Học sinh chưa điền lời giải hoặc chưa tải ảnh bài làm cho câu này.',
           aiScore: 0,
-          aiGraded: true
+          aiGraded: true,
+          gradingReference: captureGradingReference(q, submission.shuffledQuestions?.find(saved => saved.id === q.id) || q)
         });
         continue;
       }
@@ -870,6 +877,10 @@ export class GradingService {
           isProvisional: needsReview,
           aiGradingError: stepRes.analysisSource === 'rule' || stepRes.analysisSource === 'unavailable',
           stepGradingResponse: stepRes,
+          gradingReference: !hasManualGrade && stepRes.success && stepRes.analysisSource === 'ai'
+            ? captureGradingReference(q, submission.shuffledQuestions?.find(saved => saved.id === q.id) || q) : existingAns?.gradingReference,
+          aiGradingReference: hasManualGrade && stepRes.success && stepRes.analysisSource === 'ai'
+            ? captureGradingReference(q, submission.shuffledQuestions?.find(saved => saved.id === q.id) || q) : existingAns?.aiGradingReference,
           hasCrossedOutDetection: stepRes.hasCrossedOutDetection,
           uncertainCorrectionDetected: stepRes.uncertainCorrectionDetected,
           teacherCorrectionNotice: stepRes.teacherCorrectionNotice
@@ -910,10 +921,10 @@ export class GradingService {
 
     const hasAnyProvisional = updatedAnswers.some(a => a.isProvisional || (a.needsTeacherReview && a.teacherScore === undefined));
 
-    const updatedSubmission: Submission = refreshSubmissionTotals(assignment, {
+    const updatedSubmission: Submission = compactSubmissionImages(refreshSubmissionTotals(assignment, {
       ...submission,
       answers: updatedAnswers,
-      shuffledQuestions: submission.shuffledQuestions?.map(saved => {
+      shuffledQuestions: (submission.shuffledQuestions?.length ? submission.shuffledQuestions : assignment.questions).map(saved => {
         const graded = gradingQuestions.find(q => q.id === saved.id);
         return graded && !isEssayQuestion(graded) ? { ...saved, correctAnswer: graded.correctAnswer } : saved;
       }),
@@ -931,7 +942,7 @@ export class GradingService {
         firstErrorType: firstFoundError?.type || null,
         firstErrorExplanation: firstFoundError?.explanation || null
       }
-    });
+    }));
 
     const persistence = await saveSubmissionConfirmed(updatedSubmission);
 

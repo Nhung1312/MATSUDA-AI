@@ -106,10 +106,14 @@ export interface StudentAnswer {
   selectedOptionText?: string; // Nội dung văn bản của phương án học sinh đã chọn
   originalSelectedLabel?: string; // Nhãn phương án tương ứng trên đề gốc (trước khi đảo đề)
   correctAnswer?: string; // Đáp án chuẩn theo đề học sinh đang làm (đã map chính xác theo đề xáo trộn)
+  // Source supplied to the saved automatic grading, independent of later exam edits.
+  // Teacher scores/feedback remain authoritative and are not inferred from this reference.
+  gradingReference?: Pick<Question, 'correctAnswer' | 'rubric' | 'explanation' | 'imageUrl' | 'points'>;
+  aiGradingReference?: StudentAnswer['gradingReference']; // New AI analysis alongside a protected teacher grade.
   isCorrect: boolean;
   pointsEarned: number;
   maxPoints: number;
-  essayImages?: string[]; // Ảnh chụp bài làm tự luận / nháp
+  essayImages?: string[]; // Ảnh riêng của câu; rỗng thì dùng Submission.essayImages nếu có.
   studentSolutionText?: string; // Lời giải tự luận học sinh gõ (nếu có)
   aiFeedback?: string; // Nhận xét của AI
   aiScore?: number; // Điểm do AI đề xuất

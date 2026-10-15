@@ -7,14 +7,31 @@ on:
       - 'src/services/submissionPrintService.ts'
       - 'src/services/submissionExportService.ts'
       - 'src/utils/submissionReviewUtils.ts'
+      - 'src/utils/submissionReportUtils.ts'
+      - 'src/utils/batchGradingUtils.ts'
+      - 'src/utils/submissionImageUtils.ts'
+      - 'src/utils/studentSubmissionUtils.ts'
+      - 'src/services/submissionSaveService.ts'
+      - 'src/services/storageService.ts'
+      - 'src/services/firestoreService.ts'
+      - 'src/store/useMistakeVaultStore.ts'
+      - 'src/components/BatchGradingModal.tsx'
+      - 'src/types/index.ts'
       - 'src/utils/questionUtils.ts'
       - 'src/components/SubmissionPrintModal.tsx'
       - 'src/components/ExamResultSheetView.tsx'
       - 'src/pages/teacher/TeacherResults.tsx'
       - 'src/pages/student/StudentResultPage.tsx'
+      - 'src/pages/student/StudentExamPage.tsx'
       - 'scripts/check-submission-review.ts'
       - 'scripts/check-submission-print.ts'
+      - 'scripts/check-batch-print.ts'
+      - 'scripts/check-saved-report-source.ts'
+      - 'scripts/check-batch-grading-filters.ts'
       - 'scripts/check-review-save.ts'
+      - 'scripts/check-batch-pause-images.ts'
+      - 'scripts/check-grading-concurrency-stats.ts'
+      - 'scripts/check-submission-limits.ts'
       - 'scripts/check-media-import-review.ts'
       - 'src/utils/mediaImportGuard.ts'
       - 'src/utils/examImportUtils.ts'
@@ -40,6 +57,11 @@ jobs:
       - run: npm run check:media-import
       - run: npm run check:submission-review
       - run: npm run check:submission-print
+      - run: npm run check:batch-print
+      - run: npm run check:saved-report-source
+      - run: npm run check:batch-grading-filters
+      - run: npm run check:batch-pause-images
+      - run: npm run check:grading-concurrency-stats
       - run: npm run check:exam-workflow
       - run: npm run check:ai-efficiency
       - run: npm run check:submission-limits

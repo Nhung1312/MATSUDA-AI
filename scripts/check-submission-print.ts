@@ -30,6 +30,7 @@ const q: any = { id: 'essay', order: 1, question: 'Giải hệ $x+y=1$', type: '
   options: [], correctAnswer: 'x=2,y=-1', rubric: 'Mỗi bước đúng 1 điểm', explanation: '$x=2, y=-1$' };
 const assignment: any = { id: 'print-fixture', title: '<script>alert(1)</script>', questions: [q], totalPoints: 2 };
 const submission: any = { id: 'print-saved', assignmentId: assignment.id, studentName: 'Học sinh thử', className: '7A',
+  shuffledQuestions: [q],
   totalScore: 2, maxScore: 2, gradingStatus: 'graded', submittedAt: '2026-10-14T00:01:00Z',
   essayImages: [png], answers: [{ questionId: q.id, selectedAnswer: 'TỰ_LUẬN', studentSolutionText: 'x=2,y=-1',
     essayImages: [png], pointsEarned: 2, maxPoints: 2, isCorrect: true, teacherScore: 2, teacherReviewed: true,
@@ -41,7 +42,7 @@ const report = buildSubmissionPrintHtml(assignment, submission);
 assert.equal(JSON.stringify({ assignment, submission }), before);
 assert.ok(!report.includes('<script>')); assert.match(report, /&lt;script&gt;/);
 assert.match(report, /Phân tích từng bước đã lưu/); assert.match(report, /Điểm theo từng tiêu chí/);
-assert.match(report, /Barem nguồn/); assert.match(report, /Giáo viên đã duyệt/);
+assert.match(report, /Barem trong bản đề đã lưu/); assert.match(report, /Giáo viên đã duyệt/);
 assert.ok(!report.includes('<h3>Lời giải đối chiếu</h3>'));
 assert.ok(buildSubmissionPrintHtml(assignment, submission, { includeReferenceSolution: true }).includes('<h3>Lời giải đối chiếu</h3>'));
 assert.equal((report.match(/<img /g) || []).length, 1, 'Shared photos print once without being cropped');

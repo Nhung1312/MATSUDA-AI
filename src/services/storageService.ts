@@ -14,6 +14,7 @@ import {
 } from '../data';
 import { FirestoreService } from './firestoreService';
 import { auth } from '../firebase';
+import { compactSubmissionImages } from '../utils/submissionImageUtils';
 
 const STORAGE_KEYS = {
   CLASSES: 'toan_thcs_classes_v4',
@@ -611,6 +612,7 @@ export class StorageService {
   }
 
   static saveSubmission(submission: Submission, options: { syncCloud?: boolean } = {}): void {
+    submission = compactSubmissionImages(submission);
     const submissions = this.getSubmissions();
     const idx = submissions.findIndex(s => s.id === submission.id);
     if (idx >= 0) {
@@ -629,7 +631,7 @@ export class StorageService {
   }
 
   static async saveSubmissionAsync(submission: Submission): Promise<void> {
-    this.saveSubmission(submission);
+    this.saveSubmission(submission, { syncCloud: false });
     try {
       await FirestoreService.saveResult(submission);
     } catch (err) {

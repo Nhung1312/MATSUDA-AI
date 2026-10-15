@@ -1,9 +1,13 @@
 import type { Assignment, Submission } from '../types';
 import { getEssayGradingReference, getQuestionTypeLabel, isEssayQuestion } from '../utils/questionUtils';
-import { getSubmissionSummary, getSubmissionSourceIssue, getStudentQuestion, getMultipleChoiceSelectionIssue, isSubmissionAnswerPending, hasTeacherGrade } from '../utils/submissionReviewUtils';
+import { getSubmissionSummary, getMultipleChoiceSelectionIssue, isSubmissionAnswerPending, hasTeacherGrade } from '../utils/submissionReviewUtils';
+import { getSavedReportQuestion, getSavedGradingReference, getSubmissionReportSourceIssue } from '../utils/submissionReportUtils';
 
 type Entry = { path: string; bytes: Uint8Array };
 type Attachment = { source: string; path: string | null; error?: string };
+type AttachmentData = { bytes: Uint8Array; extension: string };
+// Per export run only: source URLs can expire or change between runs.
+type AttachmentMemo = Map<string, Promise<AttachmentData>>;
 const encoder = new TextEncoder();
 const crcTable = Uint32Array.from({ length: 256 }, (_, value) => {
   let crc = value;
@@ -45,7 +49,7 @@ function zip(entries: Entry[]): Uint8Array {
   return output;
 }
 
-async function readAttachment(source: string): Promise<{ bytes: Uint8Array; extension: string }> {
+async function readAttachment(source: string): Promise<AttachmentData> {
   let bytes: Uint8Array, mime: string;
   const inline = source.match(/^data:([^;,]+);base64,([\s\S]+)$/);
   if (inline) {
@@ -70,19 +74,19 @@ async function readAttachment(source: string): Promise<{ bytes: Uint8Array; exte
 }
 
 export async function buildSubmissionExport(assignment: Assignment, submission: Submission,
-  onProgress?: (done: number, total: number) => void) {
+  onProgress?: (done: number, total: number) => void, attachmentMemo: AttachmentMemo = new Map()) {
   if (submission.assignmentId !== assignment.id) throw new Error('Bài nộp không thuộc đề đang chọn.');
   // Capture saved state before any asynchronous work; never write grades or call AI.
   const source: Assignment = JSON.parse(JSON.stringify(assignment));
   const saved: Submission = JSON.parse(JSON.stringify(submission));
   const exportedAt = new Date().toISOString();
   const audit = getSubmissionSummary(source, saved);
-  const sourceIssue = getSubmissionSourceIssue(source, saved);
+  const sourceIssue = getSubmissionReportSourceIssue(source, saved);
   const questions = saved.shuffledQuestions?.length ? saved.shuffledQuestions : source.questions;
   const sources = [...new Set([
     source.pdfUrl, ...(source.questions || []).map(q => q.imageUrl),
     ...(questions || []).map(q => q.imageUrl), ...(saved.essayImages || []),
-    ...(saved.answers || []).flatMap(a => a.essayImages || [])
+    ...(saved.answers || []).flatMap(a => [...(a.essayImages || []), a.gradingReference?.imageUrl, a.aiGradingReference?.imageUrl])
   ].filter((url): url is string => typeof url === 'string' && !!url.trim()))];
   const entries: Entry[] = [], attachments: Attachment[] = [];
   let done = 0;
@@ -90,7 +94,11 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
   for (let offset = 0; offset < sources.length; offset += 3) {
     const batch = sources.slice(offset, offset + 3);
     const results = await Promise.allSettled(batch.map(async url => {
-      try { return await readAttachment(url); }
+      try {
+        let pending = attachmentMemo.get(url);
+        if (!pending) { pending = readAttachment(url); attachmentMemo.set(url, pending); }
+        return await pending;
+      }
       finally { onProgress?.(++done, sources.length); }
     }));
     results.forEach((result, idx) => {
@@ -109,15 +117,16 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
   };
   const missing = attachments.filter(item => !item.path).length;
   const sections = (saved.answers || []).map((answer, idx) => {
-    const q = (questions || []).find(item => item.id === answer.questionId);
+    const q = getSavedReportQuestion(source, saved, answer.questionId);
     const original = (source.questions || []).find(item => item.id === answer.questionId);
-    const reference = getEssayGradingReference(original || q || { correctAnswer: '' });
+    const savedReference = getSavedGradingReference(saved, answer);
+    const currentReference = getEssayGradingReference(original || { correctAnswer: '' });
     const response = answer.stepGradingResponse;
     const steps = response?.analysis?.length ? response.analysis : answer.stepAnalysis || [];
     const selectedText = answer.selectedOptionText || q?.options?.find(o => o.id === answer.selectedAnswer)?.text;
     const essay = q ? isEssayQuestion(q) : !!(answer.studentSolutionText || answer.essayImages?.length);
     const pending = isSubmissionAnswerPending(source, saved, answer);
-    const selectionIssue = !hasTeacherGrade(answer) && getMultipleChoiceSelectionIssue(getStudentQuestion(source, saved, answer.questionId), answer);
+    const selectionIssue = !hasTeacherGrade(answer) && getMultipleChoiceSelectionIssue(q, answer);
     const photos = (answer.essayImages || []).map((url, i) => image(url, `Ảnh bài làm câu này ${i + 1}`)).join('');
     const rows = steps.map(step => `<tr><td>${escape(step.stepIndex)}${step.pageIndex === undefined ? '' : `<br>Ảnh ${escape(step.pageIndex + 1)}`}</td><td class="text">${escape(step.studentLatex || step.studentText)}</td><td>${escape(step.status)}<br>${escape(step.contentType || '')}<br>Tin cậy: ${escape(step.confidence)}</td><td class="text">${escape(step.comment)}${step.correctionLatex ? `<br>Sửa: ${escape(step.correctionLatex)}` : ''}${step.crossedOutExplanation ? `<br>Gạch bỏ: ${escape(step.crossedOutExplanation)}` : ''}</td></tr>`).join('');
     const breakdown = response?.scoreBreakdown?.map(item => `<tr><td class="text">${escape(item.criterion)}</td><td>${escape(item.earnedPoints)}/${escape(item.maxPoints)}</td><td class="text">${escape(item.reason)}</td></tr>`).join('');
@@ -127,7 +136,11 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
       ${q?.options?.length && !essay ? block('Phương án trên đề học sinh', q.options.map(o => `${o.id}. ${o.text}`).join('\n')) : ''}
       ${original && (original.question !== q?.question || original.imageUrl !== q?.imageUrl) ? block('Đề nguồn hiện tại (khác bản học sinh đã nhận)', original.question) + (original.imageUrl ? image(original.imageUrl, 'Hình nguồn hiện tại') : '') : ''}
       ${block('Đáp án theo đề học sinh', answer.correctAnswer || q?.correctAnswer)}
-      ${block('Đáp án nguồn hiện tại', reference.correctAnswer)}${block('Lời giải nguồn', original?.explanation || q?.explanation)}${block('Barem/hướng dẫn chấm nguồn', original?.rubric || q?.rubric)}
+      ${block('Lời giải đã lưu cùng bài chấm', savedReference?.explanation)}${block('Barem/hướng dẫn chấm đã lưu', savedReference?.rubric)}
+      ${answer.aiGradingReference ? block('Căn cứ phân tích AI mới (giữ nguyên điểm giáo viên đã duyệt)', answer.aiGradingReference.rubric || answer.aiGradingReference.explanation) : ''}
+      ${answer.aiGradingReference?.imageUrl && answer.aiGradingReference.imageUrl !== savedReference?.imageUrl ? image(answer.aiGradingReference.imageUrl, 'Hình dùng cho phân tích AI mới, điểm giáo viên được giữ nguyên') : ''}
+      ${savedReference?.imageUrl && savedReference.imageUrl !== q?.imageUrl ? image(savedReference.imageUrl, 'Hình nguồn đã lưu cùng phân tích chấm') : ''}
+      <details><summary>Nguồn hiện tại để đối chiếu (có thể khác căn cứ chấm đã lưu)</summary>${block('Đáp án nguồn hiện tại', currentReference.correctAnswer)}${block('Lời giải nguồn hiện tại', original?.explanation)}${block('Barem nguồn hiện tại', original?.rubric)}</details>
       ${block('Bài làm học sinh', essay ? answer.studentSolutionText || answer.selectedAnswer : `${answer.selectedAnswer || 'Chưa trả lời'}${selectedText ? ` — ${selectedText}` : ''}`)}${photos}
       ${selectionIssue ? `<p class="warning">${escape(selectionIssue)} Điểm cũ và dữ liệu JSON được giữ nguyên.</p>` : ''}
       <p><b>Điểm đã lưu: ${escape(answer.pointsEarned)}/${escape(answer.maxPoints)}</b> · Điểm AI: ${escape(answer.aiScore ?? response?.score ?? 'Chưa có')} · Điểm giáo viên: ${escape(answer.teacherScore ?? 'Chưa nhập')}</p>
@@ -214,12 +227,13 @@ export async function buildBatchSubmissionExport(
   const entries: Entry[] = [];
   const manifest: Array<Record<string, unknown>> = [];
   const counts = new Map<string, number>();
+  const attachmentMemo: AttachmentMemo = new Map();
   let bytesTotal = 0, missingAttachments = 0;
   for (let i = 0; i < submissions.length; i++) {
     const item = submissions[i];
     const audit = getSubmissionSummary(assignment, item);
-    const sourceReviewIssue = getSubmissionSourceIssue(assignment, item);
-    const result = await buildSubmissionExport(assignment, item);
+    const sourceReviewIssue = getSubmissionReportSourceIssue(assignment, item);
+    const result = await buildSubmissionExport(assignment, item, undefined, attachmentMemo);
     bytesTotal += result.bytes.byteLength;
     if (bytesTotal > MAX_BATCH_EXPORT_BYTES) {
       throw new Error('Bộ ảnh/bài làm vượt giới hạn 120 MB cho một lần xuất. Hãy lọc và xuất ít bài hơn.');

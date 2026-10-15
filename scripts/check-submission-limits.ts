@@ -228,7 +228,7 @@ assert.equal(aiFails.state.finish.length, 1); assert.equal(aiFails.state.finish[
 assert.equal(aiFails.state.finish[0].answers[1].aiGraded, false);
 assert.equal(aiFails.state.finish[0].answers[1].studentSolutionText, 'x=5-2=3');
 const oldUI = examUI(unlimited.service, exam()); await oldUI.submit();
-assert.equal(oldUI.state.cloudCalls, 1); assert.equal(oldUI.state.local[0].options, undefined);
+assert.equal(oldUI.state.cloudCalls, 1); assert.deepEqual(oldUI.state.local[0].options, { syncCloud: false });
 assert.equal(oldUI.state.finish.length, 1); assert.equal(draft.has(oldUI.key), false);
 console.log('PASS: failed transactions retain drafts and allow retry; cloud success tolerates local quota; unavailable essay AI still queues teacher review; unlimited workflow remains intact');
 
