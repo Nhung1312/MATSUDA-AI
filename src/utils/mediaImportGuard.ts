@@ -21,7 +21,9 @@ export interface MediaImportIssue {
 /** Detect labels such as a), b), ..., h) that have no expression after them. */
 export function findEmptyEssaySubparts(question: string): string[] {
   const source = String(question || '').replace(/\u00a0/g, ' ');
-  const marker = /(?:^|\s)([a-h])\)[ \t]*/gi;
+  // Zero-width boundary avoids consuming the separator before adjacent labels
+  // (e.g. 'a) x+1 b) c) x+3'), which previously hid an empty b) subpart.
+  const marker = /(?<!\S)([a-h])\)[ \t]*/gi;
   const locations: Array<{ label: string; start: number; end: number }> = [];
   let match: RegExpExecArray | null;
   while ((match = marker.exec(source)) !== null) {
