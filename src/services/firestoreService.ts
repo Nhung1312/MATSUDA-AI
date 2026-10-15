@@ -16,6 +16,7 @@ import {
 import { getDocFromServer } from 'firebase/firestore';
 import { assertTeacherCanDeleteSubmission, isSubmissionDeletionEnabled } from './submissionDeletionService';
 import { Assignment, Submission, ClassRoom, ExamTemplate, Contest, ContestSubmission } from '../types';
+import { compactSubmissionImages } from '../utils/submissionImageUtils';
 
 export const EXAMS_COLLECTION = 'exams';
 export const RESULTS_COLLECTION = 'results';
@@ -174,7 +175,7 @@ export class FirestoreService {
       const resultDocRef = doc(db, RESULTS_COLLECTION, submission.id);
        
       const payload = {
-        ...submission,
+        ...compactSubmissionImages(submission),
         createdAt: new Date().toISOString()
       };
 

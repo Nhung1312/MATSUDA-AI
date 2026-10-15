@@ -1,13 +1,14 @@
 import type { Submission } from '../types';
 import { StorageService } from './storageService';
 import { FirestoreService } from './firestoreService';
+import { compactSubmissionImages } from '../utils/submissionImageUtils';
 
 export interface SubmissionSaveResult { localSaved: boolean; cloudSaved: boolean }
 const cloudQueues = new Map<string, Promise<boolean>>();
 
 /** Save locally first; serialize confirmed cloud writes for the same submission. */
 export async function saveSubmissionConfirmed(submission: Submission): Promise<SubmissionSaveResult> {
-  const snapshot: Submission = JSON.parse(JSON.stringify(submission));
+  const snapshot: Submission = JSON.parse(JSON.stringify(compactSubmissionImages(submission)));
   let localSaved = false;
   try {
     // The legacy default still auto-syncs; this path must send only one cloud write.

@@ -17,6 +17,7 @@ import { isEssayQuestion } from '../utils/questionUtils';
 import { GradingService } from '../services/gradingService';
 import { getCorrectOptionLabel, getSubmissionSummary, isSubmissionAnswerPending, isSubmissionAnswerBlank } from '../utils/submissionReviewUtils';
 import { getSavedReportQuestion, getSubmissionReportSourceIssue } from '../utils/submissionReportUtils';
+import { getSubmissionAnswerImages } from '../utils/submissionImageUtils';
 
 interface ExamResultSheetViewProps {
   submission: Submission;
@@ -89,7 +90,7 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
   const getStudentAnswerLabel = (ans: StudentAnswer, question?: Question) => {
     if (!question) return ans.selectedAnswer || '—';
     if (isEssayQuestion(question)) {
-      const imageCount = ans.essayImages?.length || 0;
+      const imageCount = getSubmissionAnswerImages(submission, ans).length;
       if (ans.studentSolutionText && imageCount > 0) return `Tự luận • ${imageCount} ảnh`;
       if (ans.studentSolutionText) return 'Tự luận • đã nhập lời giải';
       if (imageCount > 0) return `Tự luận • ${imageCount} ảnh`;

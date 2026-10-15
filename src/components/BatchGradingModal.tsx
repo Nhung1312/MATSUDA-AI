@@ -82,7 +82,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
   const [newPaperImages, setNewPaperImages] = useState<string[]>([]);
   const [isProcessingPaperImages, setIsProcessingPaperImages] = useState<boolean>(false);
 
-  // Abort Controller Ref for Pause / Stop
+  // Pause applies between submissions; the current submission must finish saving.
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Đồng bộ danh sách bài nộp khi mở modal hoặc danh sách submissions thay đổi
@@ -180,7 +180,6 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
 
     for (let i = 0; i < targetItems.length; i++) {
       if (abortControllerRef.current.signal.aborted) {
-        showToast('Đã tạm dừng quá trình chấm bài hàng loạt.', 'warning');
         break;
       }
 
@@ -197,8 +196,9 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
         const result = await GradingService.gradeSingleSubmissionWithAI({
           assignment,
           submission: item.submission,
-          signal: abortControllerRef.current.signal,
-          onProgress: (msg) => setProgressText(`[${item.studentName}] ${msg}`)
+          // Do not interrupt the question loop inside the current student's work.
+          onProgress: (msg) => setProgressText(
+            `${abortControllerRef.current?.signal.aborted ? 'Đang dừng sau bài hiện tại: ' : ''}[${item.studentName}] ${msg}`)
         });
 
         // Cập nhật kết quả thành công
@@ -238,10 +238,6 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
           break;
         }
       } catch (err: any) {
-        if (abortControllerRef.current.signal.aborted) {
-          break;
-        }
-
         console.error(`[Batch Grading] Lỗi chấm bài học sinh ${item.studentName}:`, err);
         errorCount++;
 
@@ -279,7 +275,12 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
     const updatedSubsList = Array.from(currentSubsMap.values());
     onSubmissionsUpdated(updatedSubsList, { cloudHandled: true });
 
-    if (!abortControllerRef.current.signal.aborted && !stoppedEarly) {
+    if (abortControllerRef.current.signal.aborted && !stoppedEarly) {
+      showToast(
+        `Đã tạm dừng sau bài hiện tại. Đã xử lý ${successCount + reviewCount + errorCount}/${targetItems.length} bài (${errorCount} lỗi); các kết quả chấm xong đã được lưu.`,
+        'warning'
+      );
+    } else if (!stoppedEarly) {
       showToast(
         `Hoàn tất đợt chấm theo bộ lọc! Đã xử lý ${successCount + reviewCount + errorCount}/${targetItems.length} bài (${reviewCount} bài cần duyệt, ${errorCount} lỗi).`,
         errorCount > 0 ? 'warning' : 'success'
@@ -390,12 +391,12 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
     const nowIso = new Date().toISOString();
     const newSubmissionId = `sub_paper_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-    // Tạo answers rỗng với ảnh đính kèm
+    // Shared pages are stored once on the submission, not copied into every answer.
     const answers = assignment.questions.map((q) => ({
       questionId: q.id,
       selectedAnswer: '',
       studentSolutionText: '',
-      essayImages: newPaperImages,
+      essayImages: [],
       isCorrect: false,
       pointsEarned: 0,
       maxPoints: q.points || 1.0

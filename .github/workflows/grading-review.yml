@@ -9,6 +9,11 @@ on:
       - 'src/utils/submissionReviewUtils.ts'
       - 'src/utils/submissionReportUtils.ts'
       - 'src/utils/batchGradingUtils.ts'
+      - 'src/utils/submissionImageUtils.ts'
+      - 'src/services/submissionSaveService.ts'
+      - 'src/services/storageService.ts'
+      - 'src/services/firestoreService.ts'
+      - 'src/store/useMistakeVaultStore.ts'
       - 'src/components/BatchGradingModal.tsx'
       - 'src/types/index.ts'
       - 'src/utils/questionUtils.ts'
@@ -22,6 +27,7 @@ on:
       - 'scripts/check-saved-report-source.ts'
       - 'scripts/check-batch-grading-filters.ts'
       - 'scripts/check-review-save.ts'
+      - 'scripts/check-batch-pause-images.ts'
       - 'scripts/check-media-import-review.ts'
       - 'src/utils/mediaImportGuard.ts'
       - 'src/utils/examImportUtils.ts'
@@ -50,6 +56,7 @@ jobs:
       - run: npm run check:batch-print
       - run: npm run check:saved-report-source
       - run: npm run check:batch-grading-filters
+      - run: npm run check:batch-pause-images
       - run: npm run check:exam-workflow
       - run: npm run check:ai-efficiency
       - run: npm run check:submission-limits

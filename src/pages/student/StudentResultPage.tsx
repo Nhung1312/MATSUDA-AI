@@ -36,6 +36,7 @@ import { ExamResultSheetView } from '../../components/ExamResultSheetView';
 import { SocraticTutorModal } from '../../components/SocraticTutorModal';
 import { StepGradingBreakdown } from '../../components/StepGradingBreakdown';
 import { stepGradingService } from '../../services/stepGradingService';
+import { getSubmissionAnswerImages } from '../../utils/submissionImageUtils';
 import { SocraticContext, StudentAnswer, StepGradingResponse, StepErrorType } from '../../types';
 import { useLearningProgressStore } from '../../store/useLearningProgressStore';
 import { StorageService } from '../../services/storageService';
@@ -302,7 +303,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
       firstErrorLatex,
       referenceStepLatex,
       stepAnalysis,
-      essayImages: ans.essayImages,
+      essayImages: getSubmissionAnswerImages(submission, ans),
     });
   };
 
@@ -811,7 +812,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
                 const currentAiGrading = aiGradingFeedback[question.id] || (ans.aiGraded ? { score: ans.aiScore || 0, feedback: ans.aiFeedback || '' } : null);
                 const isLoadingGrading = !!loadingAiGrading[question.id];
-                const images = ans.essayImages || [];
+                const images = isEssayQuestion(question) ? getSubmissionAnswerImages(submission, ans) : ans.essayImages || [];
 
                 const isAwaitingAnsReview = isSubmissionAnswerPending(assignment, submission, ans);
 

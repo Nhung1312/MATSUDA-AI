@@ -113,7 +113,7 @@ export interface StudentAnswer {
   isCorrect: boolean;
   pointsEarned: number;
   maxPoints: number;
-  essayImages?: string[]; // Ảnh chụp bài làm tự luận / nháp
+  essayImages?: string[]; // Ảnh riêng của câu; rỗng thì dùng Submission.essayImages nếu có.
   studentSolutionText?: string; // Lời giải tự luận học sinh gõ (nếu có)
   aiFeedback?: string; // Nhận xét của AI
   aiScore?: number; // Điểm do AI đề xuất

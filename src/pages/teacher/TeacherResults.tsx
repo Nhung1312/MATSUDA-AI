@@ -2447,6 +2447,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                     )}
 
                     {/* Essay: Uploaded photos */}
+                    {isEssay && images.length === 0 && !!selectedSubmissionDetail.essayImages?.length && (
+                      <p className="mb-2 text-xs text-purple-800">Bài làm câu này dùng bộ ảnh đính kèm chung ở phía trên.</p>
+                    )}
                     {images.length > 0 && (
                       <div className="mb-2 p-2.5 bg-purple-50/60 border border-purple-200 rounded-xl space-y-1.5">
                         <div className="font-bold text-xs text-purple-900 flex items-center gap-1.5">

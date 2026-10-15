@@ -24,6 +24,7 @@ import { saveSubmissionConfirmed, type SubmissionSaveResult } from './submission
 import type { AIImageMemo } from '../utils/aiResultCache';
 import { getCorrectOptionLabel, getMultipleChoiceSelectionIssue, hasTeacherGrade, refreshSubmissionTotals, getSubmissionSourceIssue } from '../utils/submissionReviewUtils';
 import { captureGradingReference } from '../utils/submissionReportUtils';
+import { compactSubmissionImages } from '../utils/submissionImageUtils';
 
 export interface GradeSingleSubmissionWithAiResult {
   success: boolean;
@@ -918,7 +919,7 @@ export class GradingService {
 
     const hasAnyProvisional = updatedAnswers.some(a => a.isProvisional || (a.needsTeacherReview && a.teacherScore === undefined));
 
-    const updatedSubmission: Submission = refreshSubmissionTotals(assignment, {
+    const updatedSubmission: Submission = compactSubmissionImages(refreshSubmissionTotals(assignment, {
       ...submission,
       answers: updatedAnswers,
       shuffledQuestions: (submission.shuffledQuestions?.length ? submission.shuffledQuestions : assignment.questions).map(saved => {
@@ -939,7 +940,7 @@ export class GradingService {
         firstErrorType: firstFoundError?.type || null,
         firstErrorExplanation: firstFoundError?.explanation || null
       }
-    });
+    }));
 
     const persistence = await saveSubmissionConfirmed(updatedSubmission);
 
