@@ -19,7 +19,8 @@
     "check:submission-print": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-print.ts",
     "test:strikeout": "tsx scripts/test-strikeout-grading.ts",
     "test:points": "node scripts/test-point-distribution.mjs",
-    "check:submission-deletion": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-deletion.ts"
+    "check:submission-deletion": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-deletion.ts",
+    "check:media-import": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-media-import-review.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
