@@ -21,6 +21,7 @@
     "check:saved-report-source": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-saved-report-source.ts",
     "check:batch-grading-filters": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-batch-grading-filters.ts",
     "check:batch-pause-images": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-batch-pause-images.ts",
+    "check:grading-concurrency-stats": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-grading-concurrency-stats.ts",
     "test:strikeout": "tsx scripts/test-strikeout-grading.ts",
     "test:points": "node scripts/test-point-distribution.mjs",
     "check:submission-deletion": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-deletion.ts",

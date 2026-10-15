@@ -25,6 +25,7 @@ import type { AIImageMemo } from '../utils/aiResultCache';
 import { getCorrectOptionLabel, getMultipleChoiceSelectionIssue, hasTeacherGrade, refreshSubmissionTotals, getSubmissionSourceIssue } from '../utils/submissionReviewUtils';
 import { captureGradingReference } from '../utils/submissionReportUtils';
 import { compactSubmissionImages } from '../utils/submissionImageUtils';
+import { selectLatestStudentSubmissions } from '../utils/studentSubmissionUtils';
 
 export interface GradeSingleSubmissionWithAiResult {
   success: boolean;
@@ -583,6 +584,7 @@ export class GradingService {
     totalClassStudents: number,
     submissions: Submission[]
   ): AssignmentStats {
+    submissions = selectLatestStudentSubmissions(assignment, submissions);
     const submittedCount = submissions.length;
     const unsubmittedCount = Math.max(0, totalClassStudents - submittedCount);
 

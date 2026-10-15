@@ -67,8 +67,9 @@ FirestoreService.saveResult = async sub => { cloudWrites.push(clone(sub)); await
 
 function harness(subs: any[], core = GradingService) {
   const state: any = { items: subs.map(sub => ({ id: sub.id, studentName: sub.studentName, source: 'paper', status: 'pending', submission: sub })),
-    running: false, toasts: [], progress: '', controller: { current: null }, subs };
+    running: false, toasts: [], progress: '', controller: { current: null }, lock: { current: false }, subs };
   const dependencies = () => ({ isGrading: state.running, skipAlreadyGraded: true, items: state.items,
+    gradingOperationLock: state.lock,
     selectBatchGradingItems, filterSource: 'all', filterStatus: 'all', assignment, submissions: state.subs,
     abortControllerRef: state.controller, setIsGrading: (value: boolean) => { state.running = value; },
     setCurrentGradingIndex: () => {}, setProgressText: (value: string) => { state.progress = value; },
@@ -122,6 +123,7 @@ try {
 
   let added: any[] = [];
   bind(batchText, 'handleSaveNewPaperSubmission', {
+    gradingOperationLock: { current: false },
     newPaperStudentName: 'Bài giấy mới', newPaperImages: shared, assignment, submissions: [],
     onSubmissionsUpdated: (subs: any[]) => { added = subs; }, setNewPaperStudentName: () => {},
     setNewPaperImages: () => {}, setShowAddPaperForm: () => {}, showToast: () => {}

@@ -793,7 +793,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
         // Retain the existing local/offline workflow for unlimited assignments.
         try { await FirestoreService.saveResult(submission); }
         catch (error) { console.warn('Lỗi lưu kết quả lên Firestore:', error); }
-        StorageService.saveSubmission(submission);
+        StorageService.saveSubmission(submission, { syncCloud: false });
       }
 
       try { useMistakeVaultStore.getState().addMistakesFromSubmission(submission, currentAssignment); }

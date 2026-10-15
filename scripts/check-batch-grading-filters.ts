@@ -25,6 +25,7 @@ async function run(filterSource: BatchSourceFilter, filterStatus: BatchStatusFil
   let items = structuredClone(fixtures), parent: any[] | undefined;
   const calls: string[] = [], toasts: string[] = [];
   const dependencies = { isGrading: false, skipAlreadyGraded, items, filterSource, filterStatus, selectBatchGradingItems,
+    gradingOperationLock: { current: false },
     assignment: { id: 'a' }, submissions: items.map(item => item.submission), abortControllerRef: { current: null },
     setIsGrading: () => {}, setCurrentGradingIndex: () => {}, setProgressText: () => {},
     setItems: (fn: any) => { items = fn(items); },
@@ -66,10 +67,10 @@ for (const reason of ['quota', 'cloud'] as const) {
   assert.deepEqual(stopped.calls, ['paper-pending']);
   assert.ok(!stopped.toasts.some(text => text.includes('Hoàn tất')));
 }
-assert.match(source, /disabled=\{gradingTargetCount === 0\}/);
+assert.match(source, /disabled=\{isBusy \|\| gradingTargetCount === 0\}/);
 assert.match(source, /Bắt đầu chấm AI \(\{gradingTargetCount\} bài\)/);
-assert.match(source, /value=\{filterSource\}\s+disabled=\{isGrading\}/);
-assert.match(source, /value=\{filterStatus\}\s+disabled=\{isGrading\}/);
+assert.match(source, /value=\{filterSource\}\s+disabled=\{isBusy\}/);
+assert.match(source, /value=\{filterStatus\}\s+disabled=\{isBusy\}/);
 console.log(`PASS: ${combinations} source/status/skip/retry combinations execute the exact UI handler; outside-filter records stay unchanged; selection stays fixed during rerenders`);
 console.log('PASS: empty queues make no calls; quota/unconfirmed cloud saves stop the selected queue; UI counts and filter locking match the execution scope');
 console.log('Batch filter checks passed (no AI, network or database writes).');

@@ -631,7 +631,7 @@ export class StorageService {
   }
 
   static async saveSubmissionAsync(submission: Submission): Promise<void> {
-    this.saveSubmission(submission);
+    this.saveSubmission(submission, { syncCloud: false });
     try {
       await FirestoreService.saveResult(submission);
     } catch (err) {

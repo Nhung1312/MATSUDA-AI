@@ -230,6 +230,7 @@ try {
   let items: any[] = [{ id: manual.id }], toast: any, updateOptions: any;
   const graded: any = { submission: manual, needsTeacherReview: false, totalErrors: 0, persistence: { localSaved: true, cloudSaved: false } };
   await bind(batchText, 'handleGradeSingle', { isGrading: false, assignment: { id: 'a' }, submissions: [manual],
+    gradingOperationLock: { current: false }, setGradingSingleId: () => {},
     setItems: (fn: any) => { items = fn(items); }, GradingService: { gradeSingleSubmissionWithAI: async () => graded },
     onSubmissionsUpdated: (_subs: any, options: any) => { updateOptions = options; }, showToast: (text: string, type: string) => { toast = { text, type }; }
   })(items[0]);
@@ -241,6 +242,7 @@ try {
   let batchCalls = 0;
   const toasts: any[] = [];
   await bind(batchText, 'handleStartBatch', { isGrading: false, skipAlreadyGraded: true, items: batchItems,
+    gradingOperationLock: { current: false },
     selectBatchGradingItems, filterSource: 'all', filterStatus: 'all',
     assignment: { id: 'a' }, submissions: batchItems.map(item => item.submission), abortControllerRef: { current: null },
     setIsGrading: () => {}, setCurrentGradingIndex: () => {}, setProgressText: () => {},
