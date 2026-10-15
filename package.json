@@ -17,6 +17,8 @@
     "check:batch-export": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-batch-submission-export.ts",
     "check:submission-review": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-review.ts",
     "check:submission-print": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-print.ts",
+    "check:saved-report-source": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-saved-report-source.ts",
+    "check:batch-grading-filters": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-batch-grading-filters.ts",
     "test:strikeout": "tsx scripts/test-strikeout-grading.ts",
     "test:points": "node scripts/test-point-distribution.mjs",
     "check:submission-deletion": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-deletion.ts",

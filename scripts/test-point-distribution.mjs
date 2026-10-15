@@ -32,14 +32,19 @@ const reviewSource = fs.readFileSync(new URL('../src/utils/submissionReviewUtils
 const reviewJs = ts.transpileModule(reviewSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const reviewModule = { exports: {} };
 new Function('module','exports','require',reviewJs)(reviewModule,reviewModule.exports,id => id.includes('questionUtils') ? m.exports : {});
+const reportModule = { exports: {} };
 const mockRequire = id => {
   if (id.includes('questionUtils')) return m.exports;
   if (id.includes('submissionReviewUtils')) return reviewModule.exports;
+  if (id.includes('submissionReportUtils')) return reportModule.exports;
   if (id.includes('stepGradingService')) return {stepGradingService: {}};
   if (id.includes('storageService')) return {StorageService: {}};
   if (id.includes('firestoreService')) return {FirestoreService: {}};
   return {};
 };
+const reportSource = fs.readFileSync(new URL('../src/utils/submissionReportUtils.ts', import.meta.url), 'utf8');
+const reportJs = ts.transpileModule(reportSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+new Function('module','exports','require',reportJs)(reportModule,reportModule.exports,mockRequire);
 new Function('module','exports','require',gradeJs)(gradeModule,gradeModule.exports,mockRequire);
 const { GradingService } = gradeModule.exports;
 const a1 = {id:'1',type:'multiple_choice',question:'2+2?',options:[{id:'A',text:'4'},{id:'B',text:'5'}],correctAnswer:'A',points:0.3};

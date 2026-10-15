@@ -23,6 +23,7 @@ import { GradingService } from '../services/gradingService';
 import { processQuestionImage } from '../utils/imageProcessUtils';
 import { StepGradingBreakdown } from './StepGradingBreakdown';
 import { MathDisplay } from './MathDisplay';
+import { filterBatchGradingItems, selectBatchGradingItems } from '../utils/batchGradingUtils';
 
 export type BatchItemStatus = 'pending' | 'grading' | 'completed' | 'needs_review' | 'failed';
 
@@ -130,11 +131,9 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
   if (!isOpen) return null;
 
   // Lọc theo Nguồn và Trạng thái
-  const filteredItems = items.filter((item) => {
-    if (filterSource !== 'all' && item.source !== filterSource) return false;
-    if (filterStatus !== 'all' && item.status !== filterStatus) return false;
-    return true;
-  });
+  const filteredItems = filterBatchGradingItems<BatchItem>(items, filterSource, filterStatus);
+  const gradingTargetCount = selectBatchGradingItems<BatchItem>(items, filterSource, filterStatus, skipAlreadyGraded).length;
+  const failedInFilterCount = selectBatchGradingItems<BatchItem>(items, filterSource, filterStatus, skipAlreadyGraded, true).length;
 
   // Số liệu thống kê
   const completedCount = items.filter((i) => i.status === 'completed').length;
@@ -162,15 +161,8 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
     if (isGrading) return;
 
     // Xác định danh sách học sinh cần chấm
-    const targetItems = items.filter((item) => {
-      if (onlyFailed) {
-        return item.status === 'failed';
-      }
-      if (skipAlreadyGraded) {
-        return item.status === 'pending' || item.status === 'failed';
-      }
-      return true;
-    });
+    // Freeze the eligible IDs under both filters at the start of this run.
+    const targetItems = selectBatchGradingItems<BatchItem>(items, filterSource, filterStatus, skipAlreadyGraded, onlyFailed);
 
     if (targetItems.length === 0) {
       showToast('Không có bài nào cần chấm theo điều kiện đã chọn.', 'warning');
@@ -289,7 +281,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
 
     if (!abortControllerRef.current.signal.aborted && !stoppedEarly) {
       showToast(
-        `Hoàn tất chấm cả lớp! Đã chấm ${successCount + reviewCount} bài (${reviewCount} bài cần duyệt, ${errorCount} lỗi).`,
+        `Hoàn tất đợt chấm theo bộ lọc! Đã xử lý ${successCount + reviewCount + errorCount}/${targetItems.length} bài (${reviewCount} bài cần duyệt, ${errorCount} lỗi).`,
         errorCount > 0 ? 'warning' : 'success'
       );
     }
@@ -612,11 +604,11 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
             {!isGrading ? (
               <button
                 onClick={() => handleStartBatch(false)}
-                disabled={items.length === 0}
+                disabled={gradingTargetCount === 0}
                 className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center space-x-1.5 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Bắt đầu chấm AI</span>
+                <span>Bắt đầu chấm AI ({gradingTargetCount} bài)</span>
               </button>
             ) : (
               <button
@@ -628,14 +620,14 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
               </button>
             )}
 
-            {failedCount > 0 && !isGrading && (
+            {failedInFilterCount > 0 && !isGrading && (
               <button
                 onClick={() => handleStartBatch(true)}
                 className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs rounded-xl flex items-center space-x-1.5 active:scale-95 transition-all cursor-pointer"
                 title="Chỉ chấm lại các bài bị lỗi hoặc mạng ngắt quãng"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>Chấm lại bài lỗi ({failedCount})</span>
+                <span>Chấm lại bài lỗi ({failedInFilterCount})</span>
               </button>
             )}
 
@@ -675,6 +667,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
               <span className="text-slate-400 font-semibold">Nguồn:</span>
               <select
                 value={filterSource}
+                disabled={isGrading}
                 onChange={(e: any) => setFilterSource(e.target.value)}
                 className="bg-white border border-slate-200 rounded-lg px-2 py-1 font-semibold text-slate-700 focus:ring-1 focus:ring-indigo-500"
               >
@@ -688,6 +681,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
               <span className="text-slate-400 font-semibold">Lọc:</span>
               <select
                 value={filterStatus}
+                disabled={isGrading}
                 onChange={(e: any) => setFilterStatus(e.target.value)}
                 className="bg-white border border-slate-200 rounded-lg px-2 py-1 font-semibold text-slate-700 focus:ring-1 focus:ring-indigo-500"
               >

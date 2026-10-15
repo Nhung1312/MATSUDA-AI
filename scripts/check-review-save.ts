@@ -6,6 +6,8 @@ import { FirestoreService } from '../src/services/firestoreService';
 import { saveSubmissionConfirmed } from '../src/services/submissionSaveService';
 import { stepGradingService } from '../src/services/stepGradingService';
 import { refreshSubmissionTotals, confirmMultipleChoiceSelection, getSubmissionSourceIssue } from '../src/utils/submissionReviewUtils';
+import { captureGradingReference } from '../src/utils/submissionReportUtils';
+import { selectBatchGradingItems } from '../src/utils/batchGradingUtils';
 
 assert.ok(String(globalThis.fetch).includes('__examOfflineFetch'), 'Mandatory offline guard is missing');
 const local = new Map<string, string>();
@@ -50,7 +52,7 @@ function harness(initial: any, questions: any[]) {
     mcqReviewChoice: state.choices, confirmMultipleChoiceSelection, getSubmissionSourceIssue,
     stepGradingService: { analyzeStepByStep: async (request: any) => { state.aiCalls++; return ai(request); } },
     GradingService: { gradeSingleSubmissionWithAI: async () => { state.wholeCalls++; throw Error('Unexpected whole grading'); } },
-    getEssayGradingReference: (q: any) => ({ correctAnswer: q.correctAnswer, rubric: q.rubric }), isEssayQuestion: (q: any) => q.type === 'essay',
+    getEssayGradingReference: (q: any) => ({ correctAnswer: q.correctAnswer, rubric: q.rubric }), captureGradingReference, isEssayQuestion: (q: any) => q.type === 'essay',
     setGradingAiInProgress: () => {}, setActionNotice: () => {}, setExpandedStepAnalysis: () => {}, setGradingSingleInProgress: () => {},
     setSelectedSubmissionDetail: (sub: any) => { state.selected = sub; },
     setTeacherScoreInput: (fn: any) => { state.inputs = fn(state.inputs); }, setTeacherFeedbackInput: (fn: any) => { state.feedback = fn(state.feedback); },
@@ -199,6 +201,7 @@ try {
   let batchCalls = 0;
   const toasts: any[] = [];
   await bind(batchText, 'handleStartBatch', { isGrading: false, skipAlreadyGraded: true, items: batchItems,
+    selectBatchGradingItems, filterSource: 'all', filterStatus: 'all',
     assignment: { id: 'a' }, submissions: batchItems.map(item => item.submission), abortControllerRef: { current: null },
     setIsGrading: () => {}, setCurrentGradingIndex: () => {}, setProgressText: () => {},
     setItems: (fn: any) => { batchItems = fn(batchItems); },

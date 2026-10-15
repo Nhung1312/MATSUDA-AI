@@ -1,6 +1,7 @@
 import type { Assignment, Submission } from '../types';
 import { getEssayGradingReference, getQuestionTypeLabel, isEssayQuestion } from '../utils/questionUtils';
-import { getSubmissionSummary, getSubmissionSourceIssue, getStudentQuestion, getMultipleChoiceSelectionIssue, isSubmissionAnswerPending, hasTeacherGrade } from '../utils/submissionReviewUtils';
+import { getSubmissionSummary, getMultipleChoiceSelectionIssue, isSubmissionAnswerPending, hasTeacherGrade } from '../utils/submissionReviewUtils';
+import { getSavedReportQuestion, getSavedGradingReference, getSubmissionReportSourceIssue } from '../utils/submissionReportUtils';
 
 type Entry = { path: string; bytes: Uint8Array };
 type Attachment = { source: string; path: string | null; error?: string };
@@ -77,12 +78,12 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
   const saved: Submission = JSON.parse(JSON.stringify(submission));
   const exportedAt = new Date().toISOString();
   const audit = getSubmissionSummary(source, saved);
-  const sourceIssue = getSubmissionSourceIssue(source, saved);
+  const sourceIssue = getSubmissionReportSourceIssue(source, saved);
   const questions = saved.shuffledQuestions?.length ? saved.shuffledQuestions : source.questions;
   const sources = [...new Set([
     source.pdfUrl, ...(source.questions || []).map(q => q.imageUrl),
     ...(questions || []).map(q => q.imageUrl), ...(saved.essayImages || []),
-    ...(saved.answers || []).flatMap(a => a.essayImages || [])
+    ...(saved.answers || []).flatMap(a => [...(a.essayImages || []), a.gradingReference?.imageUrl, a.aiGradingReference?.imageUrl])
   ].filter((url): url is string => typeof url === 'string' && !!url.trim()))];
   const entries: Entry[] = [], attachments: Attachment[] = [];
   let done = 0;
@@ -109,15 +110,16 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
   };
   const missing = attachments.filter(item => !item.path).length;
   const sections = (saved.answers || []).map((answer, idx) => {
-    const q = (questions || []).find(item => item.id === answer.questionId);
+    const q = getSavedReportQuestion(source, saved, answer.questionId);
     const original = (source.questions || []).find(item => item.id === answer.questionId);
-    const reference = getEssayGradingReference(original || q || { correctAnswer: '' });
+    const savedReference = getSavedGradingReference(saved, answer);
+    const currentReference = getEssayGradingReference(original || { correctAnswer: '' });
     const response = answer.stepGradingResponse;
     const steps = response?.analysis?.length ? response.analysis : answer.stepAnalysis || [];
     const selectedText = answer.selectedOptionText || q?.options?.find(o => o.id === answer.selectedAnswer)?.text;
     const essay = q ? isEssayQuestion(q) : !!(answer.studentSolutionText || answer.essayImages?.length);
     const pending = isSubmissionAnswerPending(source, saved, answer);
-    const selectionIssue = !hasTeacherGrade(answer) && getMultipleChoiceSelectionIssue(getStudentQuestion(source, saved, answer.questionId), answer);
+    const selectionIssue = !hasTeacherGrade(answer) && getMultipleChoiceSelectionIssue(q, answer);
     const photos = (answer.essayImages || []).map((url, i) => image(url, `Ảnh bài làm câu này ${i + 1}`)).join('');
     const rows = steps.map(step => `<tr><td>${escape(step.stepIndex)}${step.pageIndex === undefined ? '' : `<br>Ảnh ${escape(step.pageIndex + 1)}`}</td><td class="text">${escape(step.studentLatex || step.studentText)}</td><td>${escape(step.status)}<br>${escape(step.contentType || '')}<br>Tin cậy: ${escape(step.confidence)}</td><td class="text">${escape(step.comment)}${step.correctionLatex ? `<br>Sửa: ${escape(step.correctionLatex)}` : ''}${step.crossedOutExplanation ? `<br>Gạch bỏ: ${escape(step.crossedOutExplanation)}` : ''}</td></tr>`).join('');
     const breakdown = response?.scoreBreakdown?.map(item => `<tr><td class="text">${escape(item.criterion)}</td><td>${escape(item.earnedPoints)}/${escape(item.maxPoints)}</td><td class="text">${escape(item.reason)}</td></tr>`).join('');
@@ -127,7 +129,11 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
       ${q?.options?.length && !essay ? block('Phương án trên đề học sinh', q.options.map(o => `${o.id}. ${o.text}`).join('\n')) : ''}
       ${original && (original.question !== q?.question || original.imageUrl !== q?.imageUrl) ? block('Đề nguồn hiện tại (khác bản học sinh đã nhận)', original.question) + (original.imageUrl ? image(original.imageUrl, 'Hình nguồn hiện tại') : '') : ''}
       ${block('Đáp án theo đề học sinh', answer.correctAnswer || q?.correctAnswer)}
-      ${block('Đáp án nguồn hiện tại', reference.correctAnswer)}${block('Lời giải nguồn', original?.explanation || q?.explanation)}${block('Barem/hướng dẫn chấm nguồn', original?.rubric || q?.rubric)}
+      ${block('Lời giải đã lưu cùng bài chấm', savedReference?.explanation)}${block('Barem/hướng dẫn chấm đã lưu', savedReference?.rubric)}
+      ${answer.aiGradingReference ? block('Căn cứ phân tích AI mới (giữ nguyên điểm giáo viên đã duyệt)', answer.aiGradingReference.rubric || answer.aiGradingReference.explanation) : ''}
+      ${answer.aiGradingReference?.imageUrl && answer.aiGradingReference.imageUrl !== savedReference?.imageUrl ? image(answer.aiGradingReference.imageUrl, 'Hình dùng cho phân tích AI mới, điểm giáo viên được giữ nguyên') : ''}
+      ${savedReference?.imageUrl && savedReference.imageUrl !== q?.imageUrl ? image(savedReference.imageUrl, 'Hình nguồn đã lưu cùng phân tích chấm') : ''}
+      <details><summary>Nguồn hiện tại để đối chiếu (có thể khác căn cứ chấm đã lưu)</summary>${block('Đáp án nguồn hiện tại', currentReference.correctAnswer)}${block('Lời giải nguồn hiện tại', original?.explanation)}${block('Barem nguồn hiện tại', original?.rubric)}</details>
       ${block('Bài làm học sinh', essay ? answer.studentSolutionText || answer.selectedAnswer : `${answer.selectedAnswer || 'Chưa trả lời'}${selectedText ? ` — ${selectedText}` : ''}`)}${photos}
       ${selectionIssue ? `<p class="warning">${escape(selectionIssue)} Điểm cũ và dữ liệu JSON được giữ nguyên.</p>` : ''}
       <p><b>Điểm đã lưu: ${escape(answer.pointsEarned)}/${escape(answer.maxPoints)}</b> · Điểm AI: ${escape(answer.aiScore ?? response?.score ?? 'Chưa có')} · Điểm giáo viên: ${escape(answer.teacherScore ?? 'Chưa nhập')}</p>
@@ -218,7 +224,7 @@ export async function buildBatchSubmissionExport(
   for (let i = 0; i < submissions.length; i++) {
     const item = submissions[i];
     const audit = getSubmissionSummary(assignment, item);
-    const sourceReviewIssue = getSubmissionSourceIssue(assignment, item);
+    const sourceReviewIssue = getSubmissionReportSourceIssue(assignment, item);
     const result = await buildSubmissionExport(assignment, item);
     bytesTotal += result.bytes.byteLength;
     if (bytesTotal > MAX_BATCH_EXPORT_BYTES) {

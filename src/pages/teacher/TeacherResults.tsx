@@ -10,6 +10,7 @@ import { FirestoreService } from '../../services/firestoreService';
 import { getSelectedSubmissionCopies, MAX_DELETE_SUBMISSIONS_AT_ONCE, isSubmissionDeletionEnabled } from '../../services/submissionDeletionService';
 import { MathDisplay } from '../../components/MathDisplay';
 import { getStudentQuestion, getMultipleChoiceSelectionIssue, getCorrectOptionLabel, isSubmissionAnswerPending, refreshSubmissionTotals, confirmMultipleChoiceSelection, getSubmissionSourceIssue } from '../../utils/submissionReviewUtils';
+import { captureGradingReference } from '../../utils/submissionReportUtils';
 import { StepGradingBreakdown } from '../../components/StepGradingBreakdown';
 import { PrintExamModal } from '../../components/PrintExamModal';
 import { SubmissionPrintModal } from '../../components/SubmissionPrintModal';
@@ -366,7 +367,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     const sourceIssue = getSubmissionSourceIssue(currentAssignment, selectedSubmissionDetail);
     if (sourceIssue) { setActionNotice({ type: 'warning', text: sourceIssue }); return; }
     reviewOperationLock.current = true;
-    const reference = getEssayGradingReference(currentAssignment.questions.find(q => q.id === question.id) || question);
+    const gradingQuestion = { ...(currentAssignment.questions.find(q => q.id === question.id) || question), points: question.points };
+    const gradingSnapshot = selectedSubmissionDetail.shuffledQuestions?.find(q => q.id === question.id);
+    const reference = getEssayGradingReference(gradingQuestion);
     const studentText = ans.studentSolutionText || ans.selectedAnswer || '';
     const studentImages = ans.essayImages?.length ? ans.essayImages : selectedSubmissionDetail.essayImages || [];
     setSavedGradeSuccess(prev => ({ ...prev, [ans.questionId]: false }));
@@ -435,7 +438,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
             needsTeacherReview: manualGrade ? false : needsReviewVal,
             isProvisional: manualGrade ? false : needsReviewVal,
             aiGradingError: !!(stepResp && (stepResp.analysisSource === 'rule' || stepResp.analysisSource === 'unavailable')),
-            stepGradingResponse: stepResp
+            stepGradingResponse: stepResp,
+            gradingReference: manualGrade ? a.gradingReference : captureGradingReference(gradingQuestion, gradingSnapshot),
+            aiGradingReference: manualGrade ? captureGradingReference(gradingQuestion, gradingSnapshot) : undefined
           };
         }
         return a;

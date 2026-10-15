@@ -1,7 +1,8 @@
 import katex from 'katex';
 import type { Assignment, Submission, StudentAnswer } from '../types';
 import { isEssayQuestion, sanitizeMathString } from '../utils/questionUtils';
-import { getStudentQuestion, getCorrectOptionLabel, getMultipleChoiceSelectionIssue, getSubmissionSummary, isSubmissionAnswerPending, isSubmissionAnswerBlank, getSubmissionSourceIssue } from '../utils/submissionReviewUtils';
+import { getCorrectOptionLabel, getMultipleChoiceSelectionIssue, getSubmissionSummary, isSubmissionAnswerPending, isSubmissionAnswerBlank } from '../utils/submissionReviewUtils';
+import { getSavedReportQuestion, getSavedGradingReference, getSubmissionReportSourceIssue } from '../utils/submissionReportUtils';
 
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 const number = (value: number) => Number.isFinite(value) ? String(Math.round(value * 10000) / 10000).replace('.', ',') : '—';
@@ -56,7 +57,7 @@ export function buildSubmissionPrintHtml(assignment: Assignment, submission: Sub
   options: { stylesheetUrls?: string[]; inlineCss?: string; includeReferenceSolution?: boolean } = {}): string {
   if (assignment.id !== submission.assignmentId) throw Error('Phiếu không thuộc bài giao đang chọn.');
   const summary = getSubmissionSummary(assignment, submission);
-  const sourceIssue = getSubmissionSourceIssue(assignment, submission);
+  const sourceIssue = getSubmissionReportSourceIssue(assignment, submission);
   const pending = summary.pendingCount > 0 || submission.isProvisional || submission.needsTeacherReview
     || submission.gradingStatus !== 'graded' || Boolean(sourceIssue);
   const scoreMismatch = Math.abs(summary.totalScore - submission.totalScore) > .0001;
@@ -67,11 +68,12 @@ export function buildSubmissionPrintHtml(assignment: Assignment, submission: Sub
     printedPhotos.set(src, title); return photo(src, title);
   };
   const answers = [...submission.answers].sort((a, b) => {
-    const qa = getStudentQuestion(assignment, submission, a.questionId), qb = getStudentQuestion(assignment, submission, b.questionId);
+    const qa = getSavedReportQuestion(assignment, submission, a.questionId), qb = getSavedReportQuestion(assignment, submission, b.questionId);
     return Number(isEssayQuestion(qa)) - Number(isEssayQuestion(qb)) || (qa?.order || 0) - (qb?.order || 0);
   });
   const sections = answers.map((answer, index) => {
-    const question = getStudentQuestion(assignment, submission, answer.questionId);
+    const question = getSavedReportQuestion(assignment, submission, answer.questionId);
+    const gradingReference = getSavedGradingReference(submission, answer);
     const essay = question && isEssayQuestion(question);
     const waiting = isSubmissionAnswerPending(assignment, submission, answer);
     const blank = isSubmissionAnswerBlank(submission, answer, question);
@@ -102,17 +104,20 @@ export function buildSubmissionPrintHtml(assignment: Assignment, submission: Sub
       ${question?.imageUrl ? reportPhoto(question.imageUrl, 'Hình trong đề học sinh') : ''}
       ${issue ? `<p class="ms-warning">${escape(issue)} Điểm trên phiếu là điểm đã lưu, chưa tự tính lại.</p>` : ''}
       <div class="ms-work"><b>Bài làm học sinh:</b><div>${blank ? 'Chưa có lời giải hoặc ảnh bài làm cho câu này.' : renderSavedPrintText(work)}</div></div>
-      ${!essay ? `<p><b>Đáp án nguồn theo đề học sinh:</b> ${escape(key || 'Chưa có')}${correctText ? ' - ' + renderSavedPrintText(correctText) : ''}</p>` : ''}
+      ${!essay ? `<p><b>Đáp án theo kết quả đã lưu:</b> ${escape(key || 'Chưa có')}${correctText ? ' - ' + renderSavedPrintText(correctText) : ''}</p>` : ''}
       ${(answer.essayImages || []).map((src, i) => reportPhoto(src, `Ảnh bài làm câu ${question?.order || index + 1}, ảnh ${i + 1}`)).join('')}
       ${stepCards ? `<h3>Phân tích từng bước đã lưu</h3>${stepCards}` : essay && !blank ? '<p class="ms-muted">Chưa có phân tích từng bước đã lưu. Xuất phiếu không chạy chấm lại.</p>' : ''}
       ${answer.firstErrorExplanation || response?.firstErrorExplanation ? `<p class="ms-warning"><b>Lỗi đầu tiên:</b> ${renderSavedPrintText(answer.firstErrorExplanation || response?.firstErrorExplanation || '')}</p>` : ''}
       ${rows ? `<h3>Điểm theo từng tiêu chí</h3><table><thead><tr><th>Tiêu chí</th><th>Điểm</th><th>Căn cứ</th></tr></thead><tbody>${rows}</tbody></table>` : ''}
       ${answer.aiFeedback || response?.feedback ? `<p><b>Nhận xét AI đã lưu:</b> ${renderSavedPrintText(answer.aiFeedback || response?.feedback)}</p>` : ''}
       ${answer.teacherReviewed ? `<p><b>Giáo viên đã duyệt:</b> ${number(answer.teacherScore ?? answer.pointsEarned)}/${number(answer.maxPoints)} điểm${answer.teacherFeedback ? ' - ' + renderSavedPrintText(answer.teacherFeedback) : ''}</p>` : ''}
-      ${essay && options.includeReferenceSolution && (source?.explanation || reference) ? `<div class="ms-reference"><h3>Lời giải đối chiếu</h3>${source?.explanation
-        ? renderSavedPrintText(source.explanation)
+      ${gradingReference?.imageUrl && gradingReference.imageUrl !== question?.imageUrl ? reportPhoto(gradingReference.imageUrl, 'Hình nguồn đã lưu cùng phân tích chấm') : ''}
+      ${essay && options.includeReferenceSolution && (gradingReference?.explanation || reference) ? `<div class="ms-reference"><h3>Lời giải đối chiếu</h3>${gradingReference?.explanation
+        ? renderSavedPrintText(gradingReference.explanation)
         : (reference?.steps || []).map(step => `<p>${stepMath(step.solutionLatex)}</p>`).join('')}</div>` : ''}
-      ${essay && source?.rubric ? `<p><b>Barem nguồn:</b> ${renderSavedPrintText(source.rubric)}</p>` : ''}
+      ${essay && gradingReference?.rubric ? `<p><b>${answer.gradingReference ? 'Barem đã lưu cùng kết quả chấm' : 'Barem trong bản đề đã lưu'}:</b> ${renderSavedPrintText(gradingReference.rubric)}</p>` : ''}
+      ${essay && answer.aiGradingReference ? `<p class="ms-warning"><b>Căn cứ của phân tích AI mới:</b> Điểm giáo viên đã duyệt được giữ nguyên. ${renderSavedPrintText(answer.aiGradingReference.rubric || answer.aiGradingReference.explanation)}</p>` : ''}
+      ${answer.aiGradingReference?.imageUrl && answer.aiGradingReference.imageUrl !== gradingReference?.imageUrl ? reportPhoto(answer.aiGradingReference.imageUrl, 'Hình dùng cho phân tích AI mới, điểm giáo viên được giữ nguyên') : ''}
     </section>`;
   }).join('');
   const sheets = (options.stylesheetUrls || []).filter(url => /^https?:\/\//.test(url)).map(url => `<link rel="stylesheet" href="${escape(url)}">`).join('');

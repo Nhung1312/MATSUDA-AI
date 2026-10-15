@@ -7,6 +7,10 @@ on:
       - 'src/services/submissionPrintService.ts'
       - 'src/services/submissionExportService.ts'
       - 'src/utils/submissionReviewUtils.ts'
+      - 'src/utils/submissionReportUtils.ts'
+      - 'src/utils/batchGradingUtils.ts'
+      - 'src/components/BatchGradingModal.tsx'
+      - 'src/types/index.ts'
       - 'src/utils/questionUtils.ts'
       - 'src/components/SubmissionPrintModal.tsx'
       - 'src/components/ExamResultSheetView.tsx'
@@ -14,6 +18,8 @@ on:
       - 'src/pages/student/StudentResultPage.tsx'
       - 'scripts/check-submission-review.ts'
       - 'scripts/check-submission-print.ts'
+      - 'scripts/check-saved-report-source.ts'
+      - 'scripts/check-batch-grading-filters.ts'
       - 'scripts/check-review-save.ts'
       - 'scripts/check-media-import-review.ts'
       - 'src/utils/mediaImportGuard.ts'
@@ -40,6 +46,8 @@ jobs:
       - run: npm run check:media-import
       - run: npm run check:submission-review
       - run: npm run check:submission-print
+      - run: npm run check:saved-report-source
+      - run: npm run check:batch-grading-filters
       - run: npm run check:exam-workflow
       - run: npm run check:ai-efficiency
       - run: npm run check:submission-limits
