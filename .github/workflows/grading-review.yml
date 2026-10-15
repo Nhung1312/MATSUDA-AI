@@ -6,6 +6,14 @@ on:
       - 'src/services/gradingService.ts'
       - 'src/services/verificationOptimizer.ts'
       - 'src/utils/verificationUtils.ts'
+      - 'src/utils/pdfAnswerSection.ts'
+      - 'src/utils/reconcileGeminiPdf.ts'
+      - 'src/services/aiService.ts'
+      - 'src/services/fileParserService.ts'
+      - 'scripts/check-pdf-reconciliation.ts'
+      - 'scripts/test-gemini-pdf-import.mjs'
+      - 'scripts/test-gemini-pdf-reconcile.mjs'
+      - 'scripts/test-pdf-answer-sections.ts'
       - 'src/components/AiSolveExamModal.tsx'
       - 'src/components/AiBatchSolveModal.tsx'
       - 'scripts/check-verification-review.ts'
@@ -60,6 +68,7 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm run check:media-import
+      - run: npm run check:pdf-reconciliation
       - run: npm run check:submission-review
       - run: npm run check:submission-print
       - run: npm run check:batch-print

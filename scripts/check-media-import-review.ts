@@ -70,7 +70,7 @@ assert.throws(() => normalizeMediaExamQuestions(duplicate), ExamImportError,
   'Duplicate order must be rejected');
 
 const modal = readFileSync('src/components/FileUploadModal.tsx', 'utf8');
-assert.match(modal, /auditNewMediaQuestions\(result\.questions\)/);
+assert.match(modal, /auditNewMediaQuestions\(result\.questions, result\)/);
 assert.match(modal, /const blockingIssues = aiPdfIssues\.filter/);
 assert.match(modal, /Barem nguồn:/);
 assert.match(modal, /Đáp án gốc:/);

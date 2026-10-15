@@ -1,6 +1,7 @@
 import type { Question } from '../types';
 import { formatQuestionSubItems } from './questionUtils';
 import { resolveGeminiEssayReference } from './mediaImportGuard';
+import { reconcileExtraGeminiPdfSolutions, type PdfQuestionReference } from './reconcileGeminiPdf';
 
 export class ExamImportError extends Error {
   name = 'ExamImportError';
@@ -15,7 +16,7 @@ export function separateQuestionAndSolution(text: string): { question: string; s
 }
 
 /** Validate one AI response locally; no second extraction/API call. */
-export function normalizeMediaExamQuestions(payload: any): Question[] {
+export function normalizeMediaExamQuestions(payload: any, pdfReference?: PdfQuestionReference): Question[] {
   const entries: any[] = Array.isArray(payload) ? payload
     : Array.isArray(payload?.questions) ? payload.questions
     : Array.isArray(payload?.data) ? payload.data : [];
@@ -33,7 +34,7 @@ export function normalizeMediaExamQuestions(payload: any): Question[] {
     throw new ExamImportError('AI trả về số thứ tự câu hỏi bị trùng, có thể đã đọc phần đáp án thành đề. Hãy kiểm tra lại tài liệu trước khi nhập.');
   }
 
-  const questions: Question[] = sourceQuestions.map((q, idx): Question => {
+  let questions: Question[] = sourceQuestions.map((q, idx): Question => {
     const order = orders[idx];
     const split = separateQuestionAndSolution(String(q.question || ''));
     if (!split.question) {
@@ -87,8 +88,14 @@ export function normalizeMediaExamQuestions(payload: any): Question[] {
     };
   }).sort((a, b) => a.order - b.order);
 
+  const reconciliation = pdfReference ? reconcileExtraGeminiPdfSolutions(questions, pdfReference) : null;
+  if (reconciliation?.recoveredCount) questions = reconciliation.questions;
+  const effectiveOrders = questions.map(question => question.order);
+  const counts = reconciliation?.recoveredCount ? { questionCount: pdfReference!.totalFound,
+    multipleChoiceCount: pdfReference!.multipleChoiceCount, essayCount: pdfReference!.essayCount } : payload?.sourceCounts;
+
   // An unlinked source answer is evidence of an extraction mismatch, not a new question.
-  if (sourceAnswers.some(a => !a || !orders.includes(Number(a.questionOrder ?? a.order)))) {
+  if (sourceAnswers.some(a => !a || !effectiveOrders.includes(Number(a.questionOrder ?? a.order)))) {
     throw new ExamImportError('Có đáp án/lời giải chưa ghép được với câu hỏi gốc. Hệ thống đã dừng nhập để tránh sai số câu.');
   }
   for (const [key, count] of [
@@ -96,7 +103,7 @@ export function normalizeMediaExamQuestions(payload: any): Question[] {
     ['multipleChoiceCount', questions.filter(q => q.type === 'multiple_choice').length],
     ['essayCount', questions.filter(q => q.type === 'essay').length]
   ] as const) {
-    if (payload?.sourceCounts?.[key] !== undefined && Number(payload.sourceCounts[key]) !== count) {
+    if (counts?.[key] !== undefined && Number(counts[key]) !== count) {
       throw new ExamImportError(`AI tách được ${questions.length} câu nhưng số câu trong đề nguồn không khớp. Hãy kiểm tra lại phần đề và đáp án trước khi nhập.`);
     }
   }

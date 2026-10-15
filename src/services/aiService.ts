@@ -13,6 +13,7 @@ import { GoogleGenAI } from '@google/genai';
 import { Question, QuestionAnalysis, Submission, EssayGradingResult } from '../types';
 import { isEssayQuestion, formatQuestionSubItems, sanitizeMathString, getEssayGradingReference } from '../utils/questionUtils';
 import { normalizeMediaExamQuestions } from '../utils/examImportUtils';
+import type { PdfQuestionReference } from '../utils/reconcileGeminiPdf';
 import { verifyWithReuse, VerificationParams } from './verificationOptimizer';
 import { isAIQuotaError } from '../utils/aiResultCache';
 
@@ -57,6 +58,7 @@ export interface MediaInput {
 }
 
 export interface ExtractQuestionsFromMediaParams {
+  pdfReference?: PdfQuestionReference; // Local text evidence, never sent as an extra AI request.
   media: MediaInput[];
   fileName?: string;
   grade?: string;
@@ -65,6 +67,9 @@ export interface ExtractQuestionsFromMediaParams {
 }
 
 export interface MediaExtractResult {
+  expectedQuestionCount?: number;
+  declaredTotalPoints?: number;
+  pdfRecoveryNote?: string;
   examTitle?: string;
   grade?: string;
   questions: Question[];
@@ -2191,12 +2196,19 @@ Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ theo định dạng sa
       }
     }
 
-    const questions = normalizeMediaExamQuestions(parsedJson);
+    const questions = normalizeMediaExamQuestions(parsedJson, isPdf ? params.pdfReference : undefined);
+    const entries = Array.isArray(parsedJson) ? parsedJson : parsedJson?.questions || parsedJson?.data || [];
+    const recoveredCount = entries.filter((q: any) => q && !['answer', 'solution'].includes(q.sourceRole)).length - questions.length;
+    const declaredCount = Number(parsedJson?.sourceCounts?.questionCount ?? parsedJson?.expectedQuestionCount);
+    const declaredPoints = Number(parsedJson?.declaredTotalPoints);
 
     return {
       examTitle: parsedJson?.examTitle || fileName || 'Đề thi trích xuất từ AI',
       grade: parsedJson?.grade || grade || '8',
       questions,
+      expectedQuestionCount: recoveredCount > 0 ? questions.length : Number.isInteger(declaredCount) && declaredCount > 0 ? declaredCount : undefined,
+      declaredTotalPoints: Number.isFinite(declaredPoints) && declaredPoints > 0 ? declaredPoints : undefined,
+      pdfRecoveryNote: recoveredCount > 0 ? `Đã đối chiếu PDF gốc và ghép ${recoveredCount} mục lời giải trùng về các bài tự luận. Giáo viên cần duyệt lại.` : undefined,
       rawSummary: `Đã bóc tách thành công ${questions.length} câu hỏi (${questions.filter(q => q.type === 'multiple_choice').length} trắc nghiệm, ${questions.filter(q => q.type === 'essay').length} tự luận) từ mô hình ${modelUsed}.`
     };
   }

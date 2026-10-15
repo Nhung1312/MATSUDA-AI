@@ -4,6 +4,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { Question, QuestionOption, QuestionType } from '../types';
 import { formatQuestionSubItems } from '../utils/questionUtils';
 import { separateQuestionAndSolution } from '../utils/examImportUtils';
+import { separatePdfAnswerSections } from '../utils/pdfAnswerSection';
 
 // Set up pdfjs worker
 try {
@@ -605,8 +606,11 @@ export class FileParserService {
       return { fileName, fileType, totalFound: 0, multipleChoiceCount: 0, essayCount: 0, items: [] };
     }
 
-    const { questionText: processedText, answerText } = this.splitExamAndAnswers(rawText);
-    const globalAnswerMap = this.extractAnswerKeyMap(answerText);
+    const pdfParts = fileType === 'pdf' ? separatePdfAnswerSections(rawText) : null;
+    // Flat PDF text can lose the newline before a global answer heading. Require a section heading too.
+    const pdfAnswerSection = pdfParts?.answerText && /^\s*PHẦN\s*(?:I{1,2}|[12AB])\s*[.:-]?\s*(?:TRẮC\s*NGHIỆM|TỰ\s*LUẬN)/i.test(pdfParts.answerText);
+    const { questionText: processedText, answerText } = pdfAnswerSection ? pdfParts! : this.splitExamAndAnswers(rawText);
+    const globalAnswerMap = this.extractAnswerKeyMap(pdfAnswerSection ? `Đáp án\n${pdfParts!.multipleChoiceAnswers}` : answerText);
     const warnings: string[] = [];
     if (!processedText.trim()) {
       return { fileName, fileType, totalFound: 0, multipleChoiceCount: 0, essayCount: 0, items: [], warnings: ['Tài liệu chỉ có đáp án/hướng dẫn chấm; cần bổ sung đề bài gốc.'] };
@@ -688,6 +692,7 @@ export class FileParserService {
         const content = solution.solution || body;
         if (item.category === 'tu_luan') {
           item.explanation = [item.explanation, content].filter(Boolean).join('\n\n');
+          if (fileType === 'pdf' && !item.correctAnswer?.trim()) item.correctAnswer = content;
           if (/điểm|barem|rubric|(?:0[.,]\d+)\s*đ/i.test(content)) item.rubric = content;
         } else {
           const answerLetter = body.match(/^(?:Đáp\s*án\s*[:：]?\s*)?([A-D])(?:[.\s]|$)/i);

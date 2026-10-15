@@ -203,9 +203,14 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
 
     try {
       const base64Data = await fileToBase64(file);
-      setAiProgressStatus('Đang gửi file sang Gemini 3.8 Flash để nhận diện câu hỏi & công thức...');
+      setAiProgressStatus('Đang kiểm tra cấu trúc PDF để đối chiếu số câu...');
 
+      let pdfReference: ParseResult | undefined;
+      try { pdfReference = await FileParserService.parsePdfFile(file); }
+      catch (error) { console.warn('Chưa đọc được văn bản PDF để đối chiếu:', error); }
+      setAiProgressStatus('Đang gửi file sang Gemini 3.8 Flash để nhận diện câu hỏi & công thức...');
       const result = await aiService.extractQuestionsFromMedia({
+        pdfReference,
         media: [
           {
             base64Data,
@@ -233,16 +238,24 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         selected: true
       }));
 
-      setAiPdfIssues(auditNewMediaQuestions(result.questions));
+      const issues = auditNewMediaQuestions(result.questions, result);
+      if (pdfReference?.items.some(item => item.category === 'tu_luan' && item.explanation?.trim())
+        && result.questions.length > pdfReference.totalFound) {
+        issues.push({ order: 0, level: 'error', message: `AI trả ${result.questions.length} mục nhưng phần đề PDF có ${pdfReference.totalFound} câu. Chưa đủ căn cứ ghép lời giải; cần đối chiếu nguồn trước khi nhập.` });
+      }
+      if (result.pdfRecoveryNote) issues.push({ order: 0, level: 'warning', message: result.pdfRecoveryNote });
 
-      setParseResult(FileParserService.normalizeParseResult({
+      const normalized = FileParserService.normalizeParseResult({
         fileName: file.name,
         fileType: 'pdf',
         totalFound: parsedItems.length,
         multipleChoiceCount: parsedItems.filter(i => i.category === 'trac_nghiem').length,
         essayCount: parsedItems.filter(i => i.category === 'tu_luan').length,
         items: parsedItems
-      }));
+      });
+      if (normalized.totalFound < parsedItems.length) issues.push({ order: 0, level: 'error', message: 'Có mục AI trích xuất bị rỗng. Cần kiểm tra PDF gốc trước khi nhập.' });
+      setAiPdfIssues(issues);
+      setParseResult(normalized);
     } catch (err: any) {
       console.error('PDF AI Extraction Error:', err);
       setErrorMsg(toFriendlyAiError(err, 'Không thể tách đề PDF bằng AI lúc này. Hãy thử lại.'));
@@ -1111,7 +1124,9 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                 )}
                 <div>
                   <div className="font-black">
-                    {reviewCount > 0
+                    {aiPdfIssues.some(issue => issue.level === 'error')
+                      ? 'Có lỗi PDF cần kiểm tra trước khi nhập câu hỏi'
+                      : reviewCount > 0
                       ? `Có ${reviewCount} câu trắc nghiệm cần kiểm tra trước khi giao bài`
                       : aiPdfIssues.length > 0
                         ? `Có ${aiPdfIssues.length} cảnh báo PDF cần giáo viên đối chiếu`
