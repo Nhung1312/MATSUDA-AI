@@ -25,7 +25,8 @@
     "test:strikeout": "tsx scripts/test-strikeout-grading.ts",
     "test:points": "node scripts/test-point-distribution.mjs",
     "check:submission-deletion": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submission-deletion.ts",
-    "check:media-import": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-media-import-review.ts"
+    "check:media-import": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-media-import-review.ts",
+    "check:verification-review": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-verification-review.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

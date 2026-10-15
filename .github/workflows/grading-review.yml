@@ -4,6 +4,11 @@ on:
     branches: [main]
     paths:
       - 'src/services/gradingService.ts'
+      - 'src/services/verificationOptimizer.ts'
+      - 'src/utils/verificationUtils.ts'
+      - 'src/components/AiSolveExamModal.tsx'
+      - 'src/components/AiBatchSolveModal.tsx'
+      - 'scripts/check-verification-review.ts'
       - 'src/services/submissionPrintService.ts'
       - 'src/services/submissionExportService.ts'
       - 'src/utils/submissionReviewUtils.ts'
@@ -64,6 +69,7 @@ jobs:
       - run: npm run check:grading-concurrency-stats
       - run: npm run check:exam-workflow
       - run: npm run check:ai-efficiency
+      - run: npm run check:verification-review
       - run: npm run check:submission-limits
       - run: npm run check:batch-export
       - run: npm run check:submission-deletion

@@ -3,6 +3,7 @@ import type { Question } from '../types';
 import type { QuestionVerificationResult } from './aiService';
 import { isEssayQuestion, getEssayGradingReference } from '../utils/questionUtils';
 import { fingerprintAIInput, readAIResult, writeAIResult, loadAIImage, isAIQuotaError } from '../utils/aiResultCache';
+import { hasVerificationReference } from '../utils/verificationUtils';
 
 export interface VerificationParams {
   questions: Question[];
@@ -82,9 +83,9 @@ export async function verifyWithReuse(params: VerificationParams, apiKey: string
       else pending.push(q);
     }
     if (!pending.length) return questions.map(q => output.get(q.id)!);
-    if (!apiKey) throw new Error('Chưa cấu hình Gemini API Key. Kết quả chưa có cần AI để thẩm định.');
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
     const callAI = async (parts: any[]): Promise<any[]> => {
+      if (!ai) throw new Error('Chưa cấu hình Gemini API Key. Kết quả chưa có cần AI để thẩm định.');
       try {
         const response = await ai.models.generateContent({ model: MODEL, contents: parts, config: { responseMimeType: 'application/json', temperature: 0.1 } });
         return parseList(response.text || '');
@@ -104,6 +105,10 @@ export async function verifyWithReuse(params: VerificationParams, apiKey: string
       const images = new Map<string, { mimeType: string; data: string }>();
       const valid: Question[] = [];
       for (const q of batch) {
+        if (!hasVerificationReference(q)) {
+          finish(q, resultFor(q, 'Chưa có đáp án/lời giải/barem để đối chiếu. Giáo viên cần bổ sung trước khi thẩm định.'));
+          continue;
+        }
         const text = [q.question, ...(q.options || []).map(o => o.text)].join(' ');
         if (!q.question?.trim()) { finish(q, resultFor(q, 'Câu hỏi chưa có nội dung đề.')); continue; }
         if (!isEssayQuestion(q) && q.type === 'multiple_choice' && (!q.options || q.options.length < 2 || q.options.some(o => !o.text?.trim() || /^(phương án|đáp án|lựa chọn|option)\s*[a-d]$/i.test(o.text.trim())) || new Set(q.options.map(o => o.id)).size !== q.options.length)) {
