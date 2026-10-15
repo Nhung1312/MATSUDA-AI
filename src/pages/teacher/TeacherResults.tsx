@@ -14,6 +14,7 @@ import { captureGradingReference } from '../../utils/submissionReportUtils';
 import { StepGradingBreakdown } from '../../components/StepGradingBreakdown';
 import { PrintExamModal } from '../../components/PrintExamModal';
 import { SubmissionPrintModal } from '../../components/SubmissionPrintModal';
+import { createBatchPrintSnapshot } from '../../services/submissionPrintService';
 import { ImageLightboxModal } from '../../components/ImageLightboxModal';
 import { ClassCompetencyMatrix } from '../../components/ClassCompetencyMatrix';
 import { GenerateSimilarExamModal } from '../../components/GenerateSimilarExamModal';
@@ -89,6 +90,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   const [selectedSubmissionDetail, setSelectedSubmissionDetail] = useState<Submission | null>(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [submissionPrintData, setSubmissionPrintData] = useState<{ assignment: Assignment; submission: Submission } | null>(null);
+  const [batchPrintData, setBatchPrintData] = useState<{ assignment: Assignment; submissions: Submission[] } | null>(null);
   const [showSimilarExamModal, setShowSimilarExamModal] = useState(false);
 
   // AI Weakness Analysis state
@@ -362,7 +364,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   };
 
   // On-demand AI Essay Grading for a single question (Step-by-step)
-  const handleAiGradeSingleQuestion = async (ans: StudentAnswer, question: any) => {
+  const handleAiGradeSingleQuestion = async (ans: StudentAnswer, question: any, forceRegrade = false) => {
     if (!selectedSubmissionDetail || !currentAssignment || reviewOperationLock.current) return;
     const sourceIssue = getSubmissionSourceIssue(currentAssignment, selectedSubmissionDetail);
     if (sourceIssue) { setActionNotice({ type: 'warning', text: sourceIssue }); return; }
@@ -394,10 +396,18 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
         ...reference,
         studentSolutionText: studentText,
         essayImages: studentImages
-      }, { force: true });
+      }, { force: forceRegrade, previousResult: ans.stepGradingResponse });
 
       if (!stepRes.success || stepRes.analysisSource !== 'ai' || !stepRes.analysis?.length) {
         setActionNotice({ type: 'warning', text: stepRes.feedback || 'AI chưa đủ dữ liệu để chấm. Điểm đã lưu được giữ; giáo viên có thể duyệt trực tiếp.' });
+        return;
+      }
+      if (stepRes.reusedResult && ans.stepGradingResponse?.requestFingerprint
+        && ans.stepGradingResponse.requestFingerprint === stepRes.requestFingerprint) {
+        setExpandedStepAnalysis(prev => ({ ...prev, [ans.questionId]: true }));
+        setActionNotice({ type: stepRes.needsTeacherReview ? 'warning' : 'success',
+          text: 'Đã mở kết quả AI đã lưu, không phát sinh lượt gọi AI mới.' +
+            (stepRes.needsTeacherReview ? ' Câu này vẫn cần giáo viên duyệt.' : '') });
         return;
       }
       scoreVal = stepRes.score;
@@ -498,7 +508,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       await persistReviewSubmission(updatedSubmission);
       setActionNotice({
         type: needsReviewVal ? 'warning' : 'success',
-        text: needsReviewVal
+        text: stepRes.reusedResult
+          ? 'Đã dùng lại kết quả AI cho cùng dữ liệu, không phát sinh lượt gọi AI mới.' + (needsReviewVal ? ' Câu này cần giáo viên duyệt.' : '')
+          : needsReviewVal
           ? 'AI đã phân tích. Câu này cần giáo viên duyệt trước khi thành điểm chính thức.'
           : `AI đã chấm câu này: ${scoreVal}/${question.points} điểm.`
       });
@@ -791,6 +803,16 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     } finally {
       batchArchiveLock.current = false;
       setExportingBatchArchive(false);
+    }
+  };
+
+  const handleBatchPrint = () => {
+    if (!currentAssignment || reviewBusy || exportingBatchArchive || sortedSubmissions.length === 0) return;
+    try {
+      setBatchPrintData(createBatchPrintSnapshot(currentAssignment, sortedSubmissions));
+    } catch (error) {
+      setBatchArchiveNotice({ assignmentId: currentAssignment.id, warning: true,
+        text: error instanceof Error ? error.message : 'Chưa mở được phiếu PDF hàng loạt.' });
     }
   };
 
@@ -1776,6 +1798,12 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                   ? 'Đang xuất ' + batchArchiveProgress.done + '/' + batchArchiveProgress.total
                   : 'Xuất ZIP hàng loạt (' + sortedSubmissions.length + ')'}</span>
               </button>
+              <button type="button" onClick={handleBatchPrint}
+                disabled={reviewBusy || exportingBatchArchive || sortedSubmissions.length === 0}
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-800 disabled:opacity-50"
+                title="In hoặc lưu một PDF tổng theo danh sách đang lọc, mỗi lượt nộp bắt đầu trang mới">
+                <Printer className="h-4 w-4" /> PDF / In hàng loạt ({sortedSubmissions.length})
+              </button>
             </div>
             {deletionNotice?.assignmentId === currentAssignment.id && (
               <div role="status" className={'rounded-xl border px-3 py-2 text-xs font-medium ' +
@@ -2518,6 +2546,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                             <Edit3 className="w-3.5 h-3.5 text-indigo-600" />
                             <span>Giáo viên chấm điểm & Nhận xét:</span>
                           </span>
+                          <div className="flex flex-wrap gap-1.5">
                           <button
                             onClick={() => handleAiGradeSingleQuestion(ans, question)}
                             disabled={reviewBusy}
@@ -2526,6 +2555,11 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                             <Sparkles className={`w-3 h-3 ${isLoadingAI ? 'animate-spin' : ''}`} />
                             <span>{isLoadingAI ? 'AI đang chấm...' : '✨ Chấm bằng AI (Từng bước)'}</span>
                           </button>
+                          {ans.stepGradingResponse?.analysisSource === 'ai' && <button type="button"
+                            onClick={() => handleAiGradeSingleQuestion(ans, question, true)} disabled={reviewBusy}
+                            title="Yêu cầu AI phân tích lại, có phát sinh lượt gọi AI mới"
+                            className="px-2 py-1 text-indigo-700 underline text-[11px] disabled:opacity-50">Gọi AI chấm mới</button>}
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center">
@@ -2673,6 +2707,8 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       {/* Modal: Print Exam Paper */}
       {submissionPrintData && <SubmissionPrintModal assignment={submissionPrintData.assignment} submission={submissionPrintData.submission}
         onClose={() => setSubmissionPrintData(null)} />}
+      {batchPrintData && <SubmissionPrintModal assignment={batchPrintData.assignment} submissions={batchPrintData.submissions}
+        onClose={() => setBatchPrintData(null)} />}
       {showPrintModal && (
         <PrintExamModal
           isOpen={showPrintModal}

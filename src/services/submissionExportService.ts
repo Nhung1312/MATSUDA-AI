@@ -5,6 +5,9 @@ import { getSavedReportQuestion, getSavedGradingReference, getSubmissionReportSo
 
 type Entry = { path: string; bytes: Uint8Array };
 type Attachment = { source: string; path: string | null; error?: string };
+type AttachmentData = { bytes: Uint8Array; extension: string };
+// Per export run only: source URLs can expire or change between runs.
+type AttachmentMemo = Map<string, Promise<AttachmentData>>;
 const encoder = new TextEncoder();
 const crcTable = Uint32Array.from({ length: 256 }, (_, value) => {
   let crc = value;
@@ -46,7 +49,7 @@ function zip(entries: Entry[]): Uint8Array {
   return output;
 }
 
-async function readAttachment(source: string): Promise<{ bytes: Uint8Array; extension: string }> {
+async function readAttachment(source: string): Promise<AttachmentData> {
   let bytes: Uint8Array, mime: string;
   const inline = source.match(/^data:([^;,]+);base64,([\s\S]+)$/);
   if (inline) {
@@ -71,7 +74,7 @@ async function readAttachment(source: string): Promise<{ bytes: Uint8Array; exte
 }
 
 export async function buildSubmissionExport(assignment: Assignment, submission: Submission,
-  onProgress?: (done: number, total: number) => void) {
+  onProgress?: (done: number, total: number) => void, attachmentMemo: AttachmentMemo = new Map()) {
   if (submission.assignmentId !== assignment.id) throw new Error('Bài nộp không thuộc đề đang chọn.');
   // Capture saved state before any asynchronous work; never write grades or call AI.
   const source: Assignment = JSON.parse(JSON.stringify(assignment));
@@ -91,7 +94,11 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
   for (let offset = 0; offset < sources.length; offset += 3) {
     const batch = sources.slice(offset, offset + 3);
     const results = await Promise.allSettled(batch.map(async url => {
-      try { return await readAttachment(url); }
+      try {
+        let pending = attachmentMemo.get(url);
+        if (!pending) { pending = readAttachment(url); attachmentMemo.set(url, pending); }
+        return await pending;
+      }
       finally { onProgress?.(++done, sources.length); }
     }));
     results.forEach((result, idx) => {
@@ -220,12 +227,13 @@ export async function buildBatchSubmissionExport(
   const entries: Entry[] = [];
   const manifest: Array<Record<string, unknown>> = [];
   const counts = new Map<string, number>();
+  const attachmentMemo: AttachmentMemo = new Map();
   let bytesTotal = 0, missingAttachments = 0;
   for (let i = 0; i < submissions.length; i++) {
     const item = submissions[i];
     const audit = getSubmissionSummary(assignment, item);
     const sourceReviewIssue = getSubmissionReportSourceIssue(assignment, item);
-    const result = await buildSubmissionExport(assignment, item);
+    const result = await buildSubmissionExport(assignment, item, undefined, attachmentMemo);
     bytesTotal += result.bytes.byteLength;
     if (bytesTotal > MAX_BATCH_EXPORT_BYTES) {
       throw new Error('Bộ ảnh/bài làm vượt giới hạn 120 MB cho một lần xuất. Hãy lọc và xuất ít bài hơn.');

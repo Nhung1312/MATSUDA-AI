@@ -18,6 +18,7 @@ on:
       - 'src/pages/student/StudentResultPage.tsx'
       - 'scripts/check-submission-review.ts'
       - 'scripts/check-submission-print.ts'
+      - 'scripts/check-batch-print.ts'
       - 'scripts/check-saved-report-source.ts'
       - 'scripts/check-batch-grading-filters.ts'
       - 'scripts/check-review-save.ts'
@@ -46,6 +47,7 @@ jobs:
       - run: npm run check:media-import
       - run: npm run check:submission-review
       - run: npm run check:submission-print
+      - run: npm run check:batch-print
       - run: npm run check:saved-report-source
       - run: npm run check:batch-grading-filters
       - run: npm run check:exam-workflow
