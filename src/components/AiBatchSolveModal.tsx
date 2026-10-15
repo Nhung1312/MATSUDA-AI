@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Assignment, Question } from '../types';
 import { aiService } from '../services/aiService';
+import { verificationFingerprint } from '../services/verificationOptimizer';
 import { StorageService } from '../services/storageService';
 import { FirestoreService } from '../services/firestoreService';
 import { soundEffects } from '../utils/soundEffects';
 import { isEssayQuestion } from '../utils/questionUtils';
+import { hasVerificationReference } from '../utils/verificationUtils';
 import confetti from 'canvas-confetti';
 import { 
   Sparkles, 
@@ -126,7 +128,9 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
       const questions = asg.questions || [];
 
       // Không chạy lại câu đã xác minh từ trước (Requirement F)
-      const questionsToVerify = questions.filter(q => q.verificationStatus !== 'verified' || q.needsReview === true);
+      const needsCheck = await Promise.all(questions.map(async q => !hasVerificationReference(q) || q.verificationStatus !== 'verified' || q.needsReview === true
+        || (!!q.verificationFingerprint && q.verificationFingerprint !== await verificationFingerprint(q, asg.grade, asg.topic))));
+      const questionsToVerify = questions.filter((_, idx) => needsCheck[idx]);
 
       // Nếu tất cả các câu đã được thẩm định đạt chuẩn từ trước
       if (questionsToVerify.length === 0 && questions.length > 0) {
@@ -179,7 +183,9 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
               pass2Answer: found.pass2Answer,
               sanityCheckNote: found.sanityCheckNote,
               aiProposedAnswer: found.proposedAnswer,
-              aiReason: found.reason
+              aiReason: found.reason,
+              verificationFingerprint: found.inputFingerprint,
+              teacherVerified: false
             };
           }
 

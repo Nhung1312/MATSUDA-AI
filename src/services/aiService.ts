@@ -11,8 +11,11 @@
 
 import { GoogleGenAI } from '@google/genai';
 import { Question, QuestionAnalysis, Submission, EssayGradingResult } from '../types';
-import { isEssayQuestion, formatQuestionSubItems, sanitizeMathString } from '../utils/questionUtils';
-import { resolveGeminiEssayReference } from '../utils/mediaImportGuard';
+import { isEssayQuestion, formatQuestionSubItems, sanitizeMathString, getEssayGradingReference } from '../utils/questionUtils';
+import { normalizeMediaExamQuestions } from '../utils/examImportUtils';
+import type { PdfQuestionReference } from '../utils/reconcileGeminiPdf';
+import { verifyWithReuse, VerificationParams } from './verificationOptimizer';
+import { isAIQuotaError } from '../utils/aiResultCache';
 
 export interface GenerateQuestionsParams {
   grade: '6' | '7' | '8' | '9';
@@ -55,6 +58,7 @@ export interface MediaInput {
 }
 
 export interface ExtractQuestionsFromMediaParams {
+  pdfReference?: PdfQuestionReference; // Local text evidence, never sent as an extra AI request.
   media: MediaInput[];
   fileName?: string;
   grade?: string;
@@ -63,12 +67,13 @@ export interface ExtractQuestionsFromMediaParams {
 }
 
 export interface MediaExtractResult {
+  expectedQuestionCount?: number;
+  declaredTotalPoints?: number;
+  pdfRecoveryNote?: string;
   examTitle?: string;
   grade?: string;
   questions: Question[];
   rawSummary?: string;
-  expectedQuestionCount?: number;
-  declaredTotalPoints?: number;
 }
 
 export interface TestConnectionResult {
@@ -90,6 +95,8 @@ export interface QuestionVerificationResult {
   pass1Answer?: string;
   pass2Answer?: string;
   sanityCheckNote?: string;
+  inputFingerprint?: string;
+  reusedResult?: boolean;
 }
 
 export interface IAIService {
@@ -112,6 +119,7 @@ export interface IAIService {
     grade?: string;
     topic?: string;
     onProgress?: (current: number, total: number) => void;
+    force?: boolean;
   }): Promise<QuestionVerificationResult[]>;
 
   verifySingleQuestion(params: {
@@ -382,11 +390,7 @@ export class HybridAIService implements IAIService {
     config?: any,
     maxRetriesPerModel: number = 2
   ): Promise<{ response: any; modelUsed: string }> {
-    const allowedGradingModels = [
-      'gemini-3.8-flash',
-      'gemini-flash-latest',
-      'gemini-3.1-pro-preview'
-    ];
+    const allowedGradingModels = ['gemini-3.8-flash'];
     const candidateModels = [
       allowedGradingModels.includes(preferredModel) ? preferredModel : '',
       ...allowedGradingModels
@@ -403,6 +407,7 @@ export class HybridAIService implements IAIService {
           return { response, modelUsed: modelName };
         } catch (err: any) {
           lastError = err;
+          if (isAIQuotaError(err)) throw err;
           const errStr = String(err?.message || err);
 
           if (errStr.includes('404') || errStr.includes('not found') || errStr.includes('no longer available')) {
@@ -546,6 +551,8 @@ export class HybridAIService implements IAIService {
       topicHint = ''
     } = params;
 
+    if (!studentAnswerText.trim() && essayImages.length === 0) return this.fallbackGradeEssay(params);
+
     const apiKey = this.getApiKey();
 
     // 1. NẾU CÓ GEMINI API KEY -> GỌI GEMINI MULTIMODAL ĐỂ ĐỌC ẢNH VÀ CHẤM ĐIỂM
@@ -571,11 +578,8 @@ BÀI LÀM CỦA HỌC SINH:
 
 QUY TẮC CHẤM ĐIỂM SƯ PHẠM CHUẨN MỰC (CHỐNG CHẤM CẢM TÍNH):
 1. Đọc và nhận diện kỹ chữ viết tay, hình vẽ, ký hiệu toán học trong ảnh đính kèm (nếu có).
-2. Áp dụng Khung Barem chấm 3 phần:
-   - Phần 1: Ý tưởng, điều kiện xác định & thiết lập giả thiết (khoảng 25-30% số điểm).
-   - Phần 2: Các bước lập luận, định lý hình học, biến đổi đại số đúng logic (khoảng 50% số điểm).
-   - Phần 3: Đáp số cuối cùng, thử lại nghiệm và kết luận bài toán (khoảng 20-25% số điểm).
-3. Bước nào làm đúng được trọn điểm bước đó; bước sai không tính điểm tiếp theo nhưng KHÔNG trừ điểm oan các phần trước.
+2. Bám đúng barem nguồn cho từng ý, không tự chia điểm theo tỷ lệ 25/50/25 hoặc theo số dòng. Thiếu barem thì chỉ đề xuất điểm để giáo viên duyệt.
+3. Các ý độc lập làm đúng vẫn được điểm; không trừ lặp cho lỗi kéo theo. Đọc nội dung cuối cùng còn hiệu lực, bỏ dòng đã gạch xoá rõ; nét sửa không chắc chắn thì yêu cầu giáo viên rà soát. Hình học chỉ dùng dữ kiện/quan hệ đã xác nhận, không đoán từ hình trông giống.
 4. Điểm chấm ("score") là số thực từ 0 đến ${maxPoints} (làm tròn đến 0.25 điểm).
 5. Chỉ ra DẪN CHỨNG CỤ THỂ từ bài làm: Dòng nào em làm tốt, bước nào bị nhầm lẫn (ví dụ: nhầm dấu, quên ĐKXĐ).
 
@@ -627,6 +631,7 @@ Trả về duy nhất định dạng JSON (không có ký tự ngoài JSON) theo
           }
         }
 
+        if (contentsPayload.filter(part => part.inlineData).length !== essayImages.filter(Boolean).length) return this.fallbackGradeEssay(params);
         const { response, modelUsed } = await this.generateWithGradingFailover(
           ai,
           model,
@@ -640,20 +645,19 @@ Trả về duy nhất định dạng JSON (không có ký tự ngoài JSON) theo
         const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
-          const rawScore = Number(parsed.score);
-          const validScore = isNaN(rawScore) ? 0 : Math.min(maxPoints, Math.max(0, rawScore));
-          // Làm tròn đến 0.25đ
-          const roundedScore = Math.round(validScore * 4) / 4;
+          if (typeof parsed.score !== 'number' || !Number.isFinite(parsed.score)) return this.fallbackGradeEssay(params);
+          const validScore = Math.min(maxPoints, Math.max(0, parsed.score));
+          const roundedScore = Math.round(validScore * 10000) / 10000;
 
           return {
             score: roundedScore,
             maxScore: maxPoints,
-            feedback: parsed.feedback || 'Bài làm đã được Gemini AI phân tích và chấm điểm chi tiết.',
+            feedback: `${parsed.feedback || 'AI đã đề xuất điểm cho bài làm.'} (Điểm tham khảo; cần giáo viên đối chiếu barem và duyệt.)`,
             strengths: Array.isArray(parsed.strengths) && parsed.strengths.length > 0 ? parsed.strengths : ['Trình bày có bố cục rõ ràng'],
             improvements: Array.isArray(parsed.improvements) ? parsed.improvements : [],
             stepByStepCorrection: parsed.stepByStepCorrection || '',
-            needsTeacherReview: false,
-            isProvisional: false,
+            needsTeacherReview: true,
+            isProvisional: true,
             aiGradingError: false,
             modelUsed
           };
@@ -668,7 +672,6 @@ Trả về duy nhất định dạng JSON (không có ký tự ngoài JSON) theo
     }
 
     // 2. FALLBACK SMART RULE ENGINE (Khi chưa có API key hoặc mạng yếu)
-    await new Promise(resolve => setTimeout(resolve, 450));
     return this.fallbackGradeEssay(params);
   }
 
@@ -1280,269 +1283,8 @@ Trả về JSON duy nhất:
    * 5. Gặp lỗi 429 (RESOURCE_EXHAUSTED / quota): DỪNG NGAY LẬP TỨC!
    *    Tuyệt đối KHÔNG retry liên tục khi 429, KHÔNG fallback sang Flash Lite!
    */
-  async verifyExamQuestions(params: {
-    questions: Question[];
-    grade?: string;
-    topic?: string;
-    onProgress?: (current: number, total: number) => void;
-  }): Promise<QuestionVerificationResult[]> {
-    const { questions, grade = '7', topic = 'Toán THCS', onProgress } = params;
-    if (!questions || questions.length === 0) return [];
-
-    const apiKey = this.getApiKey();
-    if (!apiKey) {
-      throw new Error('Chưa cấu hình Gemini API Key. Thầy/Cô vui lòng nhập API Key để kích hoạt Trợ lý AI Thẩm định đề.');
-    }
-
-    const ai = new GoogleGenAI({ apiKey });
-    // BẮT BUỘC DÙNG GEMINI 3.8 FLASH, TUYỆT ĐỐI KHÔNG FALLBACK SANG LITE
-    const model = 'gemini-3.8-flash';
-
-    const results: QuestionVerificationResult[] = [];
-    const BATCH_SIZE = 4;
-    let completedCount = 0;
-
-    for (let i = 0; i < questions.length; i += BATCH_SIZE) {
-      const batch = questions.slice(i, i + BATCH_SIZE);
-
-      // ==========================================
-      // LƯỢT 1: KIỂM TRA MỘT LẦN VỚI PROMPT GỌN
-      // ==========================================
-      const promptL1 = `
-Bạn là Chuyên gia Thẩm định Đề thi môn Toán THCS Việt Nam (Chương trình GDPT mới, SGK Kết nối tri thức).
-Nhiệm vụ: Thẩm định tính chính xác của đáp án hiện có cho từng câu hỏi sau đây.
-
-THÔNG TIN ĐỀ THI:
-- Khối lớp: Toán ${grade} | Chủ đề: ${topic}
-
-DANH SÁCH CÂU HỎI CẦN THẨM ĐỊNH TRONG ĐỢT NÀY:
-${batch.map((q, idx) => `
-[Mã: ${q.id}] (Câu ${q.order || i + idx + 1})
-Đề bài: ${q.question}
-${(q.options && q.options.length > 0) ? q.options.map(o => `${o.id}. ${o.text}`).join(' | ') : '(Tự luận)'}
-[Đáp án hiện tại]: ${q.correctAnswer || 'Chưa có'}
-${q.explanation ? `[Lời giải hiện tại]: ${q.explanation.substring(0, 300)}` : ''}
-`).join('\n')}
-
-QUY TẮC THẨM ĐỊNH LƯỢT 1 (TIẾT KIỆM TỐI ĐA TOKEN):
-Mỗi câu kiểm tra đầy đủ:
-- Đề bài (question)
-- Các phương án lựa chọn (options)
-- Đáp án hiện tại (correctAnswer)
-- Lời giải hiện tại (explanation)
-- Tính nhất quán giữa đáp án và lời giải.
-
-1. Giải nhanh câu hỏi để tìm đáp án đúng (A, B, C, D hoặc kết quả số/biểu thức ngắn).
-2. So sánh với [Đáp án hiện tại] và kiểm tra tính nhất quán giữa [Đáp án hiện tại] và [Lời giải hiện tại].
-3. Nếu đáp án bạn giải ra TRÙNG KHỚP với [Đáp án hiện tại], và lời giải nhất quán không mâu thuẫn, options chuẩn xác:
-   => proposedAnswer = đáp án đúng, matchesCurrentAnswer = true, confidence = "high", needsReview = false, reason = "Ngắn gọn 1 câu xác nhận".
-4. Nếu có BẤT KỲ nghi ngờ nào:
-   - AI khác [Đáp án hiện tại],
-   - Độ tin cậy thấp (confidence thấp),
-   - Lời giải mâu thuẫn với đáp án,
-   - Câu thiếu dữ kiện hoặc đề bài có lỗi,
-   - Options có vấn đề (thiếu phương án, nhiều đáp án đúng, hoặc không có đáp án đúng),
-   - Hoặc needsReview = true
-   => proposedAnswer = đáp án AI tìm ra, matchesCurrentAnswer = false, confidence = "needs_review", needsReview = true, reason = "Nêu rõ lý do nghi ngờ ngắn gọn".
-
-Trả về DUY NHẤT một JSON Array theo định dạng:
-[
-  {
-    "questionId": "Mã_câu_hỏi",
-    "proposedAnswer": "A",
-    "matchesCurrentAnswer": true,
-    "confidence": "high",
-    "reason": "Lý do ngắn gọn",
-    "needsReview": false
-  }
-]
-`;
-
-      let pass1List: any[] = [];
-      try {
-        const res = await ai.models.generateContent({
-          model,
-          contents: [{ text: promptL1 }],
-          config: { responseMimeType: 'application/json' }
-        });
-        const rawText = res.text || '';
-        const jsonMatch = rawText.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          pass1List = JSON.parse(jsonMatch[0]);
-        }
-      } catch (err: any) {
-        const status = err?.status || err?.code || 0;
-        const errStr = String(err?.message || err);
-        // 429 Quota Exceeded -> Ném lỗi ngay để dừng batch, tuyệt đối không retry hay đổi model
-        if (status === 429 || errStr.includes('429') || errStr.includes('RESOURCE_EXHAUSTED') || errStr.includes('quota')) {
-          const quotaErr: any = new Error('Model hiện đã vượt hạn mức API (429 RESOURCE_EXHAUSTED).');
-          quotaErr.isQuota = true;
-          quotaErr.status = 429;
-          throw quotaErr;
-        }
-        // Thử lại nếu 503 tạm thời do spikes
-        if (status === 503 || errStr.includes('503') || errStr.includes('UNAVAILABLE')) {
-          let retrySuccess = false;
-          for (const delay of [2500, 4000]) {
-            try {
-              await new Promise(r => setTimeout(r, delay));
-              const res = await ai.models.generateContent({
-                model,
-                contents: [{ text: promptL1 }],
-                config: { responseMimeType: 'application/json' }
-              });
-              const rawText = res.text || '';
-              const jsonMatch = rawText.match(/\[[\s\S]*\]/);
-              if (jsonMatch) {
-                pass1List = JSON.parse(jsonMatch[0]);
-                retrySuccess = true;
-                break;
-              }
-            } catch (retryErr: any) {
-              const rStatus = retryErr?.status || retryErr?.code || 0;
-              const rErrStr = String(retryErr?.message || retryErr);
-              if (rStatus === 429 || rErrStr.includes('429') || rErrStr.includes('RESOURCE_EXHAUSTED') || rErrStr.includes('quota')) {
-                const quotaErr: any = new Error('Model hiện đã vượt hạn mức API (429 RESOURCE_EXHAUSTED).');
-                quotaErr.isQuota = true;
-                quotaErr.status = 429;
-                throw quotaErr;
-              }
-            }
-          }
-          if (!retrySuccess && pass1List.length === 0) {
-            throw err;
-          }
-        } else {
-          throw err;
-        }
-      }
-
-      // Duyệt từng câu trong batch
-      for (let bIdx = 0; bIdx < batch.length; bIdx++) {
-        const q = batch[bIdx];
-        const p1Item = pass1List.find((item: any) => item.questionId === q.id)
-          || (pass1List[bIdx] && (pass1List[bIdx].questionId === q.id || !pass1List[bIdx].questionId) ? pass1List[bIdx] : undefined);
-
-        const currentNorm = String(q.correctAnswer || '').trim().toUpperCase();
-        const proposed1 = p1Item ? String(p1Item.proposedAnswer || '').trim().toUpperCase() : currentNorm;
-        
-        // Điều kiện PASS LƯỢT 1:
-        // Proposed khớp correctAnswer, confidence === 'high', needsReview === false, không mâu thuẫn
-        const isPass1 = p1Item &&
-          p1Item.matchesCurrentAnswer === true &&
-          p1Item.confidence === 'high' &&
-          p1Item.needsReview !== true &&
-          proposed1 === currentNorm;
-
-        if (isPass1) {
-          // PASS LƯỢT 1: TUYỆT ĐỐI KHÔNG GỌI LƯỢT 2 (Tiết kiệm quota)
-          results.push({
-            questionId: q.id,
-            order: q.order || i + bIdx + 1,
-            currentAnswer: q.correctAnswer,
-            proposedAnswer: proposed1,
-            matchesCurrentAnswer: true,
-            confidence: 'high',
-            reason: p1Item.reason || 'Trùng khớp đáp án hiện tại 100%.',
-            needsReview: false,
-            pass1Answer: proposed1,
-            pass2Answer: undefined,
-            sanityCheckNote: p1Item.reason || 'Khớp đáp án hiện tại 100%.'
-          });
-        } else {
-          // ==========================================
-          // CÂU NGHI NGỜ: KÍCH HOẠT LƯỢT 2 ĐỘC LẬP
-          // ==========================================
-          let p2Answer = '';
-          let p2Confidence: 'high' | 'medium' | 'needs_review' = 'needs_review';
-          let p2Reason = '';
-
-          try {
-            const promptL2 = `
-Bạn là Chuyên gia Độc lập Thẩm định Đề thi Toán THCS Việt Nam.
-Nhiệm vụ: Giải độc lập câu hỏi sau (tính toán từng bước hoặc thử ngược từng phương án vào đề bài) để xác định phương án đúng tuyệt đối ('A', 'B', 'C' hoặc 'D').
-
-Câu hỏi [Mã: ${q.id}]:
-Đề bài: ${q.question}
-${(q.options && q.options.length > 0) ? q.options.map(o => `${o.id}. ${o.text}`).join('\n') : '(Tự luận)'}
-
-LƯU Ý ĐẶC BIỆT:
-- Hãy giải độc lập hoàn toàn, tính toán cẩn thận.
-- Kiểm tra xem đề bài có sai sót, thiếu điều kiện, hoặc có nhiều đáp án đúng / không có đáp án đúng hay không.
-
-Trả về DUY NHẤT một JSON theo định dạng:
-{
-  "questionId": "${q.id}",
-  "pass2Answer": "A",
-  "confidence": "high",
-  "reason": "Giải thích ngắn gọn kết quả giải độc lập và thử ngược"
-}
-`;
-            const res2 = await ai.models.generateContent({
-              model,
-              contents: [{ text: promptL2 }],
-              config: { responseMimeType: 'application/json' }
-            });
-            const rawText2 = res2.text || '';
-            const match2 = rawText2.match(/\{[\s\S]*\}/);
-            if (match2) {
-              const parsed2 = JSON.parse(match2[0]);
-              p2Answer = String(parsed2.pass2Answer || '').trim().toUpperCase();
-              p2Confidence = parsed2.confidence === 'high' ? 'high' : 'needs_review';
-              p2Reason = parsed2.reason || '';
-            }
-          } catch (l2Err: any) {
-            const status = l2Err?.status || l2Err?.code || 0;
-            const errStr = String(l2Err?.message || l2Err);
-            if (status === 429 || errStr.includes('429') || errStr.includes('RESOURCE_EXHAUSTED') || errStr.includes('quota')) {
-              const quotaErr: any = new Error('Model hiện đã vượt hạn mức API (429 RESOURCE_EXHAUSTED).');
-              quotaErr.isQuota = true;
-              quotaErr.status = 429;
-              throw quotaErr;
-            }
-            p2Reason = 'Lượt 2 gặp sự cố kết nối';
-          }
-
-          // Tổng hợp kết quả Lượt 1 & Lượt 2
-          const p2Norm = p2Answer;
-          const isStillSuspicious = (proposed1 && proposed1 !== currentNorm) ||
-                                    (p2Norm && p2Norm !== currentNorm) ||
-                                    (p1Item?.needsReview === true) ||
-                                    (p1Item?.confidence === 'needs_review') ||
-                                    (p2Confidence === 'needs_review');
-
-          const finalConfidence = isStillSuspicious ? 'needs_review' : 'high';
-          const finalNote = [
-            p1Item?.reason ? `Lượt 1: ${p1Item.reason}` : '',
-            p2Reason ? `Lượt 2: ${p2Reason}` : ''
-          ].filter(Boolean).join(' | ');
-
-          results.push({
-            questionId: q.id,
-            order: q.order || i + bIdx + 1,
-            currentAnswer: q.correctAnswer,
-            proposedAnswer: proposed1 || p2Norm || currentNorm,
-            matchesCurrentAnswer: !isStillSuspicious,
-            confidence: finalConfidence,
-            reason: finalNote || 'Phát hiện nghi vấn giữa các lượt giải.',
-            needsReview: isStillSuspicious,
-            pass1Answer: proposed1 || undefined,
-            pass2Answer: p2Norm || undefined,
-            sanityCheckNote: finalNote
-          });
-        }
-
-        completedCount++;
-        if (onProgress) {
-          onProgress(completedCount, questions.length);
-        }
-      }
-
-      // Nghỉ nhẹ 1.5s giữa các batch nhỏ để giữ RPM ổn định
-      await new Promise(r => setTimeout(r, 1500));
-    }
-
-    return results;
+  async verifyExamQuestions(params: VerificationParams): Promise<QuestionVerificationResult[]> {
+    return verifyWithReuse(params, this.getApiKey());
   }
 
   /**
@@ -1556,7 +1298,8 @@ Trả về DUY NHẤT một JSON theo định dạng:
     const results = await this.verifyExamQuestions({
       questions: [params.question],
       grade: params.grade,
-      topic: params.topic
+      topic: params.topic,
+      force: true
     });
     return results[0];
   }
@@ -2346,7 +2089,13 @@ Bạn là Chuyên gia Khảo thí và Số hóa Đề thi môn Toán THCS Việt
 Nhiệm vụ của bạn: Đọc toàn bộ nội dung từ tài liệu đính kèm (${isPdf ? 'File đề thi PDF' : 'Ảnh chụp / ảnh dán đề thi'}), bóc tách TOÀN BỘ các câu hỏi kiểm tra toán học và trả về cấu trúc dữ liệu JSON chuẩn.
 
 QUY TẮC BÓC TÁCH CỰC KỲ QUAN TRỌNG:
-1. ĐẦY ĐỦ CÂU HỎI: Bóc tách không bỏ sót bất kỳ câu hỏi nào trong đề (từ Câu 1 đến câu cuối cùng).
+1. TÁCH ĐỀ VÀ ĐÁP ÁN TRƯỚC KHI ĐẾM CÂU:
+   - Đọc toàn tài liệu, phân biệt phần ĐỀ BÀI với ĐÁP ÁN, LỜI GIẢI, HƯỚNG DẪN CHẤM, BAREM, THANG ĐIỂM.
+   - questions chỉ chứa câu hỏi thuộc đề gốc, sourceRole luôn là "question". Không đưa các dòng "Câu/Bài..." được lặp lại trong đáp án vào questions.
+   - Giữ các ý a), b), c) trong cùng câu tự luận; không tách mỗi ý hoặc mỗi bước giải thành câu hỏi mới.
+   - Tính sourceCounts từ PHẦN ĐỀ GỐC, không tính số câu trong đáp án. Đếm đủ trắc nghiệm và tự luận rồi đối chiếu trước khi xuất JSON.
+   - Nếu tài liệu có đáp án, ghép đúng câu gốc: lời giải vào explanation, biểu điểm vào rubric, kết luận/đáp số vào correctAnswer. Nếu cần tách riêng, dùng answers với questionOrder trỏ tới order của câu gốc.
+   - Không chép lời giải hay kết luận vào question; question chỉ có yêu cầu, giả thiết và các ý hỏi trong đề gốc.
 2. CHUẨN HÓA CÔNG THỨC TOÁN HỌC (LATEX):
    - Mọi biểu thức toán, phân số, căn thức, phương trình, số mũ, góc, vector, hệ phương trình BẮT BUỘC phải đặt trong cặp dấu đô la: $công_thức$.
    - Ví dụ: $\\frac{x - 1}{x + 2}$, $\\sqrt{2x + 1}$, $x^2 - 4x + 4 = 0$, $\\widehat{ABC} = 60^\\circ$, $\\vec{AB}$, $\\begin{cases} x + y = 3 \\\\ 2x - y = 1 \\end{cases}$.
@@ -2358,35 +2107,27 @@ QUY TẮC BÓC TÁCH CỰC KỲ QUAN TRỌNG:
 4. PHÂN LOẠI CÂU HỎI:
    - "multiple_choice": Các câu trắc nghiệm nhiều lựa chọn (thường có A, B, C, D).
      + Tách riêng từng phương án vào mảng options: [{ id: "A", text: "..." }, { id: "B", text: "..." }, ...].
-     + Nhận diện phương án đúng (correctAnswer): Nếu đề có khoanh tròn, đánh dấu, gạch chân hoặc có bảng đáp án cuối trang thì lấy theo đề; nếu đề bài chưa có đáp án, bạn hãy TỰ GIẢI TOÁN ĐỂ CHỌN ĐÁP ÁN ĐÚNG CHÍNH XÁC (A, B, C hoặc D).
-     + Viết lời giải tóm tắt ngắn gọn vào explanation.
+     + correctAnswer chỉ lấy đáp án có trong nguồn (A, B, C, D). Nếu nguồn chưa có, để chuỗi rỗng; không tự giải hoặc mặc định A trong bước nhập đề.
+     + explanation lấy lời giải có sẵn trong nguồn, không tự tạo lời giải ở bước nhập đề.
    - "essay": Các câu tự luận (chứng minh hình học, rút gọn biểu thức, giải bài toán bằng cách lập hệ phương trình, bài toán thực tế).
      + Ghi rõ đề bài kèm điều kiện, hình vẽ (nêu rõ giả thiết).
-     + Viết tóm tắt các bước giải hoặc biểu điểm gợi ý vào rubric hoặc explanation.
+     + Giữ đầy đủ lời giải có sẵn vào explanation và biểu điểm có sẵn vào rubric. Không làm mất các ý cuối của đáp án; nếu nguồn chưa có thì để trống.
 5. ĐIỂM SỐ (points):
    - Nếu đề có ghi điểm (ví dụ: "(0,5 điểm)", "(1,0 điểm)"), hãy lấy đúng số điểm đó.
    - Nếu không ghi: Mặc định trắc nghiệm là 0.25 hoặc 0.5 điểm, tự luận là 1.0 đến 2.0 điểm.
 6. SỐ THỨ TỰ (order): Đánh số thứ tự từ 1, 2, 3... liên tục.
-
-QUY TẮC ĐẶC BIỆT CHO TÀI LIỆU CÓ CẢ ĐỀ VÀ ĐÁP ÁN:
-- Phân biệt PHẦN ĐỀ với phần ĐÁP ÁN VÀ HƯỚNG DẪN GIẢI, KHÔNG tạo câu hỏi mới từ trang đáp án.
-- Ghép Câu 1, 2 của trắc nghiệm với đáp án trắc nghiệm; ghép Bài 1, 2 của tự luận với lời giải tương ứng. Không nhầm Câu 1 và Bài 1.
-- Mỗi Bài tự luận có a), b), c), d), e)... là một câu duy nhất và trường question BẮT BUỘC chứa đầy đủ biểu thức gốc của TẤT CẢ các ý, mỗi ý xuống một dòng. Không được chỉ viết nhãn a), b) mà bỏ trống biểu thức.
-- CorrectAnswer của tự luận là các đáp số/kết luận theo từng ý ở đáp án gốc, ví dụ: a) -99; b) -15; c) 350; d) -200; e) 0.
-- Explanation của tự luận chứa lời giải gốc đầy đủ từng ý, rubric chỉ chứa barem/thang điểm thực tế có trên tài liệu. Nếu PDF không có đáp án tự luận, để cả hai trường đúng như dữ liệu nguồn, KHÔNG tự bịa lời giải.
-- Giữ chính xác dấu trừ, ngoặc, căn, phân số, hệ phương trình và LaTeX. Nếu không đọc được biểu thức, để trống và hệ thống kiểm tra sẽ cảnh báo thay vì tự suy đoán.
-- Nếu phần trắc nghiệm ghi tổng 3,0 điểm và có 10 câu thì gán points=0.3 cho từng câu; giữ điểm riêng của các Bài tự luận.
-- Bổ sung JSON cấp cao nhất expectedQuestionCount là tổng số câu trắc nghiệm + bài tự luận trong PHẦN ĐỀ và declaredTotalPoints là điểm tổng đề nếu có; số lượng thực tế phụ thuộc PDF, không mặc định 14.
-- Trắc nghiệm không có bảng đáp án vẫn giữ khả năng tự giải và xác nhận như code đang hoạt động.
 
 YÊU CẦU ĐỊNH DẠNG ĐẦU RA:
 Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ theo định dạng sau (không kèm lời chào hay văn bản ngoài JSON):
 {
   "examTitle": "Tiêu đề đề thi (ví dụ: Đề khảo sát chất lượng môn Toán 8 - Học kì 1)",
   "grade": "${grade || '8'}",
+  "sourceCounts": { "questionCount": 1, "multipleChoiceCount": 1, "essayCount": 0 },
+  "answers": [],
   "questions": [
     {
       "order": 1,
+      "sourceRole": "question",
       "question": "Nội dung câu hỏi với công thức toán $...$",
       "type": "multiple_choice",
       "options": [
@@ -2395,7 +2136,7 @@ Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ theo định dạng sa
         { "id": "C", "text": "Nội dung phương án C kèm công thức $...$" },
         { "id": "D", "text": "Nội dung phương án D kèm công thức $...$" }
       ],
-      "correctAnswer": "A",
+      "correctAnswer": "",
       "points": 0.5,
       "explanation": "Lời giải ngắn gọn...",
       "rubric": ""
@@ -2455,61 +2196,19 @@ Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ theo định dạng sa
       }
     }
 
-    const rawQuestions: any[] = Array.isArray(parsedJson)
-      ? parsedJson
-      : Array.isArray(parsedJson?.questions)
-        ? parsedJson.questions
-        : Array.isArray(parsedJson?.data)
-          ? parsedJson.data
-          : [];
-
-    if (rawQuestions.length === 0) {
-      throw new Error('Không phát hiện thấy câu hỏi nào trong file PDF/ảnh. Hãy đảm bảo tài liệu chứa đề thi môn Toán.');
-    }
-
-    const questions: Question[] = rawQuestions.map((q: any, idx: number) => {
-      const qOrder = Number(q.order) || (idx + 1);
-      const isEssay = q.type === 'essay' || q.type === 'short_answer' || (!q.options || q.options.length < 2);
-      
-      let options: { id: string; text: string }[] = [];
-      if (!isEssay && Array.isArray(q.options)) {
-        options = q.options.map((opt: any, oIdx: number) => {
-          if (typeof opt === 'string') {
-            const letter = String.fromCharCode(65 + oIdx);
-            return { id: letter, text: opt };
-          }
-          return {
-            id: String(opt.id || String.fromCharCode(65 + oIdx)).toUpperCase(),
-            text: String(opt.text || '')
-          };
-        });
-      }
-
-      const correct = isEssay
-        ? resolveGeminiEssayReference(q)
-        : this.extractValidAnswerLetter(q.correctAnswer, options);
-
-      return {
-        id: `ai_media_${Date.now()}_${qOrder}_${Math.random().toString(36).substring(2, 6)}`,
-        order: qOrder,
-        question: formatQuestionSubItems(String(q.question || '').trim()),
-        type: isEssay ? 'essay' : 'multiple_choice',
-        options: isEssay ? [] : options,
-        correctAnswer: correct,
-        points: Number(String(q.points ?? '').replace(',', '.')) || (isEssay ? 1.0 : 0.5),
-        explanation: String(q.explanation || q.solution || q.detailedSolution || '').trim(),
-        rubric: String(q.rubric || q.markingGuide || '').trim()
-      };
-    });
-
-    questions.sort((a, b) => a.order - b.order);
+    const questions = normalizeMediaExamQuestions(parsedJson, isPdf ? params.pdfReference : undefined);
+    const entries = Array.isArray(parsedJson) ? parsedJson : parsedJson?.questions || parsedJson?.data || [];
+    const recoveredCount = entries.filter((q: any) => q && !['answer', 'solution'].includes(q.sourceRole)).length - questions.length;
+    const declaredCount = Number(parsedJson?.sourceCounts?.questionCount ?? parsedJson?.expectedQuestionCount);
+    const declaredPoints = Number(parsedJson?.declaredTotalPoints);
 
     return {
       examTitle: parsedJson?.examTitle || fileName || 'Đề thi trích xuất từ AI',
       grade: parsedJson?.grade || grade || '8',
       questions,
-      expectedQuestionCount: Number(parsedJson?.expectedQuestionCount) > 0 ? Number(parsedJson.expectedQuestionCount) : undefined,
-      declaredTotalPoints: Number(parsedJson?.declaredTotalPoints) > 0 ? Number(parsedJson.declaredTotalPoints) : undefined,
+      expectedQuestionCount: recoveredCount > 0 ? questions.length : Number.isInteger(declaredCount) && declaredCount > 0 ? declaredCount : undefined,
+      declaredTotalPoints: Number.isFinite(declaredPoints) && declaredPoints > 0 ? declaredPoints : undefined,
+      pdfRecoveryNote: recoveredCount > 0 ? `Đã đối chiếu PDF gốc và ghép ${recoveredCount} mục lời giải trùng về các bài tự luận. Giáo viên cần duyệt lại.` : undefined,
       rawSummary: `Đã bóc tách thành công ${questions.length} câu hỏi (${questions.filter(q => q.type === 'multiple_choice').length} trắc nghiệm, ${questions.filter(q => q.type === 'essay').length} tự luận) từ mô hình ${modelUsed}.`
     };
   }

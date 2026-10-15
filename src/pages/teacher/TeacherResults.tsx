@@ -1,18 +1,26 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Assignment, ClassRoom, Submission, QuestionAnalysis, StudentAnswer, StepAnalysis, StepErrorType, StepGradingResponse } from '../../types';
 import { GradingService } from '../../services/gradingService';
 import { aiService } from '../../services/aiService';
 import { stepGradingService } from '../../services/stepGradingService';
+import { downloadSubmissionExport, downloadBatchSubmissionExport, MAX_BATCH_EXPORT_SUBMISSIONS } from '../../services/submissionExportService';
+import { saveSubmissionConfirmed, type SubmissionSaveResult } from '../../services/submissionSaveService';
 import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
+import { getSelectedSubmissionCopies, MAX_DELETE_SUBMISSIONS_AT_ONCE, isSubmissionDeletionEnabled } from '../../services/submissionDeletionService';
 import { MathDisplay } from '../../components/MathDisplay';
+import { getStudentQuestion, getMultipleChoiceSelectionIssue, getCorrectOptionLabel, isSubmissionAnswerPending, refreshSubmissionTotals, confirmMultipleChoiceSelection, getSubmissionSourceIssue } from '../../utils/submissionReviewUtils';
+import { captureGradingReference } from '../../utils/submissionReportUtils';
 import { StepGradingBreakdown } from '../../components/StepGradingBreakdown';
 import { PrintExamModal } from '../../components/PrintExamModal';
+import { SubmissionPrintModal } from '../../components/SubmissionPrintModal';
+import { createBatchPrintSnapshot } from '../../services/submissionPrintService';
+import { getStudentSubmissionOverview } from '../../utils/studentSubmissionUtils';
 import { ImageLightboxModal } from '../../components/ImageLightboxModal';
 import { ClassCompetencyMatrix } from '../../components/ClassCompetencyMatrix';
 import { GenerateSimilarExamModal } from '../../components/GenerateSimilarExamModal';
 import { BatchGradingModal } from '../../components/BatchGradingModal';
-import { isEssayQuestion, getQuestionTypeLabel } from '../../utils/questionUtils';
+import { isEssayQuestion, getQuestionTypeLabel, getEssayGradingReference } from '../../utils/questionUtils';
 import { 
   BarChart3, 
   Users, 
@@ -25,6 +33,7 @@ import {
   XCircle, 
   Sparkles, 
   Download,
+  Trash2,
   BookOpen, 
   Filter, 
   Eye, 
@@ -54,6 +63,7 @@ interface TeacherResultsProps {
   submissions: Submission[];
   initialAssignmentId?: string;
   onOpenShare: (assignment: Assignment) => void;
+  onRefreshData?: () => void | Promise<void>;
   onNavigate?: (tab: string, params?: any) => void;
 }
 
@@ -63,6 +73,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   submissions = [],
   initialAssignmentId,
   onOpenShare,
+  onRefreshData,
   onNavigate
 }) => {
   const safeAssignments = useMemo(() => Array.isArray(assignments) ? assignments.filter((a): a is Assignment => Boolean(a && typeof a === 'object')) : [], [assignments]);
@@ -79,6 +90,8 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   const [submissionReviewFilter, setSubmissionReviewFilter] = useState<'all' | 'pending' | 'final'>('all');
   const [selectedSubmissionDetail, setSelectedSubmissionDetail] = useState<Submission | null>(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [submissionPrintData, setSubmissionPrintData] = useState<{ assignment: Assignment; submission: Submission } | null>(null);
+  const [batchPrintData, setBatchPrintData] = useState<{ assignment: Assignment; submissions: Submission[] } | null>(null);
   const [showSimilarExamModal, setShowSimilarExamModal] = useState(false);
 
   // AI Weakness Analysis state
@@ -111,19 +124,32 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; studentName: string } | null>(null);
   const [batchResultMsg, setBatchResultMsg] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<{ type: 'success' | 'warning' | 'error'; text: string } | null>(null);
+  const [exportingSubmission, setExportingSubmission] = useState(false);
+  const [exportingBatchArchive, setExportingBatchArchive] = useState(false);
+  const [batchArchiveProgress, setBatchArchiveProgress] = useState({ done: 0, total: 0, studentName: '' });
+  const [batchArchiveNotice, setBatchArchiveNotice] = useState<{ assignmentId: string; text: string; warning: boolean } | null>(null);
+  const batchArchiveLock = useRef(false);
+  const deleteSubmissionLock = useRef(false);
+  const [deletingSubmissions, setDeletingSubmissions] = useState(false);
+  const [selectedDeletionIds, setSelectedDeletionIds] = useState<string[]>([]);
+  const [deletionNotice, setDeletionNotice] = useState<{ assignmentId: string; warning: boolean; text: string } | null>(null);
+  const [exportProgress, setExportProgress] = useState({ done: 0, total: 0 });
+  const [exportNotice, setExportNotice] = useState<{ submissionId: string; text: string; warning: boolean } | null>(null);
+  const reviewOperationLock = useRef(false);
+  const editedTeacherInputs = useRef(new Set<string>());
+  const pendingCloudSave = useRef<Submission | null>(null);
+  const [savingSubmission, setSavingSubmission] = useState(false);
+  const [reviewSaveNotice, setReviewSaveNotice] = useState<{ submissionId: string; text: string; warning: boolean } | null>(null);
+  const reviewBusy = savingSubmission || gradingSingleInProgress || Object.values(gradingAiInProgress).some(Boolean);
+  const submissionDeletionEnabled = isSubmissionDeletionEnabled();
+  const [mcqReviewChoice, setMcqReviewChoice] = useState<Record<string, string>>({});
 
   const currentAssignment = safeAssignments.find(a => a.id === selectedAsgId) || safeAssignments[0];
   const targetClass = currentAssignment ? safeClasses.find(c => c.id === currentAssignment.classId) : null;
   const classStudents = targetClass?.students || [];
 
   const isAnswerPendingTeacherReview = (submission: Submission, ans: StudentAnswer) => {
-    if (ans.teacherScore !== undefined) return false;
-    if (ans.needsTeacherReview || ans.isProvisional || ans.aiGradingError) return true;
-    if (submission.gradingStatus === 'pending_teacher_grading' && currentAssignment) {
-      const q = currentAssignment.questions.find(item => item.id === ans.questionId);
-      return Boolean(q && isEssayQuestion(q));
-    }
-    return false;
+    return currentAssignment ? isSubmissionAnswerPending(currentAssignment, submission, ans) : false;
   };
 
   const getPendingReviewCount = (submission: Submission) =>
@@ -142,6 +168,12 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     return safeSubmissions.filter(s => s.assignmentId === currentAssignment?.id);
   }, [safeSubmissions, currentAssignment]);
 
+  const studentOverview = useMemo(() => currentAssignment
+    ? getStudentSubmissionOverview(currentAssignment, currentSubmissions, targetClass ? classStudents : undefined)
+    : { statisticsSubmissions: [], unsubmittedStudents: [], unmatchedSubmissions: [] },
+    [currentAssignment, currentSubmissions, targetClass, classStudents]);
+  const statisticsSubmissions = studentOverview.statisticsSubmissions;
+
   const pendingReviewSubmissions = useMemo(
     () => currentSubmissions.filter(s => getPendingReviewCount(s) > 0),
     [currentSubmissions, currentAssignment]
@@ -155,7 +187,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     const wrongByQuestion = new Map<string, number>();
     currentAssignment.questions.forEach(q => wrongByQuestion.set(q.id, 0));
 
-    const rows = currentSubmissions.map(submission => {
+    const rows = statisticsSubmissions.map(submission => {
       let wrongCount = 0;
       const cells = currentAssignment.questions.map(question => {
         const answer = submission.answers.find(ans => ans.questionId === question.id);
@@ -177,7 +209,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     });
 
     return { rows, wrongByQuestion };
-  }, [currentAssignment, currentSubmissions]);
+  }, [currentAssignment, statisticsSubmissions]);
 
   const nextPendingSubmission = selectedSubmissionDetail
     ? pendingReviewSubmissions.find(s => s.id !== selectedSubmissionDetail.id) || null
@@ -188,6 +220,8 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     : -1;
 
   useEffect(() => {
+    editedTeacherInputs.current.clear();
+    setMcqReviewChoice({});
     if (!selectedSubmissionDetail) {
       setTeacherScoreInput({});
       setTeacherFeedbackInput({});
@@ -210,23 +244,17 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     if (!currentAssignment) return null;
     return GradingService.computeAssignmentStats(
       currentAssignment,
-      classStudents.length || 10,
-      currentSubmissions
+      classStudents.length,
+      statisticsSubmissions
     );
-  }, [currentAssignment, classStudents, currentSubmissions]);
+  }, [currentAssignment, classStudents, statisticsSubmissions]);
 
   // Find unsubmitted students
-  const unsubmittedStudents = useMemo(() => {
-    if (!targetClass || !Array.isArray(targetClass.students)) return [];
-    const submittedStudentNames = new Set(currentSubmissions.map(s => s.studentName.toLowerCase().trim()));
-    return targetClass.students.filter(
-      st => !submittedStudentNames.has(st.name.toLowerCase().trim())
-    );
-  }, [targetClass, currentSubmissions]);
+  const unsubmittedStudents = studentOverview.unsubmittedStudents;
 
   // Leaderboard ranking list (sorted strictly by score desc, then timeSpentSeconds asc)
   const leaderboardList = useMemo(() => {
-    const list = [...currentSubmissions];
+    const list = [...statisticsSubmissions];
     list.sort((a, b) => {
       if (b.totalScore !== a.totalScore) {
         return b.totalScore - a.totalScore;
@@ -234,7 +262,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       return a.timeSpentSeconds - b.timeSpentSeconds;
     });
     return list;
-  }, [currentSubmissions]);
+  }, [statisticsSubmissions]);
 
   // Sort submissions for generic table view
   const sortedSubmissions = useMemo(() => {
@@ -283,9 +311,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       const report = await aiService.analyzeClassMistakes({
         assignmentTitle: currentAssignment.title,
         grade: currentAssignment.grade,
-        totalStudents: currentSubmissions.length,
+        totalStudents: statisticsSubmissions.length,
         questionAnalyses: stats.questionAnalyses,
-        submissions: currentSubmissions
+        submissions: statisticsSubmissions
       });
       setAiReport(report);
     } catch {
@@ -295,9 +323,59 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     }
   };
 
+  const showSubmissionSaveResult = (submission: Submission, result: SubmissionSaveResult) => {
+    pendingCloudSave.current = result.cloudSaved ? null : submission;
+    setReviewSaveNotice({ submissionId: submission.id, warning: !result.cloudSaved || !result.localSaved,
+      text: result.cloudSaved
+        ? (result.localSaved ? 'Đã lưu trên máy và đồng bộ lên cloud.' : 'Đã lưu lên cloud; chưa lưu được bản trên máy.')
+        : result.localSaved
+          ? 'Đã lưu trên máy, chưa xác nhận lưu lên cloud. Bấm Lưu lại để đồng bộ; không cần chấm AI lại.'
+          : 'Chưa lưu được kết quả trên máy hoặc cloud. Giữ cửa sổ này và bấm Lưu lại.' });
+  };
+
+  const persistReviewSubmission = async (submission: Submission) => {
+    submission = refreshSubmissionTotals(currentAssignment, submission);
+    setSelectedSubmissionDetail(submission);
+    setReviewSaveNotice({ submissionId: submission.id, warning: false, text: 'Đang lưu kết quả và xác nhận đồng bộ cloud...' });
+    const result = await saveSubmissionConfirmed(submission);
+    showSubmissionSaveResult(submission, result);
+    return result;
+  };
+
+  const retrySubmissionSave = async () => {
+    if (reviewOperationLock.current || !pendingCloudSave.current) return;
+    const submission = pendingCloudSave.current;
+    reviewOperationLock.current = true;
+    setSavingSubmission(true);
+    try { await persistReviewSubmission(submission); }
+    finally { reviewOperationLock.current = false; setSavingSubmission(false); }
+  };
+
+  const handleConfirmMcqSelection = async (questionId: string) => {
+    if (!selectedSubmissionDetail || !currentAssignment || reviewOperationLock.current || !mcqReviewChoice[questionId]) return;
+    reviewOperationLock.current = true;
+    setSavingSubmission(true);
+    try {
+      const updated = confirmMultipleChoiceSelection(currentAssignment, selectedSubmissionDetail, questionId, mcqReviewChoice[questionId]);
+      const result = await persistReviewSubmission(updated);
+      setSavedGradeSuccess(previous => ({ ...previous, [questionId]: result.cloudSaved }));
+    } catch (error) {
+      setActionNotice({ type: 'warning', text: error instanceof Error ? error.message : 'Chưa xác nhận được lựa chọn.' });
+    } finally { reviewOperationLock.current = false; setSavingSubmission(false); }
+  };
+
   // On-demand AI Essay Grading for a single question (Step-by-step)
-  const handleAiGradeSingleQuestion = async (ans: StudentAnswer, question: any) => {
-    if (!selectedSubmissionDetail || !currentAssignment) return;
+  const handleAiGradeSingleQuestion = async (ans: StudentAnswer, question: any, forceRegrade = false) => {
+    if (!selectedSubmissionDetail || !currentAssignment || reviewOperationLock.current) return;
+    const sourceIssue = getSubmissionSourceIssue(currentAssignment, selectedSubmissionDetail);
+    if (sourceIssue) { setActionNotice({ type: 'warning', text: sourceIssue }); return; }
+    reviewOperationLock.current = true;
+    const gradingQuestion = { ...(currentAssignment.questions.find(q => q.id === question.id) || question), points: question.points };
+    const gradingSnapshot = selectedSubmissionDetail.shuffledQuestions?.find(q => q.id === question.id);
+    const reference = getEssayGradingReference(gradingQuestion);
+    const studentText = ans.studentSolutionText || ans.selectedAnswer || '';
+    const studentImages = ans.essayImages?.length ? ans.essayImages : selectedSubmissionDetail.essayImages || [];
+    setSavedGradeSuccess(prev => ({ ...prev, [ans.questionId]: false }));
     setGradingAiInProgress(prev => ({ ...prev, [ans.questionId]: true }));
     try {
       let scoreVal = 0;
@@ -316,41 +394,31 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
         grade: String(currentAssignment.grade),
         topic: currentAssignment.topic,
         maxPoints: question.points,
-        correctAnswer: question.correctAnswer,
-        rubric: question.rubric,
-        studentSolutionText: ans.studentSolutionText || '',
-        essayImages: ans.essayImages || []
-      });
+        ...reference,
+        studentSolutionText: studentText,
+        essayImages: studentImages
+      }, { force: forceRegrade, previousResult: ans.stepGradingResponse });
 
-      if (stepRes && stepRes.success && Array.isArray(stepRes.analysis) && stepRes.analysis.length > 0) {
-        scoreVal = stepRes.score;
-        feedbackVal = stepRes.feedback;
-        stepAnalysisData = stepRes.analysis;
-        firstErrorStepVal = stepRes.firstErrorStep;
-        firstErrorTypeVal = stepRes.firstErrorType;
-        firstErrorExplVal = stepRes.firstErrorExplanation;
-        needsReviewVal = !!stepRes.needsTeacherReview;
-        stepResp = stepRes;
-      } else {
-        // Fallback sang aiService.gradeEssay nếu backend không trả về step analysis
-        if (!aiService.hasApiKey()) {
-          setActionNotice({ type: 'warning', text: 'AI chưa được cấu hình. Kiểm tra API key trong cài đặt hệ thống.' });
-          return;
-        }
-        const res = await aiService.gradeEssay({
-          questionText: question.question,
-          studentAnswerText: ans.studentSolutionText || '',
-          essayImages: ans.essayImages || [],
-          maxPoints: question.points,
-          correctAnswerCriteria: question.correctAnswer,
-          rubric: question.rubric,
-          grade: currentAssignment.grade,
-          topicHint: question.topicHint
-        });
-        scoreVal = res.score;
-        feedbackVal = res.feedback;
-        needsReviewVal = !!(res.needsTeacherReview || res.isProvisional || res.aiGradingError);
+      if (!stepRes.success || stepRes.analysisSource !== 'ai' || !stepRes.analysis?.length) {
+        setActionNotice({ type: 'warning', text: stepRes.feedback || 'AI chưa đủ dữ liệu để chấm. Điểm đã lưu được giữ; giáo viên có thể duyệt trực tiếp.' });
+        return;
       }
+      if (stepRes.reusedResult && ans.stepGradingResponse?.requestFingerprint
+        && ans.stepGradingResponse.requestFingerprint === stepRes.requestFingerprint) {
+        setExpandedStepAnalysis(prev => ({ ...prev, [ans.questionId]: true }));
+        setActionNotice({ type: stepRes.needsTeacherReview ? 'warning' : 'success',
+          text: 'Đã mở kết quả AI đã lưu, không phát sinh lượt gọi AI mới.' +
+            (stepRes.needsTeacherReview ? ' Câu này vẫn cần giáo viên duyệt.' : '') });
+        return;
+      }
+      scoreVal = stepRes.score;
+      feedbackVal = stepRes.feedback;
+      stepAnalysisData = stepRes.analysis;
+      firstErrorStepVal = stepRes.firstErrorStep;
+      firstErrorTypeVal = stepRes.firstErrorType;
+      firstErrorExplVal = stepRes.firstErrorExplanation;
+      needsReviewVal = !!stepRes.needsTeacherReview;
+      stepResp = stepRes;
 
       let isCorrect = false;
       const hasStepError = !!firstErrorStepVal || (stepAnalysisData || []).some(s => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
@@ -363,12 +431,14 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       }
       const updatedAnswers: StudentAnswer[] = selectedSubmissionDetail.answers.map(a => {
         if (a.questionId === ans.questionId) {
+          const manualGrade = Number.isFinite(a.teacherScore) && (a.teacherReviewed === true || !/^\[(?:Gemini|Matsuda) AI\]/i.test(a.teacherFeedback || ''));
           return {
             ...a,
-            pointsEarned: scoreVal,
-            teacherScore: needsReviewVal ? undefined : scoreVal,
-            teacherFeedback: `[Matsuda AI]: ${feedbackVal}`,
-            isCorrect: needsReviewVal ? false : isCorrect,
+            pointsEarned: manualGrade ? a.teacherScore! : scoreVal,
+            teacherScore: manualGrade ? a.teacherScore : undefined,
+            teacherReviewed: manualGrade,
+            teacherFeedback: manualGrade ? a.teacherFeedback : `[Matsuda AI]: ${feedbackVal}`,
+            isCorrect: manualGrade ? a.isCorrect : needsReviewVal ? false : isCorrect,
             aiScore: scoreVal,
             aiFeedback: feedbackVal,
             aiGraded: true,
@@ -376,10 +446,12 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
             firstErrorStep: firstErrorStepVal,
             firstErrorType: firstErrorTypeVal,
             firstErrorExplanation: firstErrorExplVal,
-            needsTeacherReview: needsReviewVal,
-            isProvisional: needsReviewVal,
+            needsTeacherReview: manualGrade ? false : needsReviewVal,
+            isProvisional: manualGrade ? false : needsReviewVal,
             aiGradingError: !!(stepResp && (stepResp.analysisSource === 'rule' || stepResp.analysisSource === 'unavailable')),
-            stepGradingResponse: stepResp
+            stepGradingResponse: stepResp,
+            gradingReference: manualGrade ? a.gradingReference : captureGradingReference(gradingQuestion, gradingSnapshot),
+            aiGradingReference: manualGrade ? captureGradingReference(gradingQuestion, gradingSnapshot) : undefined
           };
         }
         return a;
@@ -427,21 +499,26 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
 
       setSelectedSubmissionDetail(updatedSubmission);
       // Cập nhật giá trị input cho giáo viên tiện duyệt
-      setTeacherScoreInput(prev => ({ ...prev, [ans.questionId]: scoreVal }));
-      setTeacherFeedbackInput(prev => ({ ...prev, [ans.questionId]: `[Matsuda AI]: ${feedbackVal}` }));
+      const savedAnswer = updatedAnswers.find(a => a.questionId === ans.questionId);
+      if (!savedAnswer?.teacherReviewed && !editedTeacherInputs.current.has(ans.questionId)) {
+        setTeacherScoreInput(prev => ({ ...prev, [ans.questionId]: scoreVal }));
+        setTeacherFeedbackInput(prev => ({ ...prev, [ans.questionId]: `[Matsuda AI]: ${feedbackVal}` }));
+      }
       setExpandedStepAnalysis(prev => ({ ...prev, [ans.questionId]: true }));
 
-      StorageService.saveSubmission(updatedSubmission);
-      FirestoreService.saveResult(updatedSubmission).catch(() => {});
+      await persistReviewSubmission(updatedSubmission);
       setActionNotice({
         type: needsReviewVal ? 'warning' : 'success',
-        text: needsReviewVal
+        text: stepRes.reusedResult
+          ? 'Đã dùng lại kết quả AI cho cùng dữ liệu, không phát sinh lượt gọi AI mới.' + (needsReviewVal ? ' Câu này cần giáo viên duyệt.' : '')
+          : needsReviewVal
           ? 'AI đã phân tích. Câu này cần giáo viên duyệt trước khi thành điểm chính thức.'
           : `AI đã chấm câu này: ${scoreVal}/${question.points} điểm.`
       });
     } catch (e: any) {
       setActionNotice({ type: 'error', text: 'AI chưa chấm được câu này. Hãy thử lại sau.' });
     } finally {
+      reviewOperationLock.current = false;
       setGradingAiInProgress(prev => ({ ...prev, [ans.questionId]: false }));
     }
   };
@@ -453,7 +530,8 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
 
   // Chấm AI toàn bộ bài nộp của 1 học sinh bằng lõi duy nhất GradingService.gradeSingleSubmissionWithAI
   const handleGradeEntireSingleSubmission = async (sub: Submission) => {
-    if (!currentAssignment) return;
+    if (!currentAssignment || reviewOperationLock.current) return;
+    reviewOperationLock.current = true;
     setGradingSingleInProgress(true);
     try {
       const res = await GradingService.gradeSingleSubmissionWithAI({
@@ -461,6 +539,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
         submission: sub
       });
       setSelectedSubmissionDetail(res.submission);
+      if (res.persistence) showSubmissionSaveResult(res.submission, res.persistence);
       setActionNotice({
         type: res.submission.needsTeacherReview || res.submission.isProvisional ? 'warning' : 'success',
         text: res.submission.needsTeacherReview || res.submission.isProvisional
@@ -470,138 +549,279 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     } catch (e: any) {
       setActionNotice({ type: 'error', text: 'AI chưa chấm được toàn bài. Hãy thử lại sau.' });
     } finally {
+      reviewOperationLock.current = false;
       setGradingSingleInProgress(false);
     }
   };
 
   // Teacher manual override score and comment
-  const handleSaveTeacherManualGrade = (ans: StudentAnswer, question: any) => {
-    if (!selectedSubmissionDetail || !currentAssignment) return;
-    const requestedScore = teacherScoreInput[ans.questionId] !== undefined
-      ? teacherScoreInput[ans.questionId]
-      : (ans.teacherScore !== undefined ? ans.teacherScore : ans.pointsEarned);
-    const maxScore = Number(question.points || ans.maxPoints || 1);
-    const numericScore = Number.isFinite(Number(requestedScore)) ? Number(requestedScore) : 0;
-    const scoreVal = Math.max(0, Math.min(maxScore, numericScore));
-    const fbVal = teacherFeedbackInput[ans.questionId] !== undefined ? teacherFeedbackInput[ans.questionId] : (ans.teacherFeedback || '');
+  const handleSaveTeacherManualGrade = async (ans: StudentAnswer, question: any) => {
+    if (!selectedSubmissionDetail || !currentAssignment || reviewOperationLock.current) return;
+    reviewOperationLock.current = true;
+    setSavingSubmission(true);
+    setSavedGradeSuccess(prev => ({ ...prev, [ans.questionId]: false }));
+    try {
+      const requestedScore = teacherScoreInput[ans.questionId] !== undefined
+        ? teacherScoreInput[ans.questionId]
+        : (ans.teacherScore !== undefined ? ans.teacherScore : ans.pointsEarned);
+      const maxScore = Number(question.points || ans.maxPoints || 1);
+      const numericScore = Number.isFinite(Number(requestedScore)) ? Number(requestedScore) : 0;
+      const scoreVal = Math.max(0, Math.min(maxScore, numericScore));
+      const fbVal = teacherFeedbackInput[ans.questionId] !== undefined ? teacherFeedbackInput[ans.questionId] : (ans.teacherFeedback || '');
 
-    const updatedAnswers = selectedSubmissionDetail.answers.map(a => {
-      if (a.questionId === ans.questionId) {
-        // Giáo viên tự chấm tay: điểm trọn vẹn mới xem là đúng hoàn toàn, không dùng ngưỡng 50%
-        const isCorrect = scoreVal >= (question.points || 1);
-        return {
-          ...a,
-          pointsEarned: scoreVal,
-          teacherScore: scoreVal,
-          teacherFeedback: fbVal,
-          isCorrect,
-          needsTeacherReview: false,
-          isProvisional: false,
-          aiGradingError: false
-        };
-      }
-      return a;
-    });
+      const updatedAnswers = selectedSubmissionDetail.answers.map(a => {
+        if (a.questionId === ans.questionId) {
+          // Giáo viên tự chấm tay: điểm trọn vẹn mới xem là đúng hoàn toàn, không dùng ngưỡng 50%
+          const isCorrect = scoreVal >= (question.points || 1);
+          return {
+            ...a,
+            pointsEarned: scoreVal,
+            teacherScore: scoreVal,
+            teacherReviewed: true,
+            teacherFeedback: fbVal,
+            isCorrect,
+            needsTeacherReview: false,
+            isProvisional: false,
+            aiGradingError: false
+          };
+        }
+        return a;
+      });
 
-    let totalEarned = 0;
-    let totalMax = 0;
-    let correctCnt = 0;
-    let wrongCnt = 0;
-    updatedAnswers.forEach(a => {
-      const q = Array.isArray(currentAssignment?.questions) ? currentAssignment.questions.find(item => item && item.id === a.questionId) : undefined;
-      const max = q ? q.points : (a.maxPoints || 1);
-      totalMax += max;
-      totalEarned += (a.teacherScore !== undefined ? a.teacherScore : a.pointsEarned);
-      const pendingForCounts =
-        a.teacherScore === undefined &&
-        Boolean(
-          a.needsTeacherReview ||
-          a.isProvisional ||
-          a.aiGradingError ||
-          (selectedSubmissionDetail.gradingStatus === 'pending_teacher_grading' && q && isEssayQuestion(q))
-        );
-      if (!pendingForCounts) {
-        if (a.isCorrect) correctCnt++;
-        else wrongCnt++;
-      }
-    });
-    const scale = selectedSubmissionDetail.maxScore && selectedSubmissionDetail.maxScore > 0 ? selectedSubmissionDetail.maxScore : 10;
-    const rawScore = totalMax > 0 ? (totalEarned / totalMax) * scale : 0;
-    const totalScore = Math.round(rawScore * 10000) / 10000;
+      let totalEarned = 0;
+      let totalMax = 0;
+      let correctCnt = 0;
+      let wrongCnt = 0;
+      updatedAnswers.forEach(a => {
+        const q = Array.isArray(currentAssignment?.questions) ? currentAssignment.questions.find(item => item && item.id === a.questionId) : undefined;
+        const max = q ? q.points : (a.maxPoints || 1);
+        totalMax += max;
+        totalEarned += (a.teacherScore !== undefined ? a.teacherScore : a.pointsEarned);
+        const pendingForCounts =
+          a.teacherScore === undefined &&
+          Boolean(
+            a.needsTeacherReview ||
+            a.isProvisional ||
+            a.aiGradingError ||
+            (selectedSubmissionDetail.gradingStatus === 'pending_teacher_grading' && q && isEssayQuestion(q))
+          );
+        if (!pendingForCounts) {
+          if (a.isCorrect) correctCnt++;
+          else wrongCnt++;
+        }
+      });
+      const scale = selectedSubmissionDetail.maxScore && selectedSubmissionDetail.maxScore > 0 ? selectedSubmissionDetail.maxScore : 10;
+      const rawScore = totalMax > 0 ? (totalEarned / totalMax) * scale : 0;
+      const totalScore = Math.round(rawScore * 10000) / 10000;
 
-    const pendingReviewCount = updatedAnswers.filter(a => {
-      if (a.teacherScore !== undefined) return false;
-      if (a.needsTeacherReview || a.isProvisional || a.aiGradingError) return true;
-      if (selectedSubmissionDetail.gradingStatus === 'pending_teacher_grading') {
-        const q = currentAssignment.questions.find(item => item.id === a.questionId);
-        return Boolean(q && isEssayQuestion(q));
-      }
-      return false;
-    }).length;
-    const stillNeedsReview = pendingReviewCount > 0;
+      const pendingReviewCount = updatedAnswers.filter(a => {
+        if (a.teacherScore !== undefined) return false;
+        if (a.needsTeacherReview || a.isProvisional || a.aiGradingError) return true;
+        if (selectedSubmissionDetail.gradingStatus === 'pending_teacher_grading') {
+          const q = currentAssignment.questions.find(item => item.id === a.questionId);
+          return Boolean(q && isEssayQuestion(q));
+        }
+        return false;
+      }).length;
+      const stillNeedsReview = pendingReviewCount > 0;
 
-    const wasReviewWorkflow =
-      Boolean(selectedSubmissionDetail.isProvisional || selectedSubmissionDetail.needsTeacherReview) ||
-      selectedSubmissionDetail.gradingStatus === 'pending_teacher_grading' ||
-      selectedSubmissionDetail.gradingStatus === 'needs_review';
+      const wasReviewWorkflow =
+        Boolean(selectedSubmissionDetail.isProvisional || selectedSubmissionDetail.needsTeacherReview) ||
+        selectedSubmissionDetail.gradingStatus === 'pending_teacher_grading' ||
+        selectedSubmissionDetail.gradingStatus === 'needs_review';
 
-    const updatedSubmission: Submission = {
-      ...selectedSubmissionDetail,
-      answers: updatedAnswers,
-      totalScore,
-      correctCount: correctCnt,
-      wrongCount: wrongCnt,
-      needsTeacherReview: stillNeedsReview,
-      isProvisional: stillNeedsReview || wasReviewWorkflow,
-      gradingStatus: stillNeedsReview
-        ? (selectedSubmissionDetail.gradingStatus === 'pending_teacher_grading' ? 'pending_teacher_grading' : 'needs_review')
-        : (wasReviewWorkflow ? 'needs_review' : 'graded'),
-      ungradedCount: pendingReviewCount
-    };
+      const updatedSubmission: Submission = {
+        ...selectedSubmissionDetail,
+        answers: updatedAnswers,
+        totalScore,
+        correctCount: correctCnt,
+        wrongCount: wrongCnt,
+        needsTeacherReview: stillNeedsReview,
+        isProvisional: stillNeedsReview || wasReviewWorkflow,
+        gradingStatus: stillNeedsReview
+          ? (selectedSubmissionDetail.gradingStatus === 'pending_teacher_grading' ? 'pending_teacher_grading' : 'needs_review')
+          : (wasReviewWorkflow ? 'needs_review' : 'graded'),
+        ungradedCount: pendingReviewCount
+      };
 
-    setSelectedSubmissionDetail(updatedSubmission);
-    StorageService.saveSubmission(updatedSubmission);
-    FirestoreService.saveResult(updatedSubmission).catch(() => {});
-    window.dispatchEvent(new CustomEvent('submissions-updated'));
+      setSelectedSubmissionDetail(updatedSubmission);
+      const saved = await persistReviewSubmission(updatedSubmission);
 
-    setSavedGradeSuccess(prev => ({ ...prev, [ans.questionId]: true }));
-    setTimeout(() => {
-      setSavedGradeSuccess(prev => ({ ...prev, [ans.questionId]: false }));
-    }, 2500);
+      setSavedGradeSuccess(prev => ({ ...prev, [ans.questionId]: saved.cloudSaved }));
+      setTimeout(() => {
+        setSavedGradeSuccess(prev => ({ ...prev, [ans.questionId]: false }));
+      }, 2500);
+    } finally { reviewOperationLock.current = false; setSavingSubmission(false); }
   };
 
-  const finalizeSubmission = (openNext: boolean) => {
-    if (!selectedSubmissionDetail) return;
+  const finalizeSubmission = async (openNext: boolean) => {
+    if (!selectedSubmissionDetail || reviewOperationLock.current) return;
     const pending = getPendingReviewCount(selectedSubmissionDetail);
     if (pending > 0) return;
+    reviewOperationLock.current = true;
+    setSavingSubmission(true);
+    try {
 
-    const currentId = selectedSubmissionDetail.id;
-    const next = pendingReviewSubmissions.find(s => s.id !== currentId) || null;
-    const finalized: Submission = {
-      ...selectedSubmissionDetail,
-      needsTeacherReview: false,
-      isProvisional: false,
-      ungradedCount: 0,
-      gradingStatus: 'graded'
-    };
+      const currentId = selectedSubmissionDetail.id;
+      const next = pendingReviewSubmissions.find(s => s.id !== currentId) || null;
+      const finalized: Submission = refreshSubmissionTotals(currentAssignment, {
+        ...selectedSubmissionDetail,
+        needsTeacherReview: false,
+        isProvisional: false,
+        ungradedCount: 0,
+        gradingStatus: 'graded'
+      });
 
-    StorageService.saveSubmission(finalized);
-    FirestoreService.saveResult(finalized).catch(() => {});
-    window.dispatchEvent(new CustomEvent('submissions-updated'));
+      const saved = await persistReviewSubmission(finalized);
 
-    if (openNext && next) {
-      setSelectedSubmissionDetail(next);
-      setSubmissionReviewFilter('pending');
-    } else {
-      setSelectedSubmissionDetail(finalized);
+      if (saved.cloudSaved && openNext && next) {
+        setSelectedSubmissionDetail(next);
+        setSubmissionReviewFilter('pending');
+      } else {
+        setSelectedSubmissionDetail(finalized);
+      }
+    } finally { reviewOperationLock.current = false; setSavingSubmission(false); }
+  };
+
+  const handleExportSubmission = async () => {
+    if (!selectedSubmissionDetail || !currentAssignment || exportingSubmission) return;
+    const submission = selectedSubmissionDetail;
+    setExportingSubmission(true);
+    setExportProgress({ done: 0, total: 0 });
+    setExportNotice(null);
+    try {
+      const result = await downloadSubmissionExport(currentAssignment, submission,
+        (done, total) => setExportProgress({ done, total }));
+      setExportNotice({ submissionId: submission.id, warning: result.missingAttachments > 0,
+        text: result.missingAttachments
+          ? `Đã tải ZIP nhưng thiếu ${result.missingAttachments} ảnh/tệp chưa tải được. Gửi ZIP và bổ sung các tệp gốc được ghi trong báo cáo.`
+          : 'Đã tải bài chấm đầy đủ. Gửi nguyên tệp ZIP để kiểm tra đề, barem, ảnh bài làm và nhận xét từng bước.' });
+    } catch (error) {
+      setExportNotice({ submissionId: submission.id, warning: true,
+        text: error instanceof Error ? error.message : 'Chưa xuất được bài chấm. Hãy thử lại.' });
+    } finally { setExportingSubmission(false); }
+  };
+
+  // Teacher cleanup: export the selected original records before deleting only those IDs.
+  const handleDeleteSelectedSubmissions = async () => {
+    if (!currentAssignment || deleteSubmissionLock.current || exportingBatchArchive || reviewBusy) return;
+    const assignment = currentAssignment;
+    let selected: Submission[];
+    if (!submissionDeletionEnabled) {
+      setDeletionNotice({ assignmentId: assignment.id, warning: true, text: 'Chức năng xóa đang tạm khóa; xuất ZIP vẫn hoạt động.' });
+      return;
+    }
+    try {
+      selected = getSelectedSubmissionCopies(assignment, currentSubmissions, selectedDeletionIds);
+    } catch (error) {
+      setDeletionNotice({ assignmentId: assignment.id, warning: true,
+        text: error instanceof Error ? error.message : 'Chưa thể xác định các lượt nộp cần xóa.' });
+      return;
+    }
+    if (!window.confirm(
+      'Bạn đã chọn ' + selected.length + ' lượt nộp để xóa khỏi Firebase và thiết bị này.\n' +
+      'Hệ thống sẽ tải ZIP sao lưu TRƯỚC khi xóa. Nếu bạn chỉ cần loại khỏi thống kê mà chưa chắc bài lỗi, hãy hủy.\n\n' +
+      'Tiếp tục tải bản sao?'
+    )) return;
+    deleteSubmissionLock.current = true;
+    setDeletingSubmissions(true);
+    setDeletionNotice(null);
+    try {
+      const backup = await downloadBatchSubmissionExport(assignment, selected);
+      if (backup.missingAttachments) {
+        setDeletionNotice({ assignmentId: assignment.id, warning: true,
+          text: 'Đã tải ZIP nhưng thiếu ' + backup.missingAttachments +
+            ' tệp ảnh/PDF. Chưa xóa lượt nào. Hãy bổ sung tệp gốc hoặc lưu bản sao đầy đủ trước.' });
+        return;
+      }
+      if (window.prompt('Kiểm tra ZIP vừa tải đã được lưu an toàn. Xóa vĩnh viễn ' +
+        selected.length + ' lượt nộp có thể làm thay đổi số lượt còn được phép nộp của học sinh. ' +
+        'Nhập đúng XOA để xác nhận (để trống để hủy):') !== 'XOA') {
+        setDeletionNotice({ assignmentId: assignment.id, warning: false,
+          text: 'Đã tải bản sao ZIP. Chưa xóa lượt nộp nào.' });
+        return;
+      }
+      let deleted = 0;
+      const errors: string[] = [];
+      for (const submission of selected) {
+        try {
+          await FirestoreService.deleteSubmissionAsTeacher(submission);
+          // Cloud first; only remove the confirmed deleted entry from local cache.
+          StorageService.setSubmissions(StorageService.getSubmissions().filter(s => s.id !== submission.id));
+          deleted++;
+        } catch (error) {
+          errors.push(submission.studentName + ': ' +
+            (error instanceof Error ? error.message : 'Không thể xóa trên Firebase.'));
+          // Stop on the first failure to avoid a cascade of partial operations.
+          break;
+        }
+      }
+      setSelectedDeletionIds(previous => previous.filter(id => !selected.slice(0, deleted).some(s => s.id === id)));
+      setSelectedSubmissionDetail(previous => previous && selected.slice(0, deleted).some(s => s.id === previous.id) ? null : previous);
+      try { await onRefreshData?.(); }
+      catch (error) { errors.push('Không làm mới được danh sách từ cloud; hãy tải lại trang.'); }
+      setDeletionNotice({ assignmentId: assignment.id, warning: errors.length > 0,
+        text: 'Đã xóa ' + deleted + '/' + selected.length + ' lượt nộp đã chọn.' +
+          (errors.length ? ' Dừng vì lỗi: ' + errors[0] : ' Những lượt khác được giữ nguyên. ZIP sao lưu đã được tải.') });
+    } catch (error) {
+      setDeletionNotice({ assignmentId: assignment.id, warning: true,
+        text: 'Không thể sao lưu ZIP nên chưa xóa dữ liệu: ' +
+          (error instanceof Error ? error.message : 'Lỗi không xác định.') });
+    } finally {
+      deleteSubmissionLock.current = false;
+      setDeletingSubmissions(false);
+    }
+  };
+
+  // Only export the visible, filtered attempts. The original saved grades are never modified.
+  const handleBatchArchiveExport = async () => {
+    if (!currentAssignment || batchArchiveLock.current || sortedSubmissions.length === 0) return;
+    const assignment = currentAssignment;
+    const selected = [...sortedSubmissions];
+    if (selected.length > MAX_BATCH_EXPORT_SUBMISSIONS) {
+      setBatchArchiveNotice({ assignmentId: assignment.id, warning: true,
+        text: 'Có ' + selected.length + ' lượt nộp. Mỗi ZIP tối đa ' + MAX_BATCH_EXPORT_SUBMISSIONS +
+          ' lượt: hãy lọc theo tên hoặc trạng thái rồi xuất theo đợt.' });
+      return;
+    }
+    if (!window.confirm('Xuất ' + selected.length + ' lượt nộp của đề này thành một ZIP? ' +
+      'ZIP sẽ chứa thông tin, ảnh bài làm và điểm của học sinh. Bao gồm cả các lượt nộp trùng nếu có; không tự gộp điểm.')) return;
+    batchArchiveLock.current = true;
+    setExportingBatchArchive(true);
+    setBatchArchiveProgress({ done: 0, total: selected.length, studentName: '' });
+    setBatchArchiveNotice(null);
+    try {
+      const result = await downloadBatchSubmissionExport(assignment, selected,
+        (done, total, studentName) => setBatchArchiveProgress({ done, total, studentName }));
+      setBatchArchiveNotice({ assignmentId: assignment.id, warning: result.missingAttachments > 0,
+        text: 'Đã tải ZIP tổng gồm ' + result.exportedCount + ' lượt nộp thuộc ' +
+          result.distinctStudentGroups + ' nhóm họ tên/lớp (không đồng nghĩa số học sinh xác minh).' +
+          (result.missingAttachments ? ' Thiếu ' + result.missingAttachments + ' tệp ảnh/PDF; cần bổ sung bản gốc.' : '') +
+          ' Xem BANG_KE_LUOT_NOP.csv để tách các lượt nộp lại trước khi thống kê dự thi.' });
+    } catch (error) {
+      setBatchArchiveNotice({ assignmentId: assignment.id, warning: true,
+        text: error instanceof Error ? error.message : 'Không xuất được ZIP hàng loạt. Chưa có dữ liệu nào bị thay đổi.' });
+    } finally {
+      batchArchiveLock.current = false;
+      setExportingBatchArchive(false);
+    }
+  };
+
+  const handleBatchPrint = () => {
+    if (!currentAssignment || reviewBusy || exportingBatchArchive || sortedSubmissions.length === 0) return;
+    try {
+      setBatchPrintData(createBatchPrintSnapshot(currentAssignment, sortedSubmissions));
+    } catch (error) {
+      setBatchArchiveNotice({ assignmentId: currentAssignment.id, warning: true,
+        text: error instanceof Error ? error.message : 'Chưa mở được phiếu PDF hàng loạt.' });
     }
   };
 
   // Export CSV
   const handleExportCSV = () => {
     if (currentSubmissions.length === 0) return;
-    const header = ['Hạng', 'Họ và tên', 'Lớp', 'Điểm', 'Số câu đúng', 'Số câu sai', 'Thời gian làm', 'Ngày nộp'];
-    const rows = leaderboardList.map((s, idx) => [
+    const header = ['STT lượt nộp', 'Họ và tên', 'Lớp', 'Điểm', 'Số câu đúng', 'Số câu sai', 'Thời gian làm', 'Ngày nộp'];
+    const rows = [...currentSubmissions].sort((a, b) => b.totalScore - a.totalScore || a.timeSpentSeconds - b.timeSpentSeconds).map((s, idx) => [
       idx + 1,
       `"${s.studentName}"`,
       `"${s.className}"`,
@@ -666,6 +886,8 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
               value={selectedAsgId}
               onChange={(e) => {
                 setSelectedAsgId(e.target.value);
+                setSelectedDeletionIds([]);
+                setDeletionNotice(null);
                 setAiReport(null);
                 setSelectedSubmissionDetail(null);
               }}
@@ -717,9 +939,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <div className="text-xs font-bold text-slate-400 uppercase">Tổng học sinh</div>
           <div className="text-2xl font-extrabold text-slate-900 mt-1">
-            {stats?.totalAssigned || 0}
+            {targetClass ? stats?.totalAssigned || 0 : '—'}
           </div>
-          <span className="text-[11px] text-slate-500">Sĩ số lớp {currentAssignment.className}</span>
+          <span className="text-[11px] text-slate-500">{targetClass ? `Sĩ số lớp ${currentAssignment.className}` : 'Chưa có danh sách lớp'}</span>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
@@ -728,14 +950,14 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
             {stats?.submittedCount || 0}
           </div>
           <span className="text-[11px] text-emerald-600">
-            {stats?.totalAssigned ? Math.round((stats.submittedCount / stats.totalAssigned) * 100) : 0}% hoàn thành
+            {stats?.totalAssigned ? `${Math.round((stats.submittedCount / stats.totalAssigned) * 100)}% hoàn thành` : 'Chưa có sĩ số để tính tỷ lệ'}
           </span>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <div className="text-xs font-bold text-rose-500 uppercase">Chưa nộp</div>
           <div className="text-2xl font-extrabold text-rose-600 mt-1">
-            {unsubmittedStudents.length}
+            {targetClass ? unsubmittedStudents.length : '—'}
           </div>
           <span className="text-[11px] text-rose-500">Cần nhắc nhở</span>
         </div>
@@ -768,6 +990,16 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
         </div>
       </div>
 
+      <p className="text-xs text-slate-600">
+        Thống kê và xếp hạng theo lượt nộp mới nhất của mỗi học sinh. Lịch sử vẫn giữ đủ {currentSubmissions.length} lượt nộp.
+        {statisticsSubmissions.some(sub => sub.isProvisional || sub.needsTeacherReview || sub.gradingStatus !== 'graded')
+          && ' Có bài chưa chốt điểm; thống kê điểm còn tạm tính.'}
+        {!targetClass && ' Chưa có danh sách lớp để đối chiếu; các lượt được ghép theo mã học sinh nếu có, còn lại theo họ tên và lớp.'}
+      </p>
+      {studentOverview.unmatchedSubmissions.length > 0 && (
+        <p className="text-xs text-amber-800">Có {studentOverview.unmatchedSubmissions.length} lượt chưa ghép được với học sinh trong danh sách lớp (không khớp thông tin hoặc trùng tên). Các lượt này vẫn có trong lịch sử, chưa tính vào thống kê lớp.</p>
+      )}
+
       {/* BATCH AI ESSAY GRADING BANNER */}
       {currentAssignment.questions.some(q => isEssayQuestion(q)) && (
         <div className="p-5 rounded-3xl bg-gradient-to-r from-purple-50 via-indigo-50 to-pink-50 border-2 border-purple-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -781,7 +1013,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                   Matsuda AI • Chấm tự luận lớp học
                 </h3>
                 <span className="px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 text-[11px] font-black">
-                  Đã nộp: {currentSubmissions.length} bài
+                  Lịch sử: {currentSubmissions.length} lượt nộp
                 </span>
               </div>
               <p className="text-xs text-slate-600 mt-0.5">
@@ -862,7 +1094,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            📋 Danh sách nộp ({stats?.submittedCount || 0})
+            📋 Danh sách nộp ({currentSubmissions.length} lượt)
           </button>
 
           <button
@@ -892,7 +1124,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
             className="inline-flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Xuất Excel/CSV</span>
+            <span>Xuất lịch sử Excel/CSV</span>
           </button>
 
           <button
@@ -1143,7 +1375,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       {activeTab === 'competency' && currentAssignment && (
         <ClassCompetencyMatrix
           assignment={currentAssignment}
-          submissions={currentSubmissions}
+          submissions={statisticsSubmissions}
           onOpenSimilarExamModal={() => setShowSimilarExamModal(true)}
         />
       )}
@@ -1532,7 +1764,73 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                   {label}
                 </button>
               ))}
+
+              <button
+                type="button"
+                onClick={() => {
+                  const selected = sortedSubmissions.map(item => item.id);
+                  if (selected.length > MAX_DELETE_SUBMISSIONS_AT_ONCE) {
+                    setDeletionNotice({ assignmentId: currentAssignment.id, warning: true,
+                      text: 'Có hơn ' + MAX_DELETE_SUBMISSIONS_AT_ONCE +
+                        ' lượt trong danh sách. Hãy lọc bớt trước khi chọn tất cả.' });
+                    return;
+                  }
+                  setSelectedDeletionIds(selected);
+                }}
+                disabled={deletingSubmissions || sortedSubmissions.length === 0}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >Chọn các lượt đang lọc</button>
+              {selectedDeletionIds.length > 0 && (
+                <button type="button"
+                  onClick={() => setSelectedDeletionIds([])}
+                  disabled={deletingSubmissions}
+                  className="rounded-xl px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100"
+                >Bỏ chọn ({selectedDeletionIds.length})</button>
+              )}
+              <button
+                type="button"
+                onClick={handleDeleteSelectedSubmissions}
+                disabled={!submissionDeletionEnabled || deletingSubmissions || exportingBatchArchive || reviewBusy || selectedDeletionIds.length === 0}
+                className="inline-flex items-center gap-1 rounded-xl bg-rose-600 px-3 py-2 text-xs font-bold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                title={submissionDeletionEnabled ? 'Sao lưu ZIP trước, xác nhận rõ, rồi xóa đúng các lượt đã chọn khỏi Firebase và bản cục bộ' : 'Chức năng xóa đang tạm khóa; xuất ZIP vẫn hoạt động.'}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {deletingSubmissions ? 'Đang xử lý...' : 'Xóa lượt đã chọn (' + selectedDeletionIds.length + ')'}
+              </button>
+              <button
+                type="button"
+                onClick={handleBatchArchiveExport}
+                disabled={exportingBatchArchive || sortedSubmissions.length === 0}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Tải một ZIP chứa từng bài chấm đầy đủ và bảng kê lượt nộp; không chấm lại, không xóa dữ liệu"
+              >
+                <Download className="h-4 w-4" />
+                <span>{exportingBatchArchive
+                  ? 'Đang xuất ' + batchArchiveProgress.done + '/' + batchArchiveProgress.total
+                  : 'Xuất ZIP hàng loạt (' + sortedSubmissions.length + ')'}</span>
+              </button>
+              <button type="button" onClick={handleBatchPrint}
+                disabled={reviewBusy || exportingBatchArchive || sortedSubmissions.length === 0}
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-800 disabled:opacity-50"
+                title="In hoặc lưu một PDF tổng theo danh sách đang lọc, mỗi lượt nộp bắt đầu trang mới">
+                <Printer className="h-4 w-4" /> PDF / In hàng loạt ({sortedSubmissions.length})
+              </button>
             </div>
+            {deletionNotice?.assignmentId === currentAssignment.id && (
+              <div role="status" className={'rounded-xl border px-3 py-2 text-xs font-medium ' +
+                (deletionNotice.warning ? 'border-amber-300 bg-amber-50 text-amber-900' :
+                  'border-emerald-200 bg-emerald-50 text-emerald-900')}>
+                {deletionNotice.text}
+              </div>
+            )}
+            {batchArchiveNotice?.assignmentId === currentAssignment.id && (
+              <div role="status" className={'rounded-xl border p-3 text-xs font-medium ' +
+                (batchArchiveNotice.warning
+                  ? 'border-amber-200 bg-amber-50 text-amber-900'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-900')}>
+                {batchArchiveNotice.text}
+              </div>
+            )}
           </div>
 
           {sortedSubmissions.length === 0 ? (
@@ -1692,6 +1990,20 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                           })}
                         </td>
                         <td className="py-3 px-4 text-right">
+                          <label className="mr-2 inline-flex items-center gap-1 align-middle text-[11px] text-slate-600">
+                            <input
+                              type="checkbox"
+                              aria-label={'Chọn xóa lượt nộp của ' + sub.studentName + ' lúc ' + sub.submittedAt}
+                              checked={selectedDeletionIds.includes(sub.id)}
+                              disabled={deletingSubmissions}
+                              onChange={event => setSelectedDeletionIds(previous =>
+                                event.target.checked
+                                  ? previous.includes(sub.id) ? previous : [...previous, sub.id]
+                                  : previous.filter(id => id !== sub.id)
+                              )}
+                            />
+                            Chọn
+                          </label>
                           <button
                             onClick={() => setSelectedSubmissionDetail(sub)}
                             className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors inline-flex items-center gap-1 text-xs font-bold"
@@ -1724,7 +2036,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
             </div>
           </div>
 
-          {unsubmittedStudents.length === 0 ? (
+          {!targetClass || classStudents.length === 0 ? (
+            <p className="text-sm text-slate-600 p-6">Chưa có danh sách học sinh để xác định ai chưa nộp bài.</p>
+          ) : unsubmittedStudents.length === 0 ? (
             <div className="text-center py-12 bg-emerald-50 rounded-2xl border border-emerald-200">
               <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto mb-2" />
               <p className="text-base font-bold text-emerald-900">Tất cả học sinh đã nộp bài</p>
@@ -1762,7 +2076,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       {selectedSubmissionDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-2xl max-h-[85vh] overflow-y-auto shadow-2xl border border-slate-100">
-            <div className="flex items-start justify-between pb-4 border-b border-slate-100 mb-4">
+            <div className="flex flex-col sm:flex-row items-start justify-between gap-3 pb-4 border-b border-slate-100 mb-4">
               <div>
                 <span className="bg-indigo-100 text-indigo-800 text-xs font-bold px-2.5 py-0.5 rounded-full">
                   Lớp {selectedSubmissionDetail.className}
@@ -1783,10 +2097,25 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                   {selectedPendingReviewCount > 0 && <span className="text-amber-700"> • Tạm tính</span>}
                 </p>
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportSubmission}
+                  disabled={exportingSubmission || reviewBusy}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl disabled:opacity-50 cursor-pointer"
+                  title="Tải ZIP gồm đề/barem, ảnh bài làm, điểm và phân tích từng bước đã lưu; không gọi AI"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{exportingSubmission ? `Đang xuất${exportProgress.total ? ` ${exportProgress.done}/${exportProgress.total}` : '...'}` : 'Xuất bài đã chấm'}</span>
+                </button>
+                <button type="button" disabled={reviewBusy} onClick={() => setSubmissionPrintData({ assignment: currentAssignment, submission: selectedSubmissionDetail })}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-700 hover:bg-sky-800 text-white font-bold text-xs rounded-xl disabled:opacity-50"
+                  title="Phiếu A4 gồm điểm đã lưu, nhận xét từng bước, barem và ảnh gốc; không chấm AI lại">
+                  <Printer className="w-3.5 h-3.5" /> Phiếu PDF / In
+                </button>
                 <button
                   onClick={() => handleGradeEntireSingleSubmission(selectedSubmissionDetail)}
-                  disabled={gradingSingleInProgress}
+                  disabled={reviewBusy}
                   className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
                   title="Chấm toàn bộ các câu tự luận bài này theo từng bước"
                 >
@@ -1796,6 +2125,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                 {nextPendingSubmission && (
                   <button
                     type="button"
+                    disabled={reviewBusy}
                     onClick={() => {
                       setSelectedSubmissionDetail(nextPendingSubmission);
                       setSubmissionReviewFilter('pending');
@@ -1809,12 +2139,28 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                 )}
                 <button
                   onClick={() => setSelectedSubmissionDetail(null)}
+                  disabled={reviewBusy}
                   className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
                 >
                   ✕
                 </button>
               </div>
             </div>
+
+            {reviewSaveNotice?.submissionId === selectedSubmissionDetail.id && (
+              <div role="status" className={`mb-3 p-3 rounded-xl text-sm ${reviewSaveNotice.warning ? 'bg-amber-50 text-amber-900 border border-amber-200' : 'bg-emerald-50 text-emerald-900 border border-emerald-200'}`}>
+                {reviewSaveNotice.text}
+                {reviewSaveNotice.warning && pendingCloudSave.current?.id === selectedSubmissionDetail.id && (
+                  <button type="button" disabled={reviewBusy} onClick={retrySubmissionSave} className="ml-2 underline font-bold disabled:opacity-50">Lưu lại</button>
+                )}
+              </div>
+            )}
+            <p className="text-xs text-slate-500 mb-3">Xuất kết quả đã lưu. Nếu vừa sửa điểm hoặc lời phê, bấm Lưu ở câu đó trước khi xuất. Giải nén ZIP và mở bai-cham.html để xem; gửi nguyên ZIP để đối chiếu.</p>
+            {exportNotice?.submissionId === selectedSubmissionDetail.id && (
+              <div role="status" className={`mb-4 p-3 rounded-xl text-sm ${exportNotice.warning ? 'bg-amber-50 text-amber-900 border border-amber-200' : 'bg-emerald-50 text-emerald-900 border border-emerald-200'}`}>
+                {exportNotice.text}
+              </div>
+            )}
 
             <div className={`mb-4 rounded-2xl border px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
               selectedPendingReviewCount > 0
@@ -1919,20 +2265,30 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
 
             <div className="space-y-4">
               {[...selectedSubmissionDetail.answers]
-                .sort((a, b) => Number(isAnswerPendingTeacherReview(selectedSubmissionDetail, b)) - Number(isAnswerPendingTeacherReview(selectedSubmissionDetail, a)))
+                .sort((a, b) => {
+                  const pool = selectedSubmissionDetail.shuffledQuestions?.length
+                    ? selectedSubmissionDetail.shuffledQuestions : currentAssignment.questions;
+                  const qa = pool.find(q => q.id === a.questionId);
+                  const qb = pool.find(q => q.id === b.questionId);
+                  return Number(isEssayQuestion(qa)) - Number(isEssayQuestion(qb))
+                    || (qa?.order ?? 0) - (qb?.order ?? 0);
+                })
                 .map((ans) => {
                 const questionPool = (selectedSubmissionDetail.shuffledQuestions && selectedSubmissionDetail.shuffledQuestions.length > 0)
                   ? selectedSubmissionDetail.shuffledQuestions
                   : currentAssignment.questions;
-                const question = questionPool.find(q => q.id === ans.questionId) || currentAssignment.questions.find(q => q.id === ans.questionId);
+                const question = getStudentQuestion(currentAssignment, selectedSubmissionDetail, ans.questionId);
                 if (!question) return null;
 
                 const isEssay = isEssayQuestion(question);
+                const reference = getEssayGradingReference(currentAssignment.questions.find(q => q.id === question.id) || question);
                 const isCorrect = ans.isCorrect;
                 const images = ans.essayImages || [];
                 const isLoadingAI = !!gradingAiInProgress[ans.questionId];
                 const isSaved = !!savedGradeSuccess[ans.questionId];
                 const isPendingReview = isAnswerPendingTeacherReview(selectedSubmissionDetail, ans);
+                const selectionIssue = !isEssay && ans.teacherReviewed !== true
+                  ? getMultipleChoiceSelectionIssue(question, ans) || ans.selectionReviewIssue : null;
 
                 const currentScore = teacherScoreInput[ans.questionId] !== undefined
                   ? teacherScoreInput[ans.questionId]
@@ -2003,10 +2359,22 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                     {/* Multiple choice response */}
                     {!isEssay && (
                       <div className="space-y-2 mb-2">
+                        {selectionIssue && <div role="alert" className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-900 space-y-2">
+                          <p className="font-bold">Cần đối chiếu lựa chọn: {selectionIssue}</p>
+                          <p>Điểm cũ được giữ. Chọn phương án học sinh thực sự đã chọn trên đề đã đảo rồi xác nhận để tính lại câu này.</p>
+                          <select aria-label={`Lựa chọn đối chiếu câu ${question.order}`} value={mcqReviewChoice[ans.questionId] || ''}
+                            disabled={reviewBusy} onChange={event => setMcqReviewChoice(previous => ({ ...previous, [ans.questionId]: event.target.value }))}
+                            className="w-full border border-amber-300 rounded-lg p-2 bg-white">
+                            <option value="">Chọn sau khi đối chiếu bài gốc</option>
+                            {(question.options || []).map(option => <option key={option.id} value={option.id}>{option.id}. {option.text}</option>)}
+                          </select>
+                          <button type="button" disabled={reviewBusy || !mcqReviewChoice[ans.questionId]} onClick={() => handleConfirmMcqSelection(ans.questionId)}
+                            className="px-3 py-2 rounded-lg bg-amber-700 text-white font-bold disabled:opacity-50">Xác nhận lựa chọn và lưu điểm</button>
+                        </div>}
                         {question.options && question.options.length > 0 && (
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 my-2">
                             {question.options.map((opt) => {
-                              const effectiveCorrect = ans.correctAnswer || (ans.isCorrect ? ans.selectedAnswer : '') || question.correctAnswer;
+                              const effectiveCorrect = getCorrectOptionLabel(question);
                               const isStudentPick = ans.selectedAnswer === opt.id || (!ans.selectedAnswer && ans.selectedOptionText && opt.text && ans.selectedOptionText.trim() === opt.text.trim());
                               const isRightPick = effectiveCorrect === opt.id || (opt.text && effectiveCorrect.trim() === opt.text.trim());
 
@@ -2032,7 +2400,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                                   <span className="flex-1 min-w-0">
                                     <MathDisplay text={opt.text} />
                                   </span>
-                                  {isStudentPick && (
+                                  {isStudentPick && !selectionIssue && (
                                     <span className={`ml-2 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded shrink-0 ${isCorrect ? 'bg-emerald-700 text-white' : 'bg-rose-600 text-white'}`}>
                                       {isCorrect ? '✓ Đúng' : '✗ Chọn'}
                                     </span>
@@ -2071,6 +2439,16 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                       </div>
                     )}
 
+                    {isEssay && (reference.correctAnswer || reference.rubric) && (
+                      <details className="mb-3 rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 text-xs">
+                        <summary className="cursor-pointer font-bold text-indigo-900">Đáp án và hướng dẫn chấm của đề</summary>
+                        <div className="mt-2 whitespace-pre-line space-y-2 text-slate-800">
+                          {reference.correctAnswer && <MathDisplay text={reference.correctAnswer} />}
+                          {reference.rubric && <MathDisplay text={reference.rubric} />}
+                        </div>
+                      </details>
+                    )}
+
                     {/* Essay: Typed text solution */}
                     {ans.studentSolutionText && (
                       <div className="mb-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1">
@@ -2082,6 +2460,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                     )}
 
                     {/* Essay: Uploaded photos */}
+                    {isEssay && images.length === 0 && !!selectedSubmissionDetail.essayImages?.length && (
+                      <p className="mb-2 text-xs text-purple-800">Bài làm câu này dùng bộ ảnh đính kèm chung ở phía trên.</p>
+                    )}
                     {images.length > 0 && (
                       <div className="mb-2 p-2.5 bg-purple-50/60 border border-purple-200 rounded-xl space-y-1.5">
                         <div className="font-bold text-xs text-purple-900 flex items-center gap-1.5">
@@ -2181,14 +2562,20 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                             <Edit3 className="w-3.5 h-3.5 text-indigo-600" />
                             <span>Giáo viên chấm điểm & Nhận xét:</span>
                           </span>
+                          <div className="flex flex-wrap gap-1.5">
                           <button
                             onClick={() => handleAiGradeSingleQuestion(ans, question)}
-                            disabled={isLoadingAI}
+                            disabled={reviewBusy}
                             className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[11px] font-bold border border-indigo-200 cursor-pointer disabled:opacity-50"
                           >
                             <Sparkles className={`w-3 h-3 ${isLoadingAI ? 'animate-spin' : ''}`} />
                             <span>{isLoadingAI ? 'AI đang chấm...' : '✨ Chấm bằng AI (Từng bước)'}</span>
                           </button>
+                          {ans.stepGradingResponse?.analysisSource === 'ai' && <button type="button"
+                            onClick={() => handleAiGradeSingleQuestion(ans, question, true)} disabled={reviewBusy}
+                            title="Yêu cầu AI phân tích lại, có phát sinh lượt gọi AI mới"
+                            className="px-2 py-1 text-indigo-700 underline text-[11px] disabled:opacity-50">Gọi AI chấm mới</button>}
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center">
@@ -2200,10 +2587,11 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                               min="0"
                               max={question.points}
                               value={currentScore}
-                              onChange={(e) => setTeacherScoreInput(prev => ({
-                                ...prev,
-                                [ans.questionId]: parseFloat(e.target.value) || 0
-                              }))}
+                              disabled={reviewBusy}
+                              onChange={(e) => {
+                                editedTeacherInputs.current.add(ans.questionId);
+                                setTeacherScoreInput(prev => ({ ...prev, [ans.questionId]: parseFloat(e.target.value) || 0 }));
+                              }}
                               className="w-20 px-2 py-1 bg-slate-50 border border-slate-300 rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                             />
                             <span className="text-slate-400">/{question.points}đ</span>
@@ -2214,20 +2602,22 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                               type="text"
                               placeholder="Lời phê của giáo viên..."
                               value={currentFeedback}
-                              onChange={(e) => setTeacherFeedbackInput(prev => ({
-                                ...prev,
-                                [ans.questionId]: e.target.value
-                              }))}
+                              disabled={reviewBusy}
+                              onChange={(e) => {
+                                editedTeacherInputs.current.add(ans.questionId);
+                                setTeacherFeedbackInput(prev => ({ ...prev, [ans.questionId]: e.target.value }));
+                              }}
                               className="flex-1 px-2.5 py-1 bg-slate-50 border border-slate-300 rounded-lg text-slate-900 placeholder:text-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
                             />
                             <button
                               onClick={() => handleSaveTeacherManualGrade(ans, question)}
+                              disabled={reviewBusy}
                               className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shrink-0 ${
                                 isSaved ? 'bg-emerald-600 text-white' : 'bg-slate-900 hover:bg-slate-800 text-white'
                               }`}
                             >
                               {isSaved ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-                              <span>{isSaved ? 'Đã lưu' : 'Lưu'}</span>
+                              <span>{savingSubmission ? 'Đang lưu...' : isSaved ? 'Đã lưu' : 'Lưu'}</span>
                             </button>
                           </div>
                         </div>
@@ -2261,7 +2651,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                   <button
                     type="button"
                     onClick={() => finalizeSubmission(false)}
-                    disabled={selectedPendingReviewCount > 0}
+                    disabled={selectedPendingReviewCount > 0 || reviewBusy}
                     className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <CheckCircle2 className="w-4 h-4" />
@@ -2271,7 +2661,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                     <button
                       type="button"
                       onClick={() => finalizeSubmission(true)}
-                      disabled={selectedPendingReviewCount > 0}
+                      disabled={selectedPendingReviewCount > 0 || reviewBusy}
                       className="w-full sm:w-auto px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <span>Chốt & bài tiếp theo</span>
@@ -2331,6 +2721,10 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       />
 
       {/* Modal: Print Exam Paper */}
+      {submissionPrintData && <SubmissionPrintModal assignment={submissionPrintData.assignment} submission={submissionPrintData.submission}
+        onClose={() => setSubmissionPrintData(null)} />}
+      {batchPrintData && <SubmissionPrintModal assignment={batchPrintData.assignment} submissions={batchPrintData.submissions}
+        onClose={() => setBatchPrintData(null)} />}
       {showPrintModal && (
         <PrintExamModal
           isOpen={showPrintModal}
@@ -2360,9 +2754,10 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
           assignment={currentAssignment}
           submissions={currentSubmissions}
           classStudents={classStudents}
-          onSubmissionsUpdated={(updatedList) => {
-            // Cập nhật danh sách kết quả cục bộ
-            updatedList.forEach(s => StorageService.saveSubmission(s));
+          onSubmissionsUpdated={(updatedList, options) => {
+            // The grading core has already saved its updated records. Rewriting
+            // the entire old list could restore another student's stale score.
+            if (!options?.cloudHandled) updatedList.forEach(s => StorageService.saveSubmission(s));
             // Cập nhật state nếu cần
             window.dispatchEvent(new CustomEvent('submissions-updated'));
           }}

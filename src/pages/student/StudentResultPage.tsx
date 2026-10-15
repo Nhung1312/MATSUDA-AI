@@ -6,7 +6,7 @@ import { MathDisplay } from '../../components/MathDisplay';
 import { ImageLightboxModal } from '../../components/ImageLightboxModal';
 import { MistakeVaultModal } from '../../components/MistakeVaultModal';
 import { useMistakeVaultStore } from '../../store/useMistakeVaultStore';
-import { isEssayQuestion, getQuestionTypeLabel } from '../../utils/questionUtils';
+import { isEssayQuestion, getQuestionTypeLabel, getEssayGradingReference } from '../../utils/questionUtils';
 import { 
   Trophy, 
   RotateCcw, 
@@ -36,10 +36,12 @@ import { ExamResultSheetView } from '../../components/ExamResultSheetView';
 import { SocraticTutorModal } from '../../components/SocraticTutorModal';
 import { StepGradingBreakdown } from '../../components/StepGradingBreakdown';
 import { stepGradingService } from '../../services/stepGradingService';
+import { getSubmissionAnswerImages } from '../../utils/submissionImageUtils';
 import { SocraticContext, StudentAnswer, StepGradingResponse, StepErrorType } from '../../types';
 import { useLearningProgressStore } from '../../store/useLearningProgressStore';
 import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
+import { isSubmissionAnswerPending, getSubmissionSummary, refreshSubmissionTotals } from '../../utils/submissionReviewUtils';
 
 interface StudentResultPageProps {
   submission: Submission;
@@ -59,6 +61,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   isTeacherPreview = false
 }) => {
   const [submission, setSubmission] = useState<Submission>(initialSubmission);
+  const displaySummary = getSubmissionSummary(assignment, submission);
   const effectiveReviewMode: 'score_only' | 'wrong_only' | 'full' =
     isTeacherPreview || isDemoPreview
       ? 'full'
@@ -134,8 +137,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         grade: String(assignment.grade),
         topic: assignment.topic,
         maxPoints: question.points,
-        correctAnswer: question.correctAnswer,
-        rubric: question.rubric,
+        ...getEssayGradingReference(question),
         studentSolutionText: studentSolutionText || '',
         essayImages: images || []
       });
@@ -209,7 +211,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
       const pendingReviewCount = updatedAnswers.filter(
         a => a.teacherScore === undefined && Boolean(a.needsTeacherReview || a.isProvisional || a.aiGradingError)
       ).length;
-      const updatedSub: Submission = {
+      const updatedSub: Submission = refreshSubmissionTotals(assignment, {
         ...submission,
         answers: updatedAnswers,
         totalScore,
@@ -219,7 +221,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         isProvisional: pendingReviewCount > 0 || submission.isProvisional,
         ungradedCount: Math.max(pendingReviewCount, submission.ungradedCount || 0),
         gradingStatus: pendingReviewCount > 0 ? 'needs_review' : submission.gradingStatus
-      };
+      });
 
       setSubmission(updatedSub);
       if (!isDemoPreview && !isTeacherPreview) {
@@ -301,14 +303,14 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
       firstErrorLatex,
       referenceStepLatex,
       stepAnalysis,
-      essayImages: ans.essayImages,
+      essayImages: getSubmissionAnswerImages(submission, ans),
     });
   };
 
   // Tự động đồng bộ câu sai vào Mistake Vault khi vào trang kết quả
   useEffect(() => {
     if (isDemoPreview || isTeacherPreview) return;
-    if (submission && submission.wrongCount > 0) {
+    if (submission && displaySummary.wrongCount > 0) {
       try {
         useMistakeVaultStore.getState().addMistakesFromSubmission(submission, assignment);
       } catch (e) {
@@ -350,8 +352,8 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         studentAnswerText: studentSolutionText || '',
         essayImages: images || [],
         maxPoints: question.points,
-        correctAnswerCriteria: question.correctAnswer,
-        rubric: question.rubric,
+        correctAnswerCriteria: getEssayGradingReference(question).correctAnswer,
+        rubric: getEssayGradingReference(question).rubric,
         grade: assignment.grade,
         topicHint: question.topicHint
       });
@@ -372,15 +374,15 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
   // Filtered list of answers
   const filteredAnswers = submission.answers.filter(ans => {
-    const isAwaitingAnsReview = ans.needsTeacherReview && ans.teacherScore === undefined;
+    const isAwaitingAnsReview = isSubmissionAnswerPending(assignment, submission, ans);
     if (effectiveReviewMode === 'wrong_only') return !ans.isCorrect && !isAwaitingAnsReview;
-    if (filterType === 'correct') return ans.isCorrect;
+    if (filterType === 'correct') return ans.isCorrect && !isAwaitingAnsReview;
     if (filterType === 'wrong') return !ans.isCorrect && !isAwaitingAnsReview;
     return true;
   });
 
   // Calculate score rating banner
-  const isAwaitingReview = submission.isProvisional || submission.needsTeacherReview || submission.gradingStatus === 'needs_review' || (submission.answers || []).some(a => a.needsTeacherReview && a.teacherScore === undefined);
+  const isAwaitingReview = submission.isProvisional || submission.needsTeacherReview || submission.gradingStatus === 'needs_review' || displaySummary.pendingCount > 0;
   const hasPendingTeacherGrading = (submission.hasEssayQuestions && submission.gradingStatus === 'pending_teacher_grading') || isAwaitingReview;
   const score = submission.totalScore;
   const scoreMax = submission.maxScore && submission.maxScore > 0 ? submission.maxScore : 10;
@@ -520,7 +522,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 <span>Đúng</span>
               </div>
               <div className="text-2xl font-black text-emerald-900">
-                {submission.correctCount}{' '}
+                {displaySummary.correctCount}{' '}
                 <span className="text-xs font-normal text-emerald-700">/{submission.totalQuestions}</span>
               </div>
             </div>
@@ -531,7 +533,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 <span>Sai</span>
               </div>
               <div className="text-2xl font-black text-rose-900">
-                {submission.wrongCount}{' '}
+                {displaySummary.wrongCount}{' '}
                 <span className="text-xs font-normal text-rose-700">/{submission.totalQuestions}</span>
               </div>
             </div>
@@ -552,7 +554,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 <span>Chính xác</span>
               </div>
               <div className="text-2xl font-black text-indigo-900">
-                {Math.round((submission.correctCount / submission.totalQuestions) * 100)}%
+                {Math.round((displaySummary.correctCount / submission.totalQuestions) * 100)}%
               </div>
             </div>
           </div>
@@ -576,7 +578,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
           </details>
 
           {/* SỔ TAY CÂU SAI BANNER (MISTAKE VAULT) */}
-          {effectiveReviewMode !== 'score_only' && (submission.wrongCount > 0 ? (
+          {effectiveReviewMode !== 'score_only' && (displaySummary.wrongCount > 0 ? (
             <div className="mt-6 max-w-2xl mx-auto bg-gradient-to-r from-rose-500/10 via-pink-500/10 to-indigo-500/10 border-2 border-rose-200 dark:border-rose-900 rounded-3xl p-5 text-left flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-in fade-in duration-300">
               <div className="flex items-start space-x-3.5">
                 <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-rose-600 to-pink-600 text-white flex items-center justify-center font-bold shrink-0 shadow-md">
@@ -586,8 +588,8 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                   <div className="flex items-center space-x-2">
                     <h4 className="font-black text-sm text-slate-900 dark:text-white">
                       {isDemoPreview
-                        ? `${submission.wrongCount} câu cần khắc phục`
-                        : `${submission.wrongCount} câu cần luyện lại`}
+                        ? `${displaySummary.wrongCount} câu cần khắc phục`
+                        : `${displaySummary.wrongCount} câu cần luyện lại`}
                     </h4>
                   </div>
 
@@ -619,7 +621,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
           {/* Quick Actions */}
           <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-center gap-2 sm:gap-3 mt-6 sm:mt-8">
-            {!isDemoPreview && !isTeacherPreview && effectiveReviewMode === 'wrong_only' && submission.wrongCount > 0 && (
+            {!isDemoPreview && !isTeacherPreview && effectiveReviewMode === 'wrong_only' && displaySummary.wrongCount > 0 && (
               <button
                 onClick={() => {
                   setFilterType('wrong');
@@ -631,7 +633,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-5 py-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-sm cursor-pointer"
               >
                 <BookOpen className="w-4 h-4" />
-                <span>Xem câu sai ({submission.wrongCount})</span>
+                <span>Xem câu sai ({displaySummary.wrongCount})</span>
               </button>
             )}
             {!isDemoPreview && !isTeacherPreview && effectiveReviewMode !== 'score_only' && (
@@ -640,7 +642,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-5 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
               >
                 <BookOpen className="w-4 h-4" />
-                <span>Câu cần luyện {submission.wrongCount > 0 ? `(${submission.wrongCount})` : ''}</span>
+                <span>Câu cần luyện {displaySummary.wrongCount > 0 ? `(${displaySummary.wrongCount})` : ''}</span>
               </button>
             )}
             {!isDemoPreview && !isTeacherPreview && (
@@ -777,7 +779,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                             : 'text-slate-600 hover:text-rose-700'
                         }`}
                       >
-                        Sai ({submission.wrongCount})
+                        Sai ({displaySummary.wrongCount})
                       </button>
                       <button
                         onClick={() => setFilterType('correct')}
@@ -787,7 +789,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                             : 'text-slate-600 hover:text-emerald-700'
                         }`}
                       >
-                        Đúng ({submission.correctCount})
+                        Đúng ({displaySummary.correctCount})
                       </button>
                     </div>
   
@@ -810,9 +812,9 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
                 const currentAiGrading = aiGradingFeedback[question.id] || (ans.aiGraded ? { score: ans.aiScore || 0, feedback: ans.aiFeedback || '' } : null);
                 const isLoadingGrading = !!loadingAiGrading[question.id];
-                const images = ans.essayImages || [];
+                const images = isEssayQuestion(question) ? getSubmissionAnswerImages(submission, ans) : ans.essayImages || [];
 
-                const isAwaitingAnsReview = ans.needsTeacherReview && ans.teacherScore === undefined;
+                const isAwaitingAnsReview = isSubmissionAnswerPending(assignment, submission, ans);
 
                 return (
                   <div

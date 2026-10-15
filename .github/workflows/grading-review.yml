@@ -1,0 +1,86 @@
+name: Verify saved grading review and printable reports
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/services/gradingService.ts'
+      - 'src/services/verificationOptimizer.ts'
+      - 'src/utils/verificationUtils.ts'
+      - 'src/utils/pdfAnswerSection.ts'
+      - 'src/utils/reconcileGeminiPdf.ts'
+      - 'src/services/aiService.ts'
+      - 'src/services/fileParserService.ts'
+      - 'scripts/check-pdf-reconciliation.ts'
+      - 'scripts/test-gemini-pdf-import.mjs'
+      - 'scripts/test-gemini-pdf-reconcile.mjs'
+      - 'scripts/test-pdf-answer-sections.ts'
+      - 'src/components/AiSolveExamModal.tsx'
+      - 'src/components/AiBatchSolveModal.tsx'
+      - 'scripts/check-verification-review.ts'
+      - 'src/services/submissionPrintService.ts'
+      - 'src/services/submissionExportService.ts'
+      - 'src/utils/submissionReviewUtils.ts'
+      - 'src/utils/submissionReportUtils.ts'
+      - 'src/utils/batchGradingUtils.ts'
+      - 'src/utils/submissionImageUtils.ts'
+      - 'src/utils/studentSubmissionUtils.ts'
+      - 'src/services/submissionSaveService.ts'
+      - 'src/services/storageService.ts'
+      - 'src/services/firestoreService.ts'
+      - 'src/store/useMistakeVaultStore.ts'
+      - 'src/components/BatchGradingModal.tsx'
+      - 'src/types/index.ts'
+      - 'src/utils/questionUtils.ts'
+      - 'src/components/SubmissionPrintModal.tsx'
+      - 'src/components/ExamResultSheetView.tsx'
+      - 'src/pages/teacher/TeacherResults.tsx'
+      - 'src/pages/student/StudentResultPage.tsx'
+      - 'src/pages/student/StudentExamPage.tsx'
+      - 'scripts/check-submission-review.ts'
+      - 'scripts/check-submission-print.ts'
+      - 'scripts/check-batch-print.ts'
+      - 'scripts/check-saved-report-source.ts'
+      - 'scripts/check-batch-grading-filters.ts'
+      - 'scripts/check-review-save.ts'
+      - 'scripts/check-batch-pause-images.ts'
+      - 'scripts/check-grading-concurrency-stats.ts'
+      - 'scripts/check-submission-limits.ts'
+      - 'scripts/check-media-import-review.ts'
+      - 'src/utils/mediaImportGuard.ts'
+      - 'src/utils/examImportUtils.ts'
+      - 'src/components/FileUploadModal.tsx'
+      - 'scripts/test-point-distribution.mjs'
+      - 'package.json'
+      - '.github/workflows/grading-review.yml'
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run check:media-import
+      - run: npm run check:pdf-reconciliation
+      - run: npm run check:submission-review
+      - run: npm run check:submission-print
+      - run: npm run check:batch-print
+      - run: npm run check:saved-report-source
+      - run: npm run check:batch-grading-filters
+      - run: npm run check:batch-pause-images
+      - run: npm run check:grading-concurrency-stats
+      - run: npm run check:exam-workflow
+      - run: npm run check:ai-efficiency
+      - run: npm run check:verification-review
+      - run: npm run check:submission-limits
+      - run: npm run check:batch-export
+      - run: npm run check:submission-deletion
+      - run: node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-review-save.ts
+      - run: node --import ./scripts/offline-test-guard.mjs scripts/test-point-distribution.mjs

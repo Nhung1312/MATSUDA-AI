@@ -17,11 +17,9 @@ import {
 } from 'lucide-react';
 import { FileParserService, ParsedItem, ParseResult } from '../services/fileParserService';
 import { aiService } from '../services/aiService';
-import { reconcileExtraGeminiPdfSolutions } from '../utils/reconcileGeminiPdf';
 import { Question } from '../types';
 import { MathDisplay } from './MathDisplay';
-import { auditNewMediaQuestions } from '../utils/mediaImportGuard';
-import type { MediaImportIssue } from '../utils/mediaImportGuard';
+import { auditNewMediaQuestions, type MediaImportIssue } from '../utils/mediaImportGuard';
 
 interface FileUploadModalProps {
   isOpen: boolean;
@@ -51,7 +49,6 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [aiProgressStatus, setAiProgressStatus] = useState<string>('');
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
-  // Audit NEW Gemini PDF imports only; does not touch stored assignments.
   const [aiPdfIssues, setAiPdfIssues] = useState<MediaImportIssue[]>([]);
   const [filterCategory, setFilterCategory] = useState<'all' | 'trac_nghiem' | 'tu_luan'>('all');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -64,7 +61,6 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const [keySavedMessage, setKeySavedMessage] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>(aiService.getModel() || 'gemini-3.1-flash-lite');
   const [pdfParseMode, setPdfParseMode] = useState<'ai' | 'standard'>(aiService.hasApiKey() ? 'ai' : 'standard');
-  const [lastPdfReader, setLastPdfReader] = useState<'ai' | 'standard' | null>(null);
 
   // Image Paste & Upload State
   const [pastedImages, setPastedImages] = useState<StoredImage[]>([]);
@@ -75,6 +71,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const toFriendlyAiError = (err: any, fallback: string) => {
+    if (err?.name === 'ExamImportError') return err.message;
     const raw = String(err?.message || err || '').toLowerCase();
     if (raw.includes('429') || raw.includes('resource_exhausted') || raw.includes('quota')) {
       return 'AI đang hết lượt hoặc quá tải. Hãy chờ một lúc rồi thử lại.';
@@ -99,7 +96,6 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       setShowKeyInput(!keyExists);
       setErrorMsg(null);
       setAiPdfIssues([]);
-      setLastPdfReader(null);
       setKeySavedMessage(null);
     } else {
       setParseResult(null);
@@ -200,14 +196,21 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     }
 
     setIsLoading(true);
+    setParseResult(null);
+    setAiPdfIssues([]);
     setErrorMsg(null);
     setAiProgressStatus('Đang nạp file PDF...');
 
     try {
       const base64Data = await fileToBase64(file);
-      setAiProgressStatus('Đang gửi file sang Gemini 3.8 Flash để nhận diện câu hỏi & công thức...');
+      setAiProgressStatus('Đang kiểm tra cấu trúc PDF để đối chiếu số câu...');
 
+      let pdfReference: ParseResult | undefined;
+      try { pdfReference = await FileParserService.parsePdfFile(file); }
+      catch (error) { console.warn('Chưa đọc được văn bản PDF để đối chiếu:', error); }
+      setAiProgressStatus('Đang gửi file sang Gemini 3.8 Flash để nhận diện câu hỏi & công thức...');
       const result = await aiService.extractQuestionsFromMedia({
+        pdfReference,
         media: [
           {
             base64Data,
@@ -221,26 +224,13 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         onProgress: (status) => setAiProgressStatus(status)
       });
 
-      // Cross-check Gemini output against the existing PDF text parser.
-      // No additional AI call, and no changes to saved assignments.
-      let pdfReference: ParseResult | null = null;
-      try {
-        pdfReference = await FileParserService.parsePdfFile(file);
-      } catch (refErr) {
-        console.warn('PDF text reference unavailable:', refErr);
-      }
-      const reconciliation = pdfReference
-        ? reconcileExtraGeminiPdfSolutions(result.questions, pdfReference)
-        : { questions: result.questions, recoveredCount: 0, note: undefined };
-      const extractedQuestions = reconciliation.questions;
-
-      const parsedItems: ParsedItem[] = extractedQuestions.map((q, idx) => ({
+      const parsedItems: ParsedItem[] = result.questions.map((q, idx) => ({
         id: q.id || `q_pdf_${Date.now()}_${idx + 1}`,
         order: q.order || (idx + 1),
         question: q.question,
         type: q.type,
         options: q.options || [],
-        correctAnswer: q.correctAnswer || (q.type === 'essay' ? '' : 'A'),
+        correctAnswer: q.correctAnswer || '',
         points: q.points || (q.type === 'essay' ? 1.0 : 0.5),
         explanation: q.explanation || '',
         rubric: q.rubric || '',
@@ -248,11 +238,13 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         selected: true
       }));
 
-      // Check BEFORE and AFTER normalization: it may drop items with empty question text.
-      const issues = auditNewMediaQuestions(extractedQuestions, {
-        expectedQuestionCount: reconciliation.recoveredCount ? extractedQuestions.length : result.expectedQuestionCount,
-        declaredTotalPoints: result.declaredTotalPoints
-      });
+      const issues = auditNewMediaQuestions(result.questions, result);
+      if (pdfReference?.items.some(item => item.category === 'tu_luan' && item.explanation?.trim())
+        && result.questions.length > pdfReference.totalFound) {
+        issues.push({ order: 0, level: 'error', message: `AI trả ${result.questions.length} mục nhưng phần đề PDF có ${pdfReference.totalFound} câu. Chưa đủ căn cứ ghép lời giải; cần đối chiếu nguồn trước khi nhập.` });
+      }
+      if (result.pdfRecoveryNote) issues.push({ order: 0, level: 'warning', message: result.pdfRecoveryNote });
+
       const normalized = FileParserService.normalizeParseResult({
         fileName: file.name,
         fileType: 'pdf',
@@ -261,35 +253,8 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         essayCount: parsedItems.filter(i => i.category === 'tu_luan').length,
         items: parsedItems
       });
-      if (normalized.totalFound < extractedQuestions.length) {
-        issues.push({
-          order: 0,
-          level: 'error',
-          message: 'AI tạo ' + extractedQuestions.length + ' mục nhưng chỉ ' + normalized.totalFound +
-            ' mục có đủ nội dung để nhập. Có câu đã bị loại vì rỗng; phải kiểm tra PDF gốc.'
-        });
-      }
-      // Đối chiếu độc lập số lượng câu với phần đề trong PDF (không gọi AI).
-      // Chỉ chặn khi PDF có đáp án tự luận rõ ràng và Gemini trích thừa câu.
-      if (pdfReference) {
-        const hasMappedEssaySolutions = pdfReference.items.some(item =>
-          item.category === 'tu_luan' && Boolean(item.explanation?.trim())
-        );
-        if (hasMappedEssaySolutions && pdfReference.totalFound > 0 &&
-            extractedQuestions.length > pdfReference.totalFound) {
-          issues.push({
-            order: 0,
-            level: 'error',
-            message: 'Gemini trả ' + extractedQuestions.length + ' mục nhưng phần đề trong PDF có ' +
-              pdfReference.totalFound + ' câu/bài. Không đủ căn cứ ghép phần đáp án; phải đối chiếu nguồn.'
-          });
-        }
-      }
-      if (reconciliation.recoveredCount > 0 && reconciliation.note) {
-        issues.push({ order: 0, level: 'warning', message: reconciliation.note });
-      }
+      if (normalized.totalFound < parsedItems.length) issues.push({ order: 0, level: 'error', message: 'Có mục AI trích xuất bị rỗng. Cần kiểm tra PDF gốc trước khi nhập.' });
       setAiPdfIssues(issues);
-      setLastPdfReader('ai');
       setParseResult(normalized);
     } catch (err: any) {
       console.error('PDF AI Extraction Error:', err);
@@ -302,8 +267,9 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
 
   // 1B. PROCESS PDF FILE STANDARD (OFFLINE / 100% FREE NO API KEY)
   const handleProcessPdfStandard = async (file: File) => {
-    setAiPdfIssues([]);
     setIsLoading(true);
+    setParseResult(null);
+    setAiPdfIssues([]);
     setErrorMsg(null);
     setAiProgressStatus('Đang đọc tệp PDF bằng bộ xử lý thông thường...');
 
@@ -312,12 +278,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       if (result.totalFound === 0) {
         setErrorMsg('Không tìm thấy câu hỏi dạng văn bản trong file PDF (có thể đây là file PDF scan từ ảnh chụp). Nếu bạn có API Key, hãy chuyển sang chế độ "⚡ Bóc tách bằng AI Gemini" để AI nhận diện.');
       } else {
-        const normalized = FileParserService.normalizeParseResult(result);
-        // Bộ kiểm tra chỉ áp dụng cho câu sắp nhập, không động vào kho cũ.
-        const questions = FileParserService.convertToQuestions(normalized.items);
-        setAiPdfIssues(auditNewMediaQuestions(questions));
-        setLastPdfReader('standard');
-        setParseResult(normalized);
+        setParseResult(FileParserService.normalizeParseResult(result));
       }
     } catch (err: any) {
       console.error('PDF Standard Parse Error:', err);
@@ -332,16 +293,14 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const handleProcessPdf = async (file: File) => {
     const currentKey = apiKeyInput.trim() || aiService.getApiKey();
     if (pdfParseMode === 'ai') {
-      if (!currentKey) {
-        // Tuyệt đối không tự chuyển từ Gemini sang PDF văn bản khi thiếu Key.
+      if (currentKey) {
+        await handleProcessPdfWithAI(file);
+      } else {
+        // A selected AI mode must never silently import using another parser.
         setShowKeyInput(true);
-        setAiPdfIssues([]);
-        setLastPdfReader(null);
         setParseResult(null);
-        setErrorMsg('Bạn đã chọn bóc tách bằng Gemini nhưng chưa nhập API Key. Hãy dán và lưu Key hoặc chủ động chọn “PDF văn bản”. Không tự chuyển chế độ để tránh nhận nhầm trang đáp án thành câu hỏi.');
-        return;
+        setErrorMsg('Bạn đang chọn bóc tách PDF bằng AI nhưng chưa có Gemini API Key. Hãy nhập Key hoặc chủ động chọn chế độ đọc PDF thông thường. Chưa có câu hỏi nào được nhập.');
       }
-      await handleProcessPdfWithAI(file);
     } else {
       await handleProcessPdfStandard(file);
     }
@@ -349,7 +308,6 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
 
   // 2. PROCESS PASTED / UPLOADED IMAGES WITH GEMINI VISION
   const handleProcessImagesWithAI = async () => {
-    setAiPdfIssues([]);
     if (pastedImages.length === 0) {
       setErrorMsg('Vui lòng dán (Ctrl+V) hoặc tải lên ít nhất 1 ảnh đề thi.');
       return;
@@ -363,6 +321,8 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     }
 
     setIsLoading(true);
+    setParseResult(null);
+    setAiPdfIssues([]);
     setErrorMsg(null);
     setAiProgressStatus(`Đang chuẩn bị ${pastedImages.length} ảnh đề thi...`);
 
@@ -385,7 +345,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         question: q.question,
         type: q.type,
         options: q.options || [],
-        correctAnswer: q.correctAnswer || (q.type === 'essay' ? '' : 'A'),
+        correctAnswer: q.correctAnswer || '',
         points: q.points || (q.type === 'essay' ? 1.0 : 0.5),
         explanation: q.explanation || '',
         rubric: q.rubric || '',
@@ -412,7 +372,6 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
 
   // 3. PROCESS OFFICE FILES (WORD / EXCEL / JSON)
   const handleProcessOfficeFile = async (file: File) => {
-    setAiPdfIssues([]);
     const supportedExtensions = ['.xlsx', '.xls', '.csv', '.json', '.docx', '.pdf', '.txt', '.md', '.tex'];
     const lowerName = file.name.toLowerCase();
     if (!supportedExtensions.some(ext => lowerName.endsWith(ext))) {
@@ -421,6 +380,8 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     }
 
     setIsLoading(true);
+    setParseResult(null);
+    setAiPdfIssues([]);
     setErrorMsg(null);
     try {
       const result = FileParserService.normalizeParseResult(await FileParserService.parseFile(file));
@@ -512,21 +473,12 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       setErrorMsg('Hãy chọn ít nhất 1 câu hỏi trước khi thêm vào đề.');
       return;
     }
-
-    const selectedOrders = new Set(selectedItems.map(item => item.order));
-    const relevantIssues = aiPdfIssues.filter(issue => issue.order === 0 || selectedOrders.has(issue.order));
-    const blocking = relevantIssues.filter(issue => issue.level === 'error');
-    if (blocking.length > 0) {
-      const message = 'PDF AI còn thiếu nội dung biểu thức hoặc sai cấu trúc. ' +
-        blocking.map(issue => 'Câu ' + (issue.order || '(tổng đề)') + ': ' + issue.message).join(' | ') +
-        '. Hãy kiểm tra lại PDF hoặc bỏ chọn câu thiếu dữ liệu trước khi nhập.';
-      setErrorMsg(message);
-      window.alert(message);
-      return;
-    }
-    const warnings = relevantIssues.filter(issue => issue.level === 'warning');
-    if (warnings.length > 0 && !window.confirm('Có ' + warnings.length +
-        ' vấn đề liên quan đáp án/barem/điểm của PDF AI. Nếu vẫn nhập, cần bổ sung và kiểm tra kỹ trước khi giao bài. Tiếp tục?')) {
+    // Block structurally incomplete NEW AI PDF imports only. Ordinary files
+    // and legacy exams keep their existing import flow.
+    const blockingIssues = aiPdfIssues.filter(issue => issue.level === 'error'
+      && (issue.order === 0 || selectedItems.some(item => item.order === issue.order)));
+    if (blockingIssues.length > 0) {
+      setErrorMsg('Chưa nhập đề: ' + blockingIssues.map(issue => issue.message).join(' | '));
       return;
     }
 
@@ -558,7 +510,6 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     : [];
 
   const selectedCount = parseResult?.items.filter(i => i.selected).length || 0;
-  const hasBlockingImportIssues = aiPdfIssues.some(issue => issue.level === 'error');
   const reviewCount = parseResult
     ? parseResult.items.filter(item => {
         if (item.category !== 'trac_nghiem') return false;
@@ -1144,11 +1095,6 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                     </div>
                     <div className="text-xs text-slate-500 flex items-center gap-3 mt-0.5">
                       <span>Tổng cộng: <strong className="text-indigo-700">{parseResult.totalFound}</strong> câu</span>
-                      {lastPdfReader && (
-                        <span className="rounded-lg bg-blue-50 text-blue-800 px-2 py-0.5 font-bold">
-                          {lastPdfReader === 'ai' ? 'Đã bóc tách bằng Gemini' : 'Đọc PDF văn bản (không AI)'}
-                        </span>
-                      )}
                       <span>•</span>
                       <span className="text-emerald-700 font-bold">
                         Trắc nghiệm: {parseResult.multipleChoiceCount}
@@ -1163,44 +1109,50 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setParseResult(null)}
+                  onClick={() => { setParseResult(null); setAiPdfIssues([]); }}
                   className="text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-200 px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
                 >
                   Tệp khác
                 </button>
               </div>
 
-              <div className={`rounded-2xl px-4 py-3 border text-xs flex items-start gap-2 ${(reviewCount > 0 || hasBlockingImportIssues) ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900'}`}>
-                {(reviewCount > 0 || hasBlockingImportIssues) ? (
+              <div className={`rounded-2xl px-4 py-3 border text-xs flex items-start gap-2 ${reviewCount > 0 || aiPdfIssues.length > 0 ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900'}`}>
+                {reviewCount > 0 || aiPdfIssues.length > 0 ? (
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
                 ) : (
                   <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
                 )}
                 <div>
                   <div className="font-black">
-                    {hasBlockingImportIssues
-                      ? 'Có lỗi cấu trúc PDF cần xử lý trước khi nhập'
+                    {aiPdfIssues.some(issue => issue.level === 'error')
+                      ? 'Có lỗi PDF cần kiểm tra trước khi nhập câu hỏi'
                       : reviewCount > 0
-                      ? `Có ${reviewCount} câu cần kiểm tra lại trước khi giao bài`
-                      : 'Cấu trúc câu hỏi ổn'}
+                      ? `Có ${reviewCount} câu trắc nghiệm cần kiểm tra trước khi giao bài`
+                      : aiPdfIssues.length > 0
+                        ? `Có ${aiPdfIssues.length} cảnh báo PDF cần giáo viên đối chiếu`
+                        : 'Cấu trúc câu hỏi ổn'}
                   </div>
                   <div className="mt-0.5 opacity-80">Giáo viên duyệt trước khi giao.</div>
                 </div>
               </div>
 
+              {/* New Gemini PDF evidence warnings - never auto-fix the maths. */}
               {aiPdfIssues.length > 0 && (
-                <div role="alert" className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-950 space-y-1">
-                  <div className="font-black">Cần đối chiếu PDF gốc: {aiPdfIssues.length} cảnh báo</div>
-                  <p>Không giao đề khi còn thiếu biểu thức, đáp án hoặc điểm. Những câu thiếu nội dung sẽ bị chặn nhập.</p>
-                  {aiPdfIssues.map((issue, index) => (
-                    <p key={index} className={issue.level === 'error' ? 'font-bold text-rose-800' : 'text-amber-900'}>
-                      {issue.order > 0 ? 'Câu ' + issue.order + ': ' : 'Toàn đề: '}{issue.message}
+                <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900 space-y-1">
+                  <strong>Kiểm tra dữ liệu PDF trước khi thêm câu hỏi:</strong>
+                  {aiPdfIssues.map((issue, idx) => (
+                    <p key={idx} className={issue.level === 'error' ? 'font-bold text-rose-700' : ''}>
+                      {issue.level === 'error' ? '⛔' : '⚠️'} {issue.order ? `Câu ${issue.order}: ` : ''}{issue.message}
                     </p>
                   ))}
                 </div>
               )}
-
               {/* Filter Tabs & Selection Control */}
+              {!!parseResult.warnings?.length && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+                  {parseResult.warnings.map((warning, idx) => <p key={idx}>{warning}</p>)}
+                </div>
+              )}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
                 {/* Tabs */}
                 <div className="flex bg-slate-100 p-1 rounded-xl">
@@ -1271,7 +1223,6 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
               <div className="space-y-3 max-h-[48vh] overflow-y-auto pr-1">
                 {filteredItems.map((item, idx) => {
                   const isMC = item.category === 'trac_nghiem';
-                  const questionIssues = aiPdfIssues.filter(issue => issue.order === item.order);
 
                   return (
                     <div
@@ -1334,21 +1285,15 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                         </div>
                       )}
 
-                      {!isMC && !!item.correctAnswer?.trim() && (
-                        <div className="mt-2 pl-6 text-[11px] text-indigo-900 bg-indigo-50/60 p-2 rounded-xl border border-indigo-200">
-                          <strong>Đáp án gốc:</strong> <MathDisplay text={item.correctAnswer} />
+                      {/* Original answer/rubric must be visible to the teacher before importing essays. */}
+                      {!isMC && (
+                        <div className="mt-2 ml-6 space-y-1 text-xs text-slate-700">
+                          <div><strong>Đáp án gốc:</strong> {item.correctAnswer
+                            ? <MathDisplay text={item.correctAnswer} inline={true} />
+                            : <span className="text-amber-700">Chưa có — giáo viên cần đối chiếu PDF</span>}</div>
+                          {item.rubric && <div><strong>Barem nguồn:</strong> <MathDisplay text={item.rubric} inline={true} /></div>}
                         </div>
                       )}
-                      {questionIssues.length > 0 && (
-                        <div className="mt-2 pl-6 text-[11px] space-y-1">
-                          {questionIssues.map((issue, index) => (
-                            <p key={index} className={issue.level === 'error' ? 'text-rose-700 font-bold' : 'text-amber-800'}>
-                              {issue.level === 'error' ? 'Thiếu dữ liệu: ' : 'Cần đối chiếu: '}{issue.message}
-                            </p>
-                          ))}
-                        </div>
-                      )}
-
                       {/* Explanation if any */}
                       {item.explanation && (
                         <div className="mt-2 pl-6 text-[11px] text-slate-600 italic bg-amber-50/60 p-2 rounded-xl border border-amber-200">

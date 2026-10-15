@@ -336,6 +336,7 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
             submissions={safeSubmissions}
             initialAssignmentId={tabParams.assignmentId}
             onOpenShare={onOpenShare}
+            onRefreshData={onRefreshData}
             onNavigate={handleNavigate}
           />
         )}

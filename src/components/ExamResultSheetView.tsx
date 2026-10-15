@@ -15,6 +15,9 @@ import { Submission, Assignment, Question, StudentAnswer } from '../types';
 import { MathDisplay } from './MathDisplay';
 import { isEssayQuestion } from '../utils/questionUtils';
 import { GradingService } from '../services/gradingService';
+import { getCorrectOptionLabel, getSubmissionSummary, isSubmissionAnswerPending, isSubmissionAnswerBlank } from '../utils/submissionReviewUtils';
+import { getSavedReportQuestion, getSubmissionReportSourceIssue } from '../utils/submissionReportUtils';
+import { getSubmissionAnswerImages } from '../utils/submissionImageUtils';
 
 interface ExamResultSheetViewProps {
   submission: Submission;
@@ -31,14 +34,9 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
   onRetake,
   reviewMode = 'full'
 }) => {
-  const questionPool: Question[] =
-    submission.shuffledQuestions && submission.shuffledQuestions.length > 0
-      ? submission.shuffledQuestions
-      : assignment.questions;
-
-  const isAnswerPending = (ans: StudentAnswer) =>
-    ans.teacherScore === undefined &&
-    Boolean(ans.needsTeacherReview || ans.isProvisional || ans.aiGradingError);
+  const isAnswerPending = (ans: StudentAnswer) => isSubmissionAnswerPending(assignment, submission, ans);
+  const summary = getSubmissionSummary(assignment, submission);
+  const sourceIssue = getSubmissionReportSourceIssue(assignment, submission);
 
   const pendingAnswers = submission.answers.filter(isAnswerPending);
   const pendingCount = pendingAnswers.length;
@@ -56,16 +54,13 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
       submission.gradingStatus === 'needs_review' ||
       submission.gradingStatus === 'grading' ||
       submission.gradingStatus === 'failed'
-    ) || pendingCount > 0;
+    ) || pendingCount > 0 || Boolean(sourceIssue);
 
   const reviewedAnswers = submission.answers.filter(ans => !isAnswerPending(ans));
-  const reviewedCorrectCount = reviewedAnswers.filter(ans => ans.isCorrect).length;
-  const reviewedWrongCount = reviewedAnswers.filter(ans => !ans.isCorrect).length;
+  const reviewedCorrectCount = summary.correctCount;
+  const reviewedWrongCount = summary.wrongCount;
 
-  const scoreToDisplay =
-    hasPendingReview && submission.mcqScore !== undefined
-      ? submission.mcqScore
-      : submission.totalScore;
+  const scoreToDisplay = submission.totalScore;
 
   const statusTitle = hasPendingReview ? 'KẾT QUẢ TẠM TÍNH' : 'KẾT QUẢ CHÍNH THỨC';
   const statusNote = hasPendingReview
@@ -90,14 +85,12 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
   };
 
   const getQuestion = (ans: StudentAnswer, index: number) =>
-    questionPool.find(q => q.id === ans.questionId) ||
-    assignment.questions.find(q => q.id === ans.questionId) ||
-    questionPool[index];
+    getSavedReportQuestion(assignment, submission, ans.questionId);
 
   const getStudentAnswerLabel = (ans: StudentAnswer, question?: Question) => {
     if (!question) return ans.selectedAnswer || '—';
     if (isEssayQuestion(question)) {
-      const imageCount = ans.essayImages?.length || 0;
+      const imageCount = getSubmissionAnswerImages(submission, ans).length;
       if (ans.studentSolutionText && imageCount > 0) return `Tự luận • ${imageCount} ảnh`;
       if (ans.studentSolutionText) return 'Tự luận • đã nhập lời giải';
       if (imageCount > 0) return `Tự luận • ${imageCount} ảnh`;
@@ -110,8 +103,7 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
   const getCorrectAnswerLabel = (ans: StudentAnswer, question?: Question) => {
     if (question && isEssayQuestion(question)) return 'Theo biểu điểm';
 
-    // 1. Nếu học sinh làm ĐÚNG, đáp án chuẩn trên đề học sinh đang làm chắc chắn là đáp án học sinh đã chọn
-    if (ans.isCorrect && ans.selectedAnswer) return ans.selectedAnswer;
+    if (question) return getCorrectOptionLabel(question) || '—';
 
     // 2. Ưu tiên đáp án chuẩn đã map chính xác theo đề học sinh đang làm
     if (ans.correctAnswer) return ans.correctAnswer;
@@ -290,7 +282,7 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
             </div>
             <div className={`text-4xl font-black mt-1 ${hasPendingReview ? 'text-amber-700' : 'text-indigo-700'}`}>
               {scoreToDisplay.toFixed(1)}
-              <span className="text-base text-slate-400"> / 10</span>
+              <span className="text-base text-slate-400"> / {submission.maxScore || 10}</span>
             </div>
           </div>
 
@@ -312,8 +304,8 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
               <BookOpen className="w-4 h-4 text-slate-500 mx-auto mb-1" />
-              <div className="text-xl font-black text-slate-800">{submission.totalQuestions}</div>
-              <div className="text-[10px] text-slate-600 font-bold">Tổng câu</div>
+              <div className="text-xl font-black text-slate-800">{summary.unansweredCount}</div>
+              <div className="text-[10px] text-slate-600 font-bold">Bỏ trống</div>
             </div>
           </div>
         </div>
@@ -325,7 +317,7 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
               : 'bg-slate-50 border-slate-200 text-slate-600'
           }`}
         >
-          {statusNote}
+          {sourceIssue || statusNote}
         </div>
 
         {reviewMode !== 'score_only' && (
@@ -348,10 +340,7 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
                 {visibleAnswers.map((ans, idx) => {
                   const question = getQuestion(ans, idx);
                   const pending = isAnswerPending(ans);
-                  const unanswered =
-                    !ans.selectedAnswer &&
-                    !ans.studentSolutionText &&
-                    (!ans.essayImages || ans.essayImages.length === 0);
+                  const unanswered = isSubmissionAnswerBlank(submission, ans, question);
 
                   let status: React.ReactNode;
                   if (pending) {

@@ -18,10 +18,14 @@ import {
   StepErrorType,
   StepGradingResponse
 } from '../types';
-import { isEssayQuestion, formatDecimalPoint } from '../utils/questionUtils';
+import { isEssayQuestion, formatDecimalPoint, getEssayGradingReference } from '../utils/questionUtils';
 import { stepGradingService } from './stepGradingService';
-import { StorageService } from './storageService';
-import { FirestoreService } from './firestoreService';
+import { saveSubmissionConfirmed, type SubmissionSaveResult } from './submissionSaveService';
+import type { AIImageMemo } from '../utils/aiResultCache';
+import { getCorrectOptionLabel, getMultipleChoiceSelectionIssue, hasTeacherGrade, refreshSubmissionTotals, getSubmissionSourceIssue } from '../utils/submissionReviewUtils';
+import { captureGradingReference } from '../utils/submissionReportUtils';
+import { compactSubmissionImages } from '../utils/submissionImageUtils';
+import { selectLatestStudentSubmissions } from '../utils/studentSubmissionUtils';
 
 export interface GradeSingleSubmissionWithAiResult {
   success: boolean;
@@ -31,6 +35,8 @@ export interface GradeSingleSubmissionWithAiResult {
   totalErrors: number;
   firstError?: { step: number; type: StepErrorType; explanation: string };
   errorMsg?: string;
+  quotaExceeded?: boolean;
+  persistence?: SubmissionSaveResult;
 }
 
 export class GradingService {
@@ -49,13 +55,14 @@ export class GradingService {
 
     const cleanSelected = rawSelected.toUpperCase();
     const cleanCorrect = (q.correctAnswer || '').trim().toUpperCase();
+    const hasRemappedOptions = q.options?.some(opt => (opt as any).originalId && (opt as any).originalId !== opt.id);
 
     // 1. Tìm option mà học sinh đã chọn trong danh sách câu hỏi
     const matchedOption = q.options?.find(opt => {
       const optId = (opt.id || '').trim().toUpperCase();
       const optOriginalId = ((opt as any).originalId || '').trim().toUpperCase();
       const optText = (opt.text || '').trim().toUpperCase();
-      return optId === cleanSelected || optOriginalId === cleanSelected || (optText && optText === cleanSelected);
+      return optId === cleanSelected || (!hasRemappedOptions && optOriginalId === cleanSelected) || (optText && optText === cleanSelected);
     });
 
     const selectedOptionText = matchedOption ? matchedOption.text : undefined;
@@ -76,7 +83,7 @@ export class GradingService {
     // 4. Nếu q.correctAnswer là nhãn đề gốc (originalId), hoặc là text của phương án đúng
     if (matchedOption) {
       const optOriginalId = ((matchedOption as any).originalId || '').trim().toUpperCase();
-      if (optOriginalId && optOriginalId === cleanCorrect) {
+      if (!hasRemappedOptions && optOriginalId && optOriginalId === cleanCorrect) {
         return { isCorrect: true, isUnanswered: false, selectedOptionText, originalSelectedLabel };
       }
 
@@ -91,7 +98,7 @@ export class GradingService {
       const optId = (opt.id || '').trim().toUpperCase();
       const optOriginalId = ((opt as any).originalId || '').trim().toUpperCase();
       const optText = (opt.text || '').trim().toUpperCase();
-      return optId === cleanCorrect || optOriginalId === cleanCorrect || (optText && optText === cleanCorrect);
+      return optId === cleanCorrect || (!hasRemappedOptions && optOriginalId === cleanCorrect) || (optText && optText === cleanCorrect);
     });
 
     if (matchedOption && correctOption && matchedOption === correctOption) {
@@ -262,26 +269,7 @@ export class GradingService {
         if (q.type === 'short_answer') {
           studentExamCorrectAnswer = q.correctAnswer || '';
         } else {
-          // Nếu học sinh đã chọn đúng: đáp án chuẩn trên đề học sinh đang làm chắc chắn là đáp án học sinh đã chọn
-          if (isCorrect && selected) {
-            studentExamCorrectAnswer = selected;
-          } else {
-            const cleanCorrect = (q.correctAnswer || '').trim().toUpperCase();
-            const strippedCorrect = cleanCorrect.replace(/[^A-Z0-9]/g, '');
-            const correctOpt = q.options?.find(opt => {
-              const optOrigId = ((opt as any).originalId || '').trim().toUpperCase();
-              return optOrigId === cleanCorrect ||
-                     (strippedCorrect.length > 0 && optOrigId.replace(/[^A-Z0-9]/g, '') === strippedCorrect);
-            }) || q.options?.find(opt => {
-              const optText = (opt.text || '').trim().toUpperCase();
-              return optText && optText === cleanCorrect;
-            }) || q.options?.find(opt => {
-              const optId = (opt.id || '').trim().toUpperCase();
-              return optId === cleanCorrect ||
-                     (strippedCorrect.length > 0 && optId.replace(/[^A-Z0-9]/g, '') === strippedCorrect);
-            });
-            studentExamCorrectAnswer = correctOpt?.id || q.correctAnswer || '';
-          }
+          studentExamCorrectAnswer = getCorrectOptionLabel(q);
         }
       }
 
@@ -494,26 +482,7 @@ export class GradingService {
         if (q.type === 'short_answer') {
           studentExamCorrectAnswer = q.correctAnswer || '';
         } else {
-          // Nếu học sinh đã chọn đúng: đáp án chuẩn trên đề học sinh đang làm chắc chắn là đáp án học sinh đã chọn
-          if (isCorrect && selected) {
-            studentExamCorrectAnswer = selected;
-          } else {
-            const cleanCorrect = (q.correctAnswer || '').trim().toUpperCase();
-            const strippedCorrect = cleanCorrect.replace(/[^A-Z0-9]/g, '');
-            const correctOpt = q.options?.find(opt => {
-              const optOrigId = ((opt as any).originalId || '').trim().toUpperCase();
-              return optOrigId === cleanCorrect ||
-                     (strippedCorrect.length > 0 && optOrigId.replace(/[^A-Z0-9]/g, '') === strippedCorrect);
-            }) || q.options?.find(opt => {
-              const optText = (opt.text || '').trim().toUpperCase();
-              return optText && optText === cleanCorrect;
-            }) || q.options?.find(opt => {
-              const optId = (opt.id || '').trim().toUpperCase();
-              return optId === cleanCorrect ||
-                     (strippedCorrect.length > 0 && optId.replace(/[^A-Z0-9]/g, '') === strippedCorrect);
-            });
-            studentExamCorrectAnswer = correctOpt?.id || q.correctAnswer || '';
-          }
+          studentExamCorrectAnswer = getCorrectOptionLabel(q);
         }
       }
 
@@ -539,6 +508,7 @@ export class GradingService {
         isCorrect,
         pointsEarned,
         maxPoints: q.points,
+        gradingReference: captureGradingReference(q, q),
         aiFeedback: aiEval?.feedback,
         aiScore: aiEval?.score,
         aiGraded: aiEval?.graded,
@@ -614,6 +584,7 @@ export class GradingService {
     totalClassStudents: number,
     submissions: Submission[]
   ): AssignmentStats {
+    submissions = selectLatestStudentSubmissions(assignment, submissions);
     const submittedCount = submissions.length;
     const unsubmittedCount = Math.max(0, totalClassStudents - submittedCount);
 
@@ -704,12 +675,19 @@ export class GradingService {
     submission: Submission;
     onProgress?: (message: string) => void;
     signal?: AbortSignal;
+    forceRegrade?: boolean;
   }): Promise<GradeSingleSubmissionWithAiResult> {
-    const { assignment, submission, onProgress, signal } = params;
+    const { assignment, submission, onProgress, signal, forceRegrade = false } = params;
 
     if (signal?.aborted) {
       throw new Error('Quá trình chấm bài đã bị tạm dừng bởi người dùng.');
     }
+
+    if (submission.answers.some(answer => !assignment.questions.some(q => q.id === answer.questionId))) {
+      throw new Error('Bài đã nộp có câu không còn trong đề nguồn. Cần đối chiếu trước khi chấm lại; điểm và bài cũ được giữ.');
+    }
+    const sourceIssue = getSubmissionSourceIssue(assignment, submission);
+    if (sourceIssue) throw Error(sourceIssue);
 
     onProgress?.(`Bắt đầu phân tích bài làm của ${submission.studentName}...`);
 
@@ -718,24 +696,55 @@ export class GradingService {
     let correctCnt = 0;
     let wrongCnt = 0;
     let overallNeedsReview = false;
+    let quotaExceeded = false;
+    const imageMemo: AIImageMemo = new Map();
     let totalErrorsCount = 0;
     let firstFoundError: { step: number; type: StepErrorType; explanation: string } | undefined = undefined;
 
     const updatedAnswers: StudentAnswer[] = [];
 
-    for (let qIdx = 0; qIdx < assignment.questions.length; qIdx++) {
+    // Labels/options must follow the student's saved shuffled exam when regrading.
+    const gradingQuestions = assignment.questions.map(q => {
+      const snapshot = submission.shuffledQuestions?.find(saved => saved.id === q.id);
+      if (!snapshot || isEssayQuestion(q)) return q;
+      if (q.type === 'short_answer' || (q.type === 'true_false' && !q.options?.length)) return q;
+      const sourceCorrect = q.options?.find(option => option.id.trim().toUpperCase() === q.correctAnswer.trim().toUpperCase())
+        || q.options?.find(option => option.text.trim() === q.correctAnswer.trim());
+      const mapped = sourceCorrect && (snapshot.options?.find(option =>
+        (option as any).originalId === sourceCorrect.id && option.text.trim() === sourceCorrect.text.trim())
+        || snapshot.options?.find(option => option.text.trim() === sourceCorrect.text.trim()));
+      if (!mapped) throw new Error('Đáp án nguồn không khớp phương án học sinh đã nhận. Cần giáo viên đối chiếu đề trước khi chấm lại; điểm cũ được giữ.');
+      return { ...q, options: snapshot.options, correctAnswer: mapped.id };
+    });
+    for (let qIdx = 0; qIdx < gradingQuestions.length; qIdx++) {
       if (signal?.aborted) {
         throw new Error('Quá trình chấm bài đã bị tạm dừng bởi người dùng.');
       }
 
-      const q = assignment.questions[qIdx];
+      const q = gradingQuestions[qIdx];
       const isEssay = isEssayQuestion(q);
       const existingAns = submission.answers.find(a => a.questionId === q.id);
 
       const maxPoints = q.points || 1.0;
       totalMax += maxPoints;
+      const hasManualGrade = !!existingAns && hasTeacherGrade(existingAns);
+
+      if (!forceRegrade && existingAns && hasManualGrade) {
+        const earned = existingAns.teacherScore!;
+        totalEarned += earned;
+        if (existingAns.isCorrect) correctCnt++; else wrongCnt++;
+        updatedAnswers.push({ ...existingAns, pointsEarned: earned, needsTeacherReview: false, isProvisional: false });
+        continue;
+      }
 
       if (!isEssay) {
+        const issue = existingAns && getMultipleChoiceSelectionIssue(q, existingAns);
+        if (issue) {
+          overallNeedsReview = true;
+          totalEarned += existingAns.pointsEarned || 0;
+          updatedAnswers.push({ ...existingAns, selectionReviewIssue: issue, needsTeacherReview: true, isProvisional: true, maxPoints });
+          continue;
+        }
         // Trắc nghiệm & trả lời ngắn: Đánh giá tức thì
         const selected = (existingAns?.selectedAnswer || '').trim();
         let isCorrect = false;
@@ -764,7 +773,9 @@ export class GradingService {
           }),
           isCorrect,
           pointsEarned: points,
-          maxPoints
+          maxPoints,
+          correctAnswer: q.correctAnswer,
+          gradingReference: captureGradingReference(q, submission.shuffledQuestions?.find(saved => saved.id === q.id) || q)
         });
         continue;
       }
@@ -772,7 +783,7 @@ export class GradingService {
       // TỰ LUẬN: Đọc trực tiếp từ ảnh gốc (Vision) & Phân tích từng bước (Step-by-step)
       onProgress?.(`Đang chấm tự luận câu ${qIdx + 1}/${assignment.questions.length}...`);
 
-      const solutionText = existingAns?.studentSolutionText || '';
+      const solutionText = existingAns?.studentSolutionText || existingAns?.selectedAnswer || '';
       // Gom ảnh từ câu hỏi riêng hoặc ảnh bài làm giấy tổng thể của submission
       const images: string[] = (existingAns?.essayImages && existingAns.essayImages.length > 0)
         ? existingAns.essayImages
@@ -791,28 +802,36 @@ export class GradingService {
           maxPoints,
           aiFeedback: 'Học sinh chưa điền lời giải hoặc chưa tải ảnh bài làm cho câu này.',
           aiScore: 0,
-          aiGraded: true
+          aiGraded: true,
+          gradingReference: captureGradingReference(q, submission.shuffledQuestions?.find(saved => saved.id === q.id) || q)
         });
         continue;
       }
 
       try {
-        const stepRes: StepGradingResponse = await stepGradingService.analyzeStepByStep({
+        const stepRes: StepGradingResponse = quotaExceeded ? {
+          success: false, analysis: [], firstErrorStep: null, firstErrorType: null, firstErrorExplanation: null,
+          totalSteps: 0, correctStepsCount: 0, isAllCorrect: false, score: 0, maxScore: maxPoints,
+          feedback: 'AI hết hạn mức; đã dừng gọi tiếp và giữ bài làm để giáo viên duyệt.',
+          analysisSource: 'unavailable', needsTeacherReview: true, errorCode: 'quota'
+        } : await stepGradingService.analyzeStepByStep({
           questionId: q.id,
           questionText: q.question,
           grade: String(assignment.grade),
           topic: assignment.topic,
           maxPoints: q.points,
-          correctAnswer: q.correctAnswer,
-          rubric: q.rubric,
+          ...getEssayGradingReference(q),
           studentSolutionText: solutionText,
           essayImages: images
-        });
+        }, { force: forceRegrade, previousResult: existingAns?.stepGradingResponse, imageMemo });
 
-        const scoreEarned = Math.min(maxPoints, Math.max(0, stepRes.score));
+        quotaExceeded ||= stepRes.errorCode === 'quota';
+
+        const scoreEarned = stepRes.success && Number.isFinite(stepRes.score)
+          ? Math.min(maxPoints, Math.max(0, stepRes.score)) : existingAns?.pointsEarned ?? 0;
         const hasStepError = !!stepRes.firstErrorStep || (stepRes.analysis || []).some(s => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
-        const needsReview = !!stepRes.needsTeacherReview || stepRes.analysisSource === 'rule' || stepRes.analysisSource === 'unavailable';
-        const isCorrect = !needsReview && !hasStepError && (stepRes.isAllCorrect === true || ((stepRes.analysis || []).length > 0 && (stepRes.analysis || []).every(s => s.status === 'correct') && scoreEarned >= maxPoints));
+        const needsReview = !hasManualGrade && (!stepRes.success || !stepRes.analysis?.length || !!stepRes.needsTeacherReview || stepRes.analysisSource === 'rule' || stepRes.analysisSource === 'unavailable');
+        const isCorrect = hasManualGrade ? existingAns!.isCorrect : !needsReview && !hasStepError && (stepRes.isAllCorrect === true || ((stepRes.analysis || []).length > 0 && (stepRes.analysis || []).every(s => s.status === 'correct') && scoreEarned >= maxPoints));
 
         if (needsReview) {
           overallNeedsReview = true;
@@ -822,7 +841,8 @@ export class GradingService {
         } else {
           wrongCnt++;
         }
-        totalEarned += scoreEarned;
+        const officialEarned = hasManualGrade ? existingAns!.teacherScore! : scoreEarned;
+        totalEarned += officialEarned;
 
         if (stepRes.firstErrorStep) {
           totalErrorsCount++;
@@ -841,10 +861,11 @@ export class GradingService {
           studentSolutionText: solutionText,
           essayImages: images,
           isCorrect,
-          pointsEarned: scoreEarned,
+          pointsEarned: officialEarned,
           maxPoints,
-          teacherScore: needsReview ? undefined : scoreEarned,
-          teacherFeedback: `[Gemini AI]: ${stepRes.feedback}`,
+          teacherScore: hasManualGrade ? existingAns?.teacherScore : undefined,
+          teacherReviewed: hasManualGrade,
+          teacherFeedback: hasManualGrade ? existingAns?.teacherFeedback : `[Gemini AI]: ${stepRes.feedback}`,
           aiScore: scoreEarned,
           aiFeedback: stepRes.feedback,
           aiGraded: true,
@@ -856,6 +877,10 @@ export class GradingService {
           isProvisional: needsReview,
           aiGradingError: stepRes.analysisSource === 'rule' || stepRes.analysisSource === 'unavailable',
           stepGradingResponse: stepRes,
+          gradingReference: !hasManualGrade && stepRes.success && stepRes.analysisSource === 'ai'
+            ? captureGradingReference(q, submission.shuffledQuestions?.find(saved => saved.id === q.id) || q) : existingAns?.gradingReference,
+          aiGradingReference: hasManualGrade && stepRes.success && stepRes.analysisSource === 'ai'
+            ? captureGradingReference(q, submission.shuffledQuestions?.find(saved => saved.id === q.id) || q) : existingAns?.aiGradingReference,
           hasCrossedOutDetection: stepRes.hasCrossedOutDetection,
           uncertainCorrectionDetected: stepRes.uncertainCorrectionDetected,
           teacherCorrectionNotice: stepRes.teacherCorrectionNotice
@@ -896,9 +921,13 @@ export class GradingService {
 
     const hasAnyProvisional = updatedAnswers.some(a => a.isProvisional || (a.needsTeacherReview && a.teacherScore === undefined));
 
-    const updatedSubmission: Submission = {
+    const updatedSubmission: Submission = compactSubmissionImages(refreshSubmissionTotals(assignment, {
       ...submission,
       answers: updatedAnswers,
+      shuffledQuestions: (submission.shuffledQuestions?.length ? submission.shuffledQuestions : assignment.questions).map(saved => {
+        const graded = gradingQuestions.find(q => q.id === saved.id);
+        return graded && !isEssayQuestion(graded) ? { ...saved, correctAnswer: graded.correctAnswer } : saved;
+      }),
       totalScore: finalScore,
       correctCount: correctCnt,
       wrongCount: wrongCnt,
@@ -913,15 +942,9 @@ export class GradingService {
         firstErrorType: firstFoundError?.type || null,
         firstErrorExplanation: firstFoundError?.explanation || null
       }
-    };
+    }));
 
-    // Tự động lưu bền vững vào IndexedDB/LocalStorage và Firestore
-    try {
-      StorageService.saveSubmission(updatedSubmission);
-      await FirestoreService.saveResult(updatedSubmission).catch(() => {});
-    } catch (saveErr) {
-      console.warn('Lỗi lưu kết quả chấm vào bộ nhớ:', saveErr);
-    }
+    const persistence = await saveSubmissionConfirmed(updatedSubmission);
 
     return {
       success: true,
@@ -929,7 +952,9 @@ export class GradingService {
       hasErrors: totalErrorsCount > 0,
       needsTeacherReview: overallNeedsReview,
       totalErrors: totalErrorsCount,
-      firstError: firstFoundError
+      firstError: firstFoundError,
+      quotaExceeded,
+      persistence
     };
   }
 
