@@ -132,8 +132,8 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
     // Read-only quality flags: NEVER recalculate or overwrite archived student grades.
     const rubricCriteria = response?.scoreBreakdown || [];
     const criterionTotal = rubricCriteria.reduce((sum, item) => sum + (Number(item.earnedPoints) || 0), 0);
-    const recordedAiScore = Number.isFinite(answer.aiScore) ? answer.aiScore
-      : Number.isFinite(response?.score) ? response!.score : null;
+    const recordedAiScore = typeof answer.aiScore === 'number' && Number.isFinite(answer.aiScore) ? answer.aiScore
+      : typeof response?.score === 'number' && Number.isFinite(response.score) ? response.score : null;
     const rubricScoreMismatch = rubricCriteria.length > 0 && recordedAiScore !== null
       && Math.abs(criterionTotal - recordedAiScore) > 0.011;
     const aiUnavailablePending = essay && pending && !hasTeacherGrade(answer)
