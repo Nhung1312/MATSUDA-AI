@@ -76,6 +76,40 @@ const exported = await buildSubmissionExport(changed, submission);
 const report = new TextDecoder().decode(readZip(exported.bytes).get('bai-cham.html'));
 assert.match(report, /Barem\/hướng dẫn chấm đã lưu<\/h4><div class="text">Kết luận x=1: 1 điểm/);
 assert.match(report, /Nguồn hiện tại để đối chiếu/);
+
+assert.match(report, /Câu 1[^<]*Trắc nghiệm/, 'MCQ label must use the complete saved question');
+assert.match(report, /Câu 2[^<]*Tự luận/, 'Essay label must use the complete saved question');
+
+const pendingCase = clone(submission);
+pendingCase.gradingStatus = 'needs_review';
+pendingCase.needsTeacherReview = true;
+pendingCase.isProvisional = true;
+Object.assign(pendingCase.answers[1], { pointsEarned: 0, aiScore: 0, teacherScore: undefined,
+  needsTeacherReview: true, isProvisional: true, aiGradingError: true,
+  stepGradingResponse: { success: false, score: 0, maxScore: 1, analysis: [],
+    analysisSource: 'unavailable', needsTeacherReview: true } });
+const pendingBefore = JSON.stringify(pendingCase);
+const pendingExport = await buildSubmissionExport(assignment, pendingCase);
+const pendingHtml = new TextDecoder().decode(readZip(pendingExport.bytes).get('bai-cham.html'));
+assert.match(pendingHtml, /Điểm đang lưu \(tạm, chưa duyệt\)/);
+assert.match(pendingHtml, /KHÔNG phải điểm chấm chính thức/);
+assert.equal(JSON.stringify(pendingCase), pendingBefore, 'Report must never mutate ungraded answers');
+
+const mismatchCase = clone(submission);
+mismatchCase.answers[1].aiScore = .75;
+mismatchCase.answers[1].stepGradingResponse = {
+  score: .75, maxScore: 1, success: true, analysisSource: 'ai',
+  analysis: [{ stepIndex: 1, studentText: 'x=1', status: 'correct', confidence: .99 }],
+  scoreBreakdown: [{ criterion: 'Bước 1', earnedPoints: .35, maxPoints: .5, reason: 'Giả lập' },
+                   { criterion: 'Bước 2', earnedPoints: .5, maxPoints: .5, reason: 'Giả lập' }]
+};
+const mismatchBefore = JSON.stringify(mismatchCase);
+const mismatchExport = await buildSubmissionExport(assignment, mismatchCase);
+const mismatchHtml = new TextDecoder().decode(readZip(mismatchExport.bytes).get('bai-cham.html'));
+assert.match(mismatchHtml, /Điểm AI \(0\.75\) khác tổng các tiêu chí \(0\.85\)/);
+assert.equal(JSON.stringify(mismatchCase), mismatchBefore);
+console.log('PASS: type labels, provisional AI outages and rubric inconsistencies are reported read-only');
+
 const raw = JSON.parse(new TextDecoder().decode(readZip(exported.bytes).get('du-lieu-cham.json')));
 assert.deepEqual(raw.submission, submission);
 const batch = await buildBatchSubmissionExport(changed, [submission]);
