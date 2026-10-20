@@ -67,7 +67,7 @@ export function hasTrustedEssaySecondPassAgreement(
     || second?.confidence !== 'high') return false;
 
   // Strict typography normalization only (not an algebraic equivalence engine).
-  const key = (value: string) => value.normalize('NFKC')
+  const key = (value: string) => value.normalize('NFC')
     .replace(/[−–]/g, '-').replace(/[\s\u00a0]+/g, '').replace(/[.;]+$/g, '');
   if (key(source) !== key(firstAnswer) || key(source) !== key(secondAnswer)) return false;
 
