@@ -52,6 +52,12 @@ assert.equal(hasTrustedEssaySecondPassAgreement({ ...q, correctAnswer: 'Xem lờ
   firstEssay('x=1'), secondEssay('x=1')), false, 'Placeholder answer is not source evidence');
 assert.equal(hasTrustedEssaySecondPassAgreement({ ...q, correctAnswer: '', rubric: 'x=1: 1 điểm' },
   firstEssay('x=1'), secondEssay('x=1')), false, 'Rubric-only key requires teacher');
+assert.equal(hasTrustedEssaySecondPassAgreement({ ...q, correctAnswer: 'x²=4' },
+  firstEssay('x2=4'), secondEssay('x2=4')), false,
+  'Superscript x² must never normalize into x2');
+assert.equal(hasTrustedEssaySecondPassAgreement({ ...q, correctAnswer: 'x-2=0' },
+  firstEssay('x−2=0'), secondEssay('x-2=0')), true,
+  'Unicode minus and ASCII minus are equivalent glyphs');
 assert.equal(hasTrustedEssaySecondPassAgreement({ ...q, correctAnswer: 'X=1' },
   firstEssay('x=1'), secondEssay('x=1')), false, 'Variable case matters in algebra');
 
