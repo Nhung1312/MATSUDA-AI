@@ -44,6 +44,48 @@ function normalizeProposed(q: Question, value: any): string {
   return (numeric[1] === '-' && (integer !== '0' || fractional) ? '-' : '') + integer + (fractional ? `.${fractional}` : '');
 }
 
+/**
+ * A second independent Gemini answer can resolve an essay initially marked
+ * medium-confidence only with clear, explicit source agreement. Never infer
+ * mathematical equivalence by deleting operators, changing variable case or
+ * trusting the model's own matchesCurrentAnswer flag alone.
+ *
+ * Ambiguous/missing references and incomplete multipart answers still require
+ * a teacher. No grade or original answer is mutated here.
+ */
+export function hasTrustedEssaySecondPassAgreement(
+  question: Question,
+  first: any,
+  second: any
+): boolean {
+  const source = getEssayGradingReference(question).correctAnswer.trim();
+  const firstAnswer = String(first?.proposedAnswer || '').trim();
+  const secondAnswer = String(second?.pass2Answer || '').trim();
+  if (!source || !firstAnswer || !secondAnswer) return false;
+  if (first?.matchesCurrentAnswer !== true || first?.needsReview !== false
+    || !['high', 'medium'].includes(first?.confidence)
+    || second?.confidence !== 'high') return false;
+
+  // Strict typography normalization only (not an algebraic equivalence engine).
+  const key = (value: string) => value.normalize('NFKC')
+    .replace(/[−–]/g, '-').replace(/[\s\u00a0]+/g, '').replace(/[.;]+$/g, '');
+  if (key(source) !== key(firstAnswer) || key(source) !== key(secondAnswer)) return false;
+
+  // A source/AI answer that covers only part (a) of an (a)–(d) problem
+  // must not pass simply because all the recorded fragments agree.
+  const parts = (value: string) => new Set(Array.from(
+    value.matchAll(/(?:^|[\s;])([a-h])\)\s*/gi), match => match[1].toLowerCase()
+  ));
+  const expected = parts(question.question || '');
+  if (expected.size > 1) {
+    for (const candidate of [source, firstAnswer, secondAnswer]) {
+      const actual = parts(candidate);
+      if ([...expected].some(label => !actual.has(label))) return false;
+    }
+  }
+  return true;
+}
+
 function parseList(text: string): any[] {
   const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
   const value = JSON.parse(cleaned);
@@ -191,9 +233,15 @@ Trả DUY NHẤT JSON Array, đúng questionId từng câu: [{"questionId":"mã"
           const p1 = normalize(first?.proposedAnswer);
           const p2 = normalize(second?.pass2Answer);
           const current = normalize(q.correctAnswer);
-          const uncertain = essay || !first || !second || !p1 || !p2 || !current || first.matchesCurrentAnswer !== true
-            || first.needsReview !== false || !['high', 'medium'].includes(first.confidence) || second.confidence !== 'high'
-            || p1 !== current || p2 !== current || (q.type === 'multiple_choice' && !q.options?.some(o => o.id === p2 && o.text?.trim()));
+          // Never blanket-reject all essays. Approve only if the independent
+          // second pass and explicit source agree, with all subparts present.
+          // Keep existing strict multiple-choice/short-answer logic unchanged.
+          const uncertain = essay
+            ? !hasTrustedEssaySecondPassAgreement(q, first, second)
+            : (!first || !second || !p1 || !p2 || !current || first.matchesCurrentAnswer !== true
+              || first.needsReview !== false || !['high', 'medium'].includes(first.confidence) || second.confidence !== 'high'
+              || p1 !== current || p2 !== current
+              || (q.type === 'multiple_choice' && !q.options?.some(o => o.id === p2 && o.text?.trim())));
           const note = [first?.reason ? `Lượt 1: ${first.reason}` : 'Lượt 1 chưa đủ căn cứ.', second?.reason ? `Lượt 2: ${second.reason}` : 'Lượt 2 chưa có kết quả hợp lệ.'].join(' | ');
           finish(q, { questionId: q.id, order: q.order, currentAnswer: q.correctAnswer, proposedAnswer: p1 || p2,
             matchesCurrentAnswer: !uncertain, confidence: uncertain ? 'needs_review' : 'high', reason: note,
