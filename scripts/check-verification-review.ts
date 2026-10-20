@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
 import { aiService } from '../src/services/aiService';
-import { verificationFingerprint } from '../src/services/verificationOptimizer';
+import { verificationFingerprint, hasTrustedEssaySecondPassAgreement } from '../src/services/verificationOptimizer';
 import { hasVerificationReference } from '../src/utils/verificationUtils';
 import { isEssayQuestion } from '../src/utils/questionUtils';
 assert.ok(String(globalThis.fetch).includes('__examOfflineFetch'));
@@ -22,6 +22,51 @@ function bind(name:string,deps:Record<string,any>) {
 }
 async function until(predicate:()=>boolean) { for (let i=0;i<1000;i++) { if(predicate())return; await new Promise(resolve=>setTimeout(resolve,1)); } throw Error('Fixture did not settle'); }
 const q:any={id:'review-essay',order:1,question:'Giải phương trình x+1=2.',type:'essay',options:[],points:1,correctAnswer:'x=1',explanation:'x=2-1=1.',rubric:'Biến đổi và kết luận: 1 điểm.'};
+// Independent dual-pass regression: do not blanket-reject an essay that has
+// an explicit source key, two agreeing passes and no unresolved warning.
+const firstEssay = (answer: string, overrides: Record<string, any> = {}) => ({
+  proposedAnswer: answer, matchesCurrentAnswer: true, needsReview: false,
+  confidence: 'medium', ...overrides
+});
+const secondEssay = (answer: string, overrides: Record<string, any> = {}) => ({
+  pass2Answer: answer, confidence: 'high', ...overrides
+});
+const doubleChecked = { ...q, correctAnswer: 'x = 1' };
+const unchangedAnswer = JSON.stringify(doubleChecked);
+assert.equal(hasTrustedEssaySecondPassAgreement(doubleChecked,
+  firstEssay('x=1'), secondEssay('x = 1')), true, 'Safe typography variation should pass');
+assert.equal(JSON.stringify(doubleChecked), unchangedAnswer, 'Verification must not alter the source');
+assert.equal(hasTrustedEssaySecondPassAgreement(doubleChecked,
+  firstEssay('x=-1'), secondEssay('x=-1')), false, 'Two AIs agreeing on the wrong sign is not verification');
+assert.equal(hasTrustedEssaySecondPassAgreement(doubleChecked,
+  firstEssay('x=1'), secondEssay('x=2')), false, 'Disagreement between passes requires review');
+assert.equal(hasTrustedEssaySecondPassAgreement(doubleChecked,
+  firstEssay('x=1', { needsReview: true }), secondEssay('x=1')), false, 'Explicit doubt is not overwritten');
+assert.equal(hasTrustedEssaySecondPassAgreement(doubleChecked,
+  firstEssay('x=1', { confidence: 'needs_review' }), secondEssay('x=1')), false);
+assert.equal(hasTrustedEssaySecondPassAgreement(doubleChecked,
+  firstEssay('x=1'), secondEssay('x=1', { confidence: 'medium' })), false);
+assert.equal(hasTrustedEssaySecondPassAgreement(doubleChecked,
+  firstEssay('x=1'), undefined), false, 'One pass cannot be treated as two');
+assert.equal(hasTrustedEssaySecondPassAgreement({ ...q, correctAnswer: 'Xem lời giải chi tiết' },
+  firstEssay('x=1'), secondEssay('x=1')), false, 'Placeholder answer is not source evidence');
+assert.equal(hasTrustedEssaySecondPassAgreement({ ...q, correctAnswer: '', rubric: 'x=1: 1 điểm' },
+  firstEssay('x=1'), secondEssay('x=1')), false, 'Rubric-only key requires teacher');
+assert.equal(hasTrustedEssaySecondPassAgreement({ ...q, correctAnswer: 'X=1' },
+  firstEssay('x=1'), secondEssay('x=1')), false, 'Variable case matters in algebra');
+
+const multiPart = { ...q, question: 'Tính: a) 2+3; b) 7-2; c) 3-1.',
+  correctAnswer: 'a) 5; b) 5; c) 2' };
+assert.equal(hasTrustedEssaySecondPassAgreement(multiPart,
+  firstEssay('a)5; b)5; c)2'), secondEssay('a) 5; b) 5; c) 2')), true);
+assert.equal(hasTrustedEssaySecondPassAgreement(multiPart,
+  firstEssay('a) 5; b) 5'), secondEssay('a) 5; b) 5')), false,
+  'Missing subparts cannot be approved even if both AI passes agree');
+assert.equal(hasTrustedEssaySecondPassAgreement({ ...multiPart, correctAnswer: 'a) 5; b) 5' },
+  firstEssay('a) 5; b) 5'), secondEssay('a) 5; b) 5')), false,
+  'A truncated teacher key cannot be approved');
+console.log('PASS: independent essay pass-2 agreement is conservative; missing source, sign errors, teacher doubts and incomplete subparts stay pending');
+
 const good=(id:string)=>({questionId:id,order:1,currentAnswer:'x=1',proposedAnswer:'x=1',matchesCurrentAnswer:true,confidence:'high',needsReview:false,reason:'Đúng.'});
 function harness(questions:any[]) {
  const state:any={lock:{current:false},map:{},choices:Object.fromEntries(questions.map(q=>[q.id,q.correctAnswer||''])),decisions:{},stale:new Set(),calls:[],saved:null,alerts:[]};
