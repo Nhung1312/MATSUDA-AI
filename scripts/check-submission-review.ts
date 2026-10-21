@@ -9,6 +9,22 @@ import { getObjectiveGradingHoldReason } from '../src/utils/objectiveGradingGuar
 import type { Assignment, Submission } from '../src/types';
 
 assert.ok(String(globalThis.fetch).includes('__examOfflineFetch'), 'Mandatory offline network guard missing');
+
+const studentSource = fs.readFileSync(new URL('../src/pages/student/StudentExamPage.tsx', import.meta.url), 'utf8');
+const submitStart = studentSource.indexOf('const submitExam = async () => {');
+const submitEnd = studentSource.indexOf('// Metrics', submitStart);
+assert.ok(submitStart >= 0 && submitEnd > submitStart, 'Student submit body missing');
+const studentSubmitFlow = studentSource.slice(submitStart, submitEnd);
+assert.ok(!studentSubmitFlow.includes('stepGradingService.analyzeStepByStep'),
+  'Student submit must not wait for Gemini step grading');
+assert.ok(studentSubmitFlow.includes('requireVerifiedObjectiveKeys: true'));
+assert.ok(studentSubmitFlow.includes('await FirestoreService.saveResult(submission)'));
+assert.ok(studentSubmitFlow.includes('localStorage.removeItem(draftStorageKey)'),
+  'Draft must only be cleared after accepted persistence');
+assert.ok(studentSubmitFlow.indexOf('await FirestoreService.saveResult(submission)')
+  < studentSubmitFlow.indexOf('onFinishExam(submission)'), 'Cloud confirmation must precede success UI');
+console.log('PASS: fast student submission bypasses Gemini and confirms cloud persistence before success');
+
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
 let aiCalls = 0, cloudCalls = 0;
 const originals = { save: FirestoreService.saveResult, local: StorageService.saveSubmission, ai: stepGradingService.analyzeStepByStep };
