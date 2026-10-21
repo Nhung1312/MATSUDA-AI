@@ -129,8 +129,19 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
     const selectionIssue = !hasTeacherGrade(answer) && getMultipleChoiceSelectionIssue(q, answer);
     const photos = (answer.essayImages || []).map((url, i) => image(url, `Ảnh bài làm câu này ${i + 1}`)).join('');
     const rows = steps.map(step => `<tr><td>${escape(step.stepIndex)}${step.pageIndex === undefined ? '' : `<br>Ảnh ${escape(step.pageIndex + 1)}`}</td><td class="text">${escape(step.studentLatex || step.studentText)}</td><td>${escape(step.status)}<br>${escape(step.contentType || '')}<br>Tin cậy: ${escape(step.confidence)}</td><td class="text">${escape(step.comment)}${step.correctionLatex ? `<br>Sửa: ${escape(step.correctionLatex)}` : ''}${step.crossedOutExplanation ? `<br>Gạch bỏ: ${escape(step.crossedOutExplanation)}` : ''}</td></tr>`).join('');
+    // Read-only quality flags: NEVER recalculate or overwrite archived student grades.
+    const rubricCriteria = response?.scoreBreakdown || [];
+    const criterionTotal = rubricCriteria.reduce((sum, item) => sum + (Number(item.earnedPoints) || 0), 0);
+    const recordedAiScore = typeof answer.aiScore === 'number' && Number.isFinite(answer.aiScore) ? answer.aiScore
+      : typeof response?.score === 'number' && Number.isFinite(response.score) ? response.score : null;
+    const rubricScoreMismatch = rubricCriteria.length > 0 && recordedAiScore !== null
+      && Math.abs(criterionTotal - recordedAiScore) > 0.011;
+    const aiUnavailablePending = essay && pending && !hasTeacherGrade(answer)
+      && (answer.aiGradingError || response?.analysisSource === 'unavailable');
+    const scoreLabel = pending && !hasTeacherGrade(answer)
+      ? 'Điểm đang lưu (tạm, chưa duyệt)' : 'Điểm đã lưu';
     const breakdown = response?.scoreBreakdown?.map(item => `<tr><td class="text">${escape(item.criterion)}</td><td>${escape(item.earnedPoints)}/${escape(item.maxPoints)}</td><td class="text">${escape(item.reason)}</td></tr>`).join('');
-    return `<section><h2>Câu ${idx + 1}${q?.order === undefined ? '' : ` (số lưu trong đề: ${escape(q.order)})`} — ${escape(q ? getQuestionTypeLabel(q.type) : 'Chưa ghép được câu nguồn')}</h2>
+    return `<section><h2>Câu ${idx + 1}${q?.order === undefined ? '' : ` (số lưu trong đề: ${escape(q.order)})`} — ${escape(q ? getQuestionTypeLabel(q) : 'Chưa ghép được câu nguồn')}</h2>
       ${!original ? '<p class="warning">Không tìm thấy câu nguồn hiện tại; giữ dữ liệu của bài đã nộp để đối chiếu.</p>' : ''}
       ${block('Đề học sinh đã nhận', q?.question)}${q?.imageUrl ? image(q.imageUrl, 'Hình trong đề học sinh') : ''}
       ${q?.options?.length && !essay ? block('Phương án trên đề học sinh', q.options.map(o => `${o.id}. ${o.text}`).join('\n')) : ''}
@@ -143,8 +154,10 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
       <details><summary>Nguồn hiện tại để đối chiếu (có thể khác căn cứ chấm đã lưu)</summary>${block('Đáp án nguồn hiện tại', currentReference.correctAnswer)}${block('Lời giải nguồn hiện tại', original?.explanation)}${block('Barem nguồn hiện tại', original?.rubric)}</details>
       ${block('Bài làm học sinh', essay ? answer.studentSolutionText || answer.selectedAnswer : `${answer.selectedAnswer || 'Chưa trả lời'}${selectedText ? ` — ${selectedText}` : ''}`)}${photos}
       ${selectionIssue ? `<p class="warning">${escape(selectionIssue)} Điểm cũ và dữ liệu JSON được giữ nguyên.</p>` : ''}
-      <p><b>Điểm đã lưu: ${escape(answer.pointsEarned)}/${escape(answer.maxPoints)}</b> · Điểm AI: ${escape(answer.aiScore ?? response?.score ?? 'Chưa có')} · Điểm giáo viên: ${escape(answer.teacherScore ?? 'Chưa nhập')}</p>
+      <p><b>${scoreLabel}: ${escape(answer.pointsEarned)}/${escape(answer.maxPoints)}</b> · Điểm AI: ${escape(answer.aiScore ?? response?.score ?? 'Chưa có')} · Điểm giáo viên: ${escape(answer.teacherScore ?? 'Chưa nhập')}</p>
       <p>${pending ? 'Cần giáo viên kiểm tra' : 'Theo trạng thái đã lưu'} · ${answer.teacherReviewed ? 'Giáo viên đã duyệt' : ''}</p>
+      ${aiUnavailablePending ? '<p class="warning">AI chưa chấm được câu này. Giá trị 0 nếu có chỉ là số đang lưu tạm, KHÔNG phải điểm chấm chính thức. Cần giáo viên đối chiếu ảnh/bài làm và chấm.</p>' : ''}
+      ${rubricScoreMismatch ? `<p class="warning">Điểm AI (${escape(recordedAiScore)}) khác tổng các tiêu chí (${escape(Math.round(criterionTotal * 10000) / 10000)}). Chưa được coi là điểm đã đối soát; cần giáo viên kiểm tra. Báo cáo không tự thay đổi điểm.</p>` : ''}
       ${block('Nhận xét AI', answer.aiFeedback || response?.feedback)}${block('Nhận xét giáo viên', answer.teacherFeedback)}
       ${steps.length ? `<h4>Phân tích từng bước đã lưu</h4><table><thead><tr><th>Bước</th><th>Nội dung AI đọc</th><th>Trạng thái</th><th>Nhận xét</th></tr></thead><tbody>${rows}</tbody></table>` : '<p>Chưa có phân tích từng bước đã lưu. Xuất bài không chạy chấm mới.</p>'}
       ${block('Lỗi đầu tiên', answer.firstErrorExplanation || response?.firstErrorExplanation)}
