@@ -115,10 +115,10 @@ try {
 
   const unlimitedSubmit = async (failCloud: boolean) => {
     cloudWrites = []; cloud = failCloud ? async () => { throw Error('Synthetic offline'); } : async () => {};
-    const state: any = { lock: { current: false }, finished: [] };
+    const state: any = { lock: { current: false }, finished: [], error: '' };
     const handler = bind('src/pages/student/StudentExamPage.tsx', 'submitExam', {
       isSubmittingRef: state.lock, isSubmittingWithAI: false, setShowSubmitModal: () => {}, setIsSubmittingWithAI: () => {},
-      setSubmissionStage: () => {}, setSubmissionError: () => {}, assignment, currentAssignment: assignment,
+      setSubmissionStage: () => {}, setSubmissionError: (message: string) => { state.error = message; }, assignment, currentAssignment: assignment,
       participant: {}, studentName: 'Nộp không giới hạn', classId: 'c', className: '7A', document: { fullscreenElement: null },
       submissionLimitService: { check: async () => ({ assignment, limit: 0, remaining: null }) }, SubmissionLimitError: class extends Error {},
       studentSolutions: { q: 'x=1' }, essayImagesByQuestion: {}, generalPdfImages: [], answers: {},
@@ -127,13 +127,22 @@ try {
       FirestoreService, StorageService, useMistakeVaultStore: { getState: () => ({ addMistakesFromSubmission: () => {} }) },
       draftStorageKey: 'synthetic-draft', soundEffects: { playSuccess: () => {} }, onFinishExam: (sub: any) => state.finished.push(sub)
     });
+    localStorage.setItem('synthetic-draft', 'unfinished-student-work');
     await Promise.all([handler(), handler()]);
     assert.equal(cloudWrites.length, 1, 'Unlimited submission must not also use StorageService auto-sync');
-    assert.equal(state.finished.length, 1); assert.equal(state.lock.current, false);
-    assert.ok(StorageService.getSubmissions().some(s => s.id === state.finished[0].id));
+    assert.equal(state.finished.length, failCloud ? 0 : 1, 'Never announce success after cloud failure');
+    assert.equal(state.lock.current, false);
+    if (failCloud) {
+      assert.ok(state.error.includes('Chưa xác nhận'), 'Student must see a retry warning');
+      assert.equal(localStorage.getItem('synthetic-draft'), 'unfinished-student-work',
+        'Failed cloud save must preserve the draft');
+    } else {
+      assert.ok(StorageService.getSubmissions().some(s => s.id === state.finished[0].id));
+      assert.equal(localStorage.getItem('synthetic-draft'), null, 'Accepted save removes the draft');
+    }
   };
   await unlimitedSubmit(false); await unlimitedSubmit(true);
-  console.log('PASS: real async storage and unlimited student submit each issue one cloud write, including failure/offline paths; local copies remain available');
+  console.log('PASS: submit first, one cloud write per attempt; cloud failure retains draft and never shows a false submission success');
 
   const attempts: any[] = [
     submission('an-old', 'Nguyễn An', 10, '2026-10-15T00:00:00Z'),
