@@ -6,6 +6,7 @@ import { FirestoreService } from '../src/services/firestoreService';
 import { stepGradingService } from '../src/services/stepGradingService';
 import { getMultipleChoiceSelectionIssue, getSubmissionSummary, confirmMultipleChoiceSelection, refreshSubmissionTotals } from '../src/utils/submissionReviewUtils';
 import { getObjectiveGradingHoldReason } from '../src/utils/objectiveGradingGuard';
+import { shuffleAssignmentQuestionsAndOptions } from '../src/utils/antiCheatUtils';
 import type { Assignment, Submission } from '../src/types';
 
 assert.ok(String(globalThis.fetch).includes('__examOfflineFetch'), 'Mandatory offline network guard missing');
@@ -74,6 +75,21 @@ try {
   assert.equal(accepted.totalScore, 1); // valid B answer earns 1/1, without AI.
   assert.equal(accepted.correctCount, 1);
   assert.equal(accepted.ungradedCount, 0);
+
+  const shuffledVerified = shuffleAssignmentQuestionsAndOptions(acceptedExam);
+  const shuffledMc = shuffledVerified.questions[0];
+  assert.equal(shuffledMc.verificationStatus, 'verified');
+  assert.ok(shuffledMc.options.some(option => option.id === shuffledMc.correctAnswer));
+  const selectedCorrect = GradingService.gradeSubmission({ ...params, assignment: shuffledVerified,
+    studentAnswers: { mc: shuffledMc.correctAnswer }, isShuffled: true });
+  assert.equal(selectedCorrect.correctCount, 1, 'Correct option must stay correct after shuffling');
+  assert.equal(selectedCorrect.wrongCount, 0);
+  const otherOption = shuffledMc.options.find(option => option.id !== shuffledMc.correctAnswer)!;
+  const selectedWrong = GradingService.gradeSubmission({ ...params, assignment: shuffledVerified,
+    studentAnswers: { mc: otherOption.id }, isShuffled: true });
+  assert.equal(selectedWrong.correctCount, 0);
+  assert.equal(selectedWrong.wrongCount, 1, 'Verified wrong option can be marked wrong');
+
   const invalidKey = GradingService.gradeSubmission({ ...params,
     assignment: { ...assignment, questions: [{ ...q, verificationStatus: 'verified', correctAnswer: 'Z' }] } });
   assert.equal(invalidKey.answers[0].needsTeacherReview, true);
