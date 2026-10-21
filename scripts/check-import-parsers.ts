@@ -313,6 +313,17 @@ function checkPastedLatex20Questions() {
     importUi.includes('FileParserService.parseRawText'), 'Giao diện phải có đường dán văn bản trực tiếp');
 }
 
+function checkPaidApiKeySafety() {
+  const firestore = fs.readFileSync(new URL('../src/services/firestoreService.ts', import.meta.url), 'utf8');
+  const settings = fs.readFileSync(new URL('../src/pages/teacher/TeacherSettings.tsx', import.meta.url), 'utf8');
+  assert(firestore.includes('delete payload.geminiApiKey'), 'Paid Gemini key must never be written to teacher profiles');
+  assert(firestore.includes('deleteField()'), 'Legacy key cleanup must use Firestore field removal');
+  assert(!settings.includes('geminiApiKey: apiKeyInput'), 'Settings must not sync browser API secrets to cloud');
+  assert(!settings.includes('profile?.geminiApiKey'), 'Settings must not restore insecure old keys from cloud');
+  assert(settings.includes('removeLegacyTeacherGeminiApiKey'), 'Existing cloud keys should be cleared after teacher sign-in');
+  assert(settings.includes('Gemini 3.8 Flash'), 'Verification uses an explicit model: show it when testing a paid key');
+}
+
 function checkImageAiNormalization() {
   const raw: ParseResult = {
     fileName: '2 trang ảnh',
@@ -365,6 +376,7 @@ const checks = [
   ['Word text layer', checkWordTextLayer],
   ['LaTeX parser', checkLatexLayer],
   ['Dán đề 20 câu LaTeX ex', checkPastedLatex20Questions],
+  ['Bảo vệ API Key trả phí', checkPaidApiKeySafety],
   ['Image AI normalization', checkImageAiNormalization]
 ] as const;
 
