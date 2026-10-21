@@ -11,8 +11,6 @@ import {
   RemedialExercise
 } from '../types';
 import { useLearningProgressStore } from './useLearningProgressStore';
-import { getSubmissionAnswerImages } from '../utils/submissionImageUtils';
-import { isEssayQuestion } from '../utils/questionUtils';
 
 export interface MistakeVaultState {
   mistakes: MistakeRecord[];
@@ -68,7 +66,6 @@ export const useMistakeVaultStore = create<MistakeVaultState>()(
           if (!ans.isCorrect || hasStepError) {
             const question = assignment.questions.find((q) => q.id === ans.questionId);
             if (!question) return;
-            const images = isEssayQuestion(question) ? getSubmissionAnswerImages(submission, ans) : ans.essayImages;
 
             // Đếm số bước kéo theo (cascading errors) - TUYỆT ĐỐI không tạo lỗi giả
             const cascadingCount = ans.stepAnalysis
@@ -90,7 +87,7 @@ export const useMistakeVaultStore = create<MistakeVaultState>()(
                 stepAnalysis: ans.stepAnalysis || currentMistakes[existingIdx].stepAnalysis,
                 cascadingStepsCount: cascadingCount || currentMistakes[existingIdx].cascadingStepsCount,
                 studentWork: ans.studentSolutionText || currentMistakes[existingIdx].studentWork,
-                essayImages: images || currentMistakes[existingIdx].essayImages,
+                essayImages: ans.essayImages || currentMistakes[existingIdx].essayImages,
               };
             } else {
               // Thêm mới câu sai vào Mistake Vault
@@ -115,7 +112,7 @@ export const useMistakeVaultStore = create<MistakeVaultState>()(
                 stepAnalysis: ans.stepAnalysis,
                 cascadingStepsCount: cascadingCount,
                 studentWork: ans.studentSolutionText,
-                essayImages: images,
+                essayImages: ans.essayImages,
                 practiceAttempts: [],
               });
               addedCount++;

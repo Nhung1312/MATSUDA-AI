@@ -4,11 +4,11 @@ import { MathDisplay } from '../../components/MathDisplay';
 import { GradingService } from '../../services/gradingService';
 import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
-import { submissionLimitService, SubmissionLimitError } from '../../services/submissionLimitService';
 import { aiService, HybridAIService } from '../../services/aiService';
+import { stepGradingService } from '../../services/stepGradingService';
 import { useTheme } from '../../context/ThemeContext';
 import { shuffleAssignmentQuestionsAndOptions, formatViolationTime } from '../../utils/antiCheatUtils';
-import { placeEssayQuestionsLast } from '../../utils/questionUtils';
+import { placeEssayQuestionsLast, getEssayGradingReference } from '../../utils/questionUtils';
 import { isEssayQuestion, getQuestionTypeLabel } from '../../utils/questionUtils';
 import { ImageLightboxModal } from '../../components/ImageLightboxModal';
 import { soundEffects } from '../../utils/soundEffects';
@@ -240,8 +240,6 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
   const [isFocusMode, setIsFocusMode] = useState<boolean>(false);
   const [isSubmittingWithAI, setIsSubmittingWithAI] = useState<boolean>(false);
   const isSubmittingRef = useRef<boolean>(false);
-  const [submissionStage, setSubmissionStage] = useState<'checking' | 'grading' | 'saving'>('checking');
-  const [submissionError, setSubmissionError] = useState('');
   const [isMuted, setIsMuted] = useState<boolean>(() => soundEffects.isMuted());
   const [matrixFilter, setMatrixFilter] = useState<'all' | 'unanswered' | 'flagged'>('all');
 
@@ -735,60 +733,97 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
     if (isSubmittingRef.current || isSubmittingWithAI) return;
     isSubmittingRef.current = true;
     setShowSubmitModal(false);
+    soundEffects.playSuccess();
     setIsSubmittingWithAI(true);
-    setSubmissionStage('checking');
-    setSubmissionError('');
+
     try {
-      // Use the joined assignment, never a stale limit restored from a shuffled draft.
-      const participant = { studentName, classId, className };
-      const attempt = await submissionLimitService.check(assignment, participant);
-      if (attempt.limit && attempt.remaining === 0) throw new SubmissionLimitError(attempt.used, attempt.limit);
+      localStorage.removeItem(draftStorageKey);
+    } catch {}
 
-      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-      setSubmissionStage('grading');
-      const submittedAt = new Date().toISOString();
-      // Save first, grade later. Gemini latency/429/504 must NEVER block a student
-      // from submitting. Teachers can run AI analysis and approve scores afterwards.
-
-      let submission = GradingService.gradeSubmission({
-        assignment: currentAssignment, studentAnswers: answers, studentSolutions, essayImagesByQuestion,
-        generalEssayImages: generalPdfImages, studentName, classId, className, startedAt, submittedAt,
-        tabSwitchCount, violationEvents, isShuffled: !isPdfMode,
-        requireVerifiedObjectiveKeys: true
-      });
-      setSubmissionStage('saving');
-      // Catch a limit enabled by the teacher while an unlimited exam was being graded.
-      const finalAttempt = attempt.limit ? attempt : await submissionLimitService.check(assignment, participant);
-      if (finalAttempt.limit) {
-        submission = await submissionLimitService.commit(finalAttempt.assignment, participant, submission);
-        // The transaction already saved the accepted result; do not write it again.
-        try { StorageService.saveSubmission(submission, { syncCloud: false }); }
-        catch (error) { console.warn('Bài đã lưu trên cloud; không lưu được bản sao trên máy:', error); }
-      } else {
-        // Do not show "submitted" unless the cloud has accepted this attempt.
-        // On failure the autosaved draft stays intact so the student can retry.
-        await FirestoreService.saveResult(submission);
-        try { StorageService.saveSubmission(submission, { syncCloud: false }); }
-        catch (error) { console.warn('Cloud đã lưu bài; chưa lưu được bản sao trên máy:', error); }
-      }
-
-      // Do not mark provisional objective/essay answers as mistakes.
-      if (!submission.needsTeacherReview && !submission.isProvisional) {
-        try { useMistakeVaultStore.getState().addMistakesFromSubmission(submission, currentAssignment); }
-        catch (error) { console.warn('Lỗi tự động lưu vào Sổ tay câu sai:', error); }
-      }
-      // Remove the draft only after the submission has been accepted.
-      try { localStorage.removeItem(draftStorageKey); } catch { /* Optional local cleanup. */ }
-      soundEffects.playSuccess();
-      onFinishExam(submission);
-    } catch (error) {
-      console.warn('Chưa thể nộp bài:', error);
-      setSubmissionError(error instanceof SubmissionLimitError ? error.message
-        : 'Chưa xác nhận được bài nộp. Bài làm vẫn được giữ lại; hãy kiểm tra mạng và bấm Nộp bài để thử lại.');
-    } finally {
-      setIsSubmittingWithAI(false);
-      isSubmittingRef.current = false;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
     }
+
+    const submittedAt = new Date().toISOString();
+    const aiFeedbacks: Record<string, { score?: number; feedback?: string; graded?: boolean }> = {};
+
+    // 1. Tự động chấm điểm AI cho các câu tự luận nếu có (Unified Vision & Step-by-Step Core)
+    const essayQuestions = currentAssignment.questions.filter((q) => isEssayQuestion(q));
+    if (essayQuestions.length > 0) {
+      for (const eq of essayQuestions) {
+        const solutionText = studentSolutions[eq.id] || '';
+        const images = essayImagesByQuestion[eq.id] || [];
+
+        if (solutionText || images.length > 0) {
+          try {
+            const stepRes = await stepGradingService.analyzeStepByStep({
+              questionId: eq.id,
+              questionText: eq.question,
+              grade: String(currentAssignment.grade),
+              topic: currentAssignment.topic,
+              maxPoints: eq.points,
+              ...getEssayGradingReference(eq),
+              studentSolutionText: solutionText,
+              essayImages: images
+            });
+
+            aiFeedbacks[eq.id] = {
+              score: stepRes.score,
+              feedback: stepRes.feedback,
+              graded: true,
+              stepAnalysis: stepRes.analysis,
+              firstErrorStep: stepRes.firstErrorStep,
+              firstErrorType: stepRes.firstErrorType,
+              firstErrorExplanation: stepRes.firstErrorExplanation,
+              needsTeacherReview: stepRes.needsTeacherReview,
+              stepGradingResponse: stepRes
+            } as any;
+          } catch (e) {
+            console.warn('AI step evaluation on submit warning:', e);
+            aiFeedbacks[eq.id] = {
+              graded: false,
+              feedback: 'Bài tự luận đã được ghi nhận đầy đủ và đang chờ chấm điểm.'
+            };
+          }
+        }
+      }
+    }
+
+    // 2. Chấm điểm tổng hợp qua GradingService
+    const submission = GradingService.gradeSubmission({
+      assignment: currentAssignment,
+      studentAnswers: answers,
+      studentSolutions,
+      essayImagesByQuestion,
+      generalEssayImages: generalPdfImages,
+      studentName,
+      classId,
+      className,
+      startedAt,
+      submittedAt,
+      tabSwitchCount,
+      violationEvents,
+      isShuffled: !isPdfMode,
+      aiFeedbacks
+    });
+
+    try {
+      await FirestoreService.saveResult(submission);
+    } catch (err) {
+      console.warn('Lỗi lưu kết quả lên Firestore:', err);
+    }
+
+    // MỚI: Tự động gom các câu làm sai vào Sổ tay câu sai (Mistake Vault)
+    try {
+      useMistakeVaultStore.getState().addMistakesFromSubmission(submission, currentAssignment);
+    } catch (e) {
+      console.warn('Lỗi tự động lưu vào Sổ tay câu sai:', e);
+    }
+
+    StorageService.saveSubmission(submission);
+    setIsSubmittingWithAI(false);
+    isSubmittingRef.current = false;
+    onFinishExam(submission);
   };
 
   // Metrics
@@ -857,7 +892,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
             <div className="w-14 h-14 rounded-2xl bg-indigo-600/30 text-indigo-400 flex items-center justify-center mx-auto border border-indigo-500/40 animate-pulse">
               <Sparkles className="w-8 h-8" />
             </div>
-            <h3 className="text-lg font-black">{submissionStage === 'checking' ? 'Đang kiểm tra lượt nộp...' : submissionStage === 'saving' ? 'Đang lưu bài nộp...' : 'Đang ghi nhận bài làm...'}</h3>
+            <h3 className="text-lg font-black">Đang chấm bài...</h3>
             <div className="flex items-center justify-center space-x-2 text-indigo-400 text-xs font-bold pt-1">
               <Loader2 className="w-4 h-4 animate-spin" />
               <span>Vui lòng chờ</span>
@@ -865,14 +900,6 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
           </div>
         </div>
       )}
-
-      {submissionError && <div role="alert" className="fixed top-20 left-1/2 -translate-x-1/2 z-40 w-full max-w-xl px-4">
-        <div className="flex items-start gap-3 p-4 rounded-xl shadow-lg border border-rose-300 bg-rose-50 text-rose-800 dark:bg-rose-950 dark:text-rose-200 text-sm">
-          <AlertTriangle className="w-5 h-5 shrink-0" />
-          <span className="flex-1">{submissionError}</span>
-          <button type="button" aria-label="Đóng thông báo" onClick={() => setSubmissionError('')}><X className="w-4 h-4" /></button>
-        </div>
-      </div>}
 
       {/* TOP HEADER BAR */}
       <header
@@ -1067,7 +1094,6 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
             {/* Submit Button */}
             <button
               onClick={() => setShowSubmitModal(true)}
-              disabled={isSubmittingWithAI}
               className="inline-flex items-center space-x-1 sm:space-x-1.5 px-3 sm:px-4 py-1.5 sm:py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-extrabold text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer"
             >
               <Flag className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -1704,7 +1730,6 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
                     ) : (
                       <button
                         onClick={() => setShowSubmitModal(true)}
-                        disabled={isSubmittingWithAI}
                         className="flex items-center space-x-1.5 px-5 sm:px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm bg-rose-600 hover:bg-rose-700 text-white shadow-lg transition-all active:scale-95 cursor-pointer"
                       >
                         <Flag className="w-4 h-4" />

@@ -1,10 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Assignment } from '../../types';
 import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
 import { auth } from '../../firebase';
-import { VERIFICATION_MODEL } from '../../services/geminiDiagnostics';
-import type { TestConnectionResult } from '../../services/aiService';
 import { aiService, HybridAIService } from '../../services/aiService';
 import { getAppLogo, setAppLogo, resetAppLogo } from '../../utils/logoHelper';
 import { 
@@ -60,9 +58,7 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
   
   // Test connection state
   const [testingConnection, setTestingConnection] = useState<boolean>(false);
-  const [testResult, setTestResult] = useState<TestConnectionResult | null>(null);
-  const testLock = useRef(false);
-  const [legacyKeyNotice, setLegacyKeyNotice] = useState('Chưa kiểm tra trường API Key cũ trên Cloud.');
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string; modelUsed?: string; errorType?: string } | null>(null);
 
   // App Logo state
   const [appLogo, setLocalAppLogo] = useState<string>(getAppLogo());
@@ -112,12 +108,21 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
     const loadSettings = async () => {
       let currentKey = hybridAi.getApiKey() || '';
       let currentModel = hybridAi.getModel() || 'gemini-3.8-flash';
+      // Tự động nâng cấp model cũ nếu profile lưu model không còn hỗ trợ
+      if (currentModel.includes('2.5') || currentModel.includes('1.5') || currentModel.includes('2.0')) {
+        currentModel = 'gemini-3.8-flash';
+        hybridAi.setModel(currentModel);
+      }
       let autoGrade = hybridAi.isAutoGradeEnabled();
 
       // Nếu chưa có trên máy này, đọc từ tài khoản Firestore của giáo viên
       if (!currentKey && auth.currentUser) {
         try {
           const profile = await FirestoreService.getTeacherProfile(auth.currentUser.uid);
+          if (profile?.geminiApiKey) {
+            currentKey = profile.geminiApiKey;
+            hybridAi.setApiKey(currentKey);
+          }
           if (profile?.geminiModel) {
             currentModel = profile.geminiModel;
             hybridAi.setModel(currentModel);
@@ -131,11 +136,6 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
         }
       }
 
-      if (auth.currentUser) {
-        FirestoreService.removeLegacyTeacherGeminiApiKey(auth.currentUser.uid)
-          .then(() => setLegacyKeyNotice('Đã xác nhận hồ sơ Cloud không còn trường geminiApiKey. Nếu từng đồng bộ key trước đây, hãy thu hồi key cũ và tạo key mới trong AI Studio.'))
-          .catch(() => setLegacyKeyNotice('Chưa xóa được trường key cũ trên Cloud. Đăng nhập Google đúng tài khoản, thử lưu cấu hình lại; nên thu hồi key cũ trong AI Studio.'));
-      }
       setApiKeyInput(currentKey);
       setSelectedModel(currentModel);
       setAutoGradeEnabled(autoGrade);
@@ -146,23 +146,20 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
 
   const handleSaveApiKey = async () => {
     hybridAi.setApiKey(apiKeyInput);
-    if (hybridAi.getApiKey() !== apiKeyInput.trim()) {
-      setSavedKeySuccess(false);
-      setTestResult({ success: false, message: 'Chưa lưu được key trên máy này. Kiểm tra quyền lưu trữ trình duyệt rồi thử lại.', errorType: 'general' });
-      return;
-    }
     hybridAi.setModel(selectedModel);
     hybridAi.setAutoGradeEnabled(autoGradeEnabled);
 
-    // Never sync a paid API secret to the teacher profile.
+    // Đồng bộ lên Cloud Firestore nếu giáo viên đã đăng nhập
     if (auth.currentUser) {
-      await FirestoreService.removeLegacyTeacherGeminiApiKey(auth.currentUser.uid)
-        .then(() => setLegacyKeyNotice('Đã xóa trường key cũ trên Cloud (hoặc trường chưa tồn tại). Nếu từng đồng bộ key, hãy thu hồi key cũ và tạo key mới trong AI Studio.'))
-        .catch(() => setLegacyKeyNotice('Chưa dọn được key cũ trên Cloud. Thu hồi key cũ trong AI Studio và đăng nhập Google để thử dọn lại.'));
-      await FirestoreService.saveTeacherProfile(auth.currentUser.uid, {
-        geminiModel: selectedModel,
-        autoGradeEnabled
-      });
+      try {
+        await FirestoreService.saveTeacherProfile(auth.currentUser.uid, {
+          geminiApiKey: apiKeyInput,
+          geminiModel: selectedModel,
+          autoGradeEnabled
+        });
+      } catch (err) {
+        console.warn('Lỗi đồng bộ API key lên Firestore:', err);
+      }
     }
 
     setSavedKeySuccess(true);
@@ -176,8 +173,9 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
       setApiKeyInput('');
       setTestResult(null);
       if (auth.currentUser) {
-        FirestoreService.removeLegacyTeacherGeminiApiKey(auth.currentUser.uid)
-          .catch(() => console.warn('Chưa dọn được API Key cũ trên Firestore.'));
+        FirestoreService.saveTeacherProfile(auth.currentUser.uid, {
+          geminiApiKey: ''
+        }).catch(() => {});
       }
       setSavedKeySuccess(true);
       setTimeout(() => setSavedKeySuccess(false), 3000);
@@ -185,22 +183,19 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
   };
 
   const handleTestConnection = async () => {
-    if (testLock.current) return;
-    testLock.current = true;
     setTestingConnection(true);
     setTestResult(null);
     try {
-      const res = await hybridAi.testConnection(apiKeyInput, VERIFICATION_MODEL);
+      const res = await hybridAi.testConnection(apiKeyInput, selectedModel);
       setTestResult(res);
     } catch (err: any) {
       setTestResult({
         success: false,
-        message: 'Chưa hoàn tất kiểm tra kết nối. Key và thông tin xác thực không được ghi vào báo cáo.',
+        message: 'Lỗi không xác định: ' + (err?.message || String(err)),
         errorType: 'general'
       });
     } finally {
       setTestingConnection(false);
-      testLock.current = false;
     }
   };
 
@@ -492,7 +487,7 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
                 <h2 className="font-bold text-base text-slate-900">Cấu hình Trợ lý Gemini AI</h2>
                 {hasConfiguredKey ? (
                   <span className="inline-flex items-center gap-1 text-[11px] font-extrabold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full">
-                    <CheckCircle2 className="w-3 h-3" /> Đã lưu Key (chưa kiểm tra)
+                    <CheckCircle2 className="w-3 h-3" /> Đã kết nối API
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 text-[11px] font-extrabold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">
@@ -529,7 +524,7 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
               <input
                 type={showKey ? 'text' : 'password'}
                 value={apiKeyInput}
-                onChange={(e) => { setApiKeyInput(e.target.value); setTestResult(null); setSavedKeySuccess(false); }}
+                onChange={(e) => setApiKeyInput(e.target.value)}
                 placeholder="AIzaSy..."
                 className="w-full pl-3.5 pr-20 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
               />
@@ -576,16 +571,10 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
                   <span>{testingConnection ? 'Đang kiểm tra...' : 'Kiểm tra API & Model'}</span>
                 </button>
               </div>
-              <p className="mt-1.5 text-[11px] text-amber-800">
-                Kiểm tra và thẩm định Dual-Pass cùng dùng: <strong>{VERIFICATION_MODEL}</strong> (Gemini 3.8 Flash).
-                Model được chọn phía trên dùng cho các tác vụ AI khác. Không tự chuyển model khi thẩm định lỗi.
-                <br />Key đang kiểm tra: {apiKeyInput.trim() === (hybridAi.getApiKey() || '') ? 'trùng key đã lưu dùng thẩm định' : 'chưa lưu; thẩm định vẫn dùng key đã lưu trước đó'}.
-                <br />{legacyKeyNotice}
-              </p>
             </div>
 
             <div className="flex flex-col justify-end">
-              <label className="flex items-center space-x-2.5 p-2 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100/80">
+              <label className="flex items-center space-x-2.5 p-2 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100/80 transition-colors">
                 <input
                   type="checkbox"
                   checked={autoGradeEnabled}
@@ -629,7 +618,7 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
 
             {savedKeySuccess && (
               <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 animate-in fade-in">
-                <CheckCircle2 className="w-4 h-4" /> Đã lưu trên máy (chưa kiểm tra API)!
+                <CheckCircle2 className="w-4 h-4" /> Đã lưu thành công!
               </span>
             )}
           </div>
@@ -655,17 +644,18 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
                   <div className="font-bold">
                     {testResult.success ? (
                       testResult.message
+                    ) : testResult.errorType === 'quota' ? (
+                      'Model hiện đã vượt hạn mức API.'
                     ) : (
                       'Kiểm tra kết nối thất bại'
                     )}
                   </div>
-                  {!testResult.success && (
+                  {(!testResult.success && testResult.errorType !== 'quota') && (
                     <p className="mt-0.5 opacity-90">{testResult.message}</p>
                   )}
                   {testResult.modelUsed && (
                     <div className="mt-1 font-mono text-[11px] opacity-75">
-                      Model kiểm tra: {testResult.modelUsed}<br />Model thẩm định: {testResult.verificationModel || VERIFICATION_MODEL}
-                      <br />Dấu vân tay key SHA-256: {testResult.keyFingerprint || 'chưa có'} — {testResult.usesSavedKey ? 'trùng key đã lưu' : 'key chưa lưu, chưa dùng thẩm định'}
+                      Model ID: {testResult.modelUsed}
                     </div>
                   )}
                 </div>
@@ -673,11 +663,6 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
             </div>
           )}
 
-          <p className="text-xs text-slate-700">
-            Đối chiếu dự án của key và trạng thái Paid/Billing tại <a className="underline" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">API Keys</a>;
-            xem <a className="underline" href="https://aistudio.google.com/usage?tab=rate-limit" target="_blank" rel="noreferrer">RPM/TPM/RPD</a> và giới hạn chi tiêu trong AI Studio.
-            Việc lưu key hay kiểm tra kết nối thành công không xác nhận dự án đã tính phí.
-          </p>
           {/* Quick Guide Card */}
           <div className="bg-purple-50/60 border border-purple-100 rounded-2xl p-4 text-xs text-purple-900 space-y-2">
             <div className="flex items-center space-x-1.5 font-bold text-purple-950">

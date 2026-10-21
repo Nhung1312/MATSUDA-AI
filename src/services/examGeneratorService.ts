@@ -181,7 +181,6 @@ export class ExamGeneratorService {
       id: `asg_var_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       title: baseTitle,
       assignmentCode: newAssignmentCode,
-      maxSubmissions: sourceAssignment.maxSubmissions ?? 1,
       classId: targetClassId,
       className: targetClassName,
       questions: transformedQuestions,

@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
-import { submissionLimitService, SubmissionLimitError, getMaxSubmissions } from '../../services/submissionLimitService';
 import { Assignment, ClassRoom } from '../../types';
 import { StudentAiPracticeView } from '../../components/StudentAiPracticeView';
 import { 
@@ -47,8 +46,6 @@ export const StudentJoinPage: React.FC<StudentJoinPageProps> = ({ initialCode = 
   const [assignment, setAssignment] = useState<Assignment | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [isSearching, setIsSearching] = useState(false);
-  const [isCheckingAttempts, setIsCheckingAttempts] = useState(false);
-  const startExamLock = useRef(false);
   const [recentAssignments, setRecentAssignments] = useState<Assignment[]>([]);
 
   // Search & Filter state for exam browser
@@ -169,9 +166,8 @@ export const StudentJoinPage: React.FC<StudentJoinPageProps> = ({ initialCode = 
     setErrorMsg('');
   };
 
-  const handleStart = async (e: React.FormEvent) => {
+  const handleStart = (e: React.FormEvent) => {
     e.preventDefault();
-    if (startExamLock.current) return;
     if (!assignment) {
       setErrorMsg('Vui lòng nhập mã bài tập hợp lệ hoặc chọn một đề từ kho bài tập.');
       return;
@@ -190,28 +186,15 @@ export const StudentJoinPage: React.FC<StudentJoinPageProps> = ({ initialCode = 
       className = customClassName.trim();
     }
 
-    startExamLock.current = true;
-    setIsCheckingAttempts(true);
-    setErrorMsg('');
+    // Persist student profile locally so they never have to re-enter
     try {
-      const state = await submissionLimitService.check(assignment, {
-        studentName: cleanName, classId: selectedClassId || 'other', className
-      });
-      setAssignment(state.assignment);
-      if (state.limit && state.remaining === 0) throw new SubmissionLimitError(state.used, state.limit);
-      // Persist student profile locally so they never have to re-enter.
-      try {
-        localStorage.setItem('toan_thcs_student_name', cleanName);
-        localStorage.setItem('toan_thcs_student_class', className);
-      } catch { /* Profile storage is optional. */ }
-      onStartExam(state.assignment, cleanName, selectedClassId || 'other', className);
-    } catch (error) {
-      setErrorMsg(error instanceof SubmissionLimitError ? error.message
-        : 'Chưa kiểm tra được lượt nộp. Hãy kiểm tra kết nối mạng rồi bấm Bắt đầu lại.');
-    } finally {
-      startExamLock.current = false;
-      setIsCheckingAttempts(false);
+      localStorage.setItem('toan_thcs_student_name', cleanName);
+      localStorage.setItem('toan_thcs_student_class', className);
+    } catch {
+      // ignore
     }
+
+    onStartExam(assignment, cleanName, selectedClassId || 'other', className);
   };
 
   // Filter exams in catalog
@@ -357,9 +340,6 @@ export const StudentJoinPage: React.FC<StudentJoinPageProps> = ({ initialCode = 
                     <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                       Lớp {assignment.grade} • {assignment.questions.length} câu • {assignment.durationMinutes > 0 ? `${assignment.durationMinutes} phút` : 'Tự do'}
                     </p>
-                    {getMaxSubmissions(assignment) > 0 && <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                      Tối đa {getMaxSubmissions(assignment)} lần nộp cho mỗi học sinh. Nhập đúng họ tên và lớp đã dùng trước đó.
-                    </p>}
                   </div>
                 </div>
 
@@ -435,11 +415,10 @@ export const StudentJoinPage: React.FC<StudentJoinPageProps> = ({ initialCode = 
             {/* Start Exam Button */}
             <button
               type="submit"
-              disabled={isCheckingAttempts}
-              className="w-full py-3 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-sm hover:shadow-md transition-all active:scale-[0.99] flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+              className="w-full py-3 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-sm hover:shadow-md transition-all active:scale-[0.99] flex items-center justify-center space-x-2 cursor-pointer"
             >
-              <span>{isCheckingAttempts ? 'Đang kiểm tra lượt nộp...' : 'Bắt đầu'}</span>
-              {isCheckingAttempts ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+              <span>Bắt đầu</span>
+              <ArrowRight className="w-4 h-4" />
             </button>
           </form>
 

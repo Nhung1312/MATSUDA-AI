@@ -1,13 +1,8 @@
 import type { Assignment, Submission } from '../types';
 import { getEssayGradingReference, getQuestionTypeLabel, isEssayQuestion } from '../utils/questionUtils';
-import { getSubmissionSummary, getMultipleChoiceSelectionIssue, isSubmissionAnswerPending, hasTeacherGrade } from '../utils/submissionReviewUtils';
-import { getSavedReportQuestion, getSavedGradingReference, getSubmissionReportSourceIssue } from '../utils/submissionReportUtils';
 
 type Entry = { path: string; bytes: Uint8Array };
 type Attachment = { source: string; path: string | null; error?: string };
-type AttachmentData = { bytes: Uint8Array; extension: string };
-// Per export run only: source URLs can expire or change between runs.
-type AttachmentMemo = Map<string, Promise<AttachmentData>>;
 const encoder = new TextEncoder();
 const crcTable = Uint32Array.from({ length: 256 }, (_, value) => {
   let crc = value;
@@ -49,7 +44,7 @@ function zip(entries: Entry[]): Uint8Array {
   return output;
 }
 
-async function readAttachment(source: string): Promise<AttachmentData> {
+async function readAttachment(source: string): Promise<{ bytes: Uint8Array; extension: string }> {
   let bytes: Uint8Array, mime: string;
   const inline = source.match(/^data:([^;,]+);base64,([\s\S]+)$/);
   if (inline) {
@@ -74,19 +69,17 @@ async function readAttachment(source: string): Promise<AttachmentData> {
 }
 
 export async function buildSubmissionExport(assignment: Assignment, submission: Submission,
-  onProgress?: (done: number, total: number) => void, attachmentMemo: AttachmentMemo = new Map()) {
+  onProgress?: (done: number, total: number) => void) {
   if (submission.assignmentId !== assignment.id) throw new Error('Bài nộp không thuộc đề đang chọn.');
   // Capture saved state before any asynchronous work; never write grades or call AI.
   const source: Assignment = JSON.parse(JSON.stringify(assignment));
   const saved: Submission = JSON.parse(JSON.stringify(submission));
   const exportedAt = new Date().toISOString();
-  const audit = getSubmissionSummary(source, saved);
-  const sourceIssue = getSubmissionReportSourceIssue(source, saved);
   const questions = saved.shuffledQuestions?.length ? saved.shuffledQuestions : source.questions;
   const sources = [...new Set([
     source.pdfUrl, ...(source.questions || []).map(q => q.imageUrl),
     ...(questions || []).map(q => q.imageUrl), ...(saved.essayImages || []),
-    ...(saved.answers || []).flatMap(a => [...(a.essayImages || []), a.gradingReference?.imageUrl, a.aiGradingReference?.imageUrl])
+    ...(saved.answers || []).flatMap(a => a.essayImages || [])
   ].filter((url): url is string => typeof url === 'string' && !!url.trim()))];
   const entries: Entry[] = [], attachments: Attachment[] = [];
   let done = 0;
@@ -94,11 +87,7 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
   for (let offset = 0; offset < sources.length; offset += 3) {
     const batch = sources.slice(offset, offset + 3);
     const results = await Promise.allSettled(batch.map(async url => {
-      try {
-        let pending = attachmentMemo.get(url);
-        if (!pending) { pending = readAttachment(url); attachmentMemo.set(url, pending); }
-        return await pending;
-      }
+      try { return await readAttachment(url); }
       finally { onProgress?.(++done, sources.length); }
     }));
     results.forEach((result, idx) => {
@@ -117,16 +106,14 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
   };
   const missing = attachments.filter(item => !item.path).length;
   const sections = (saved.answers || []).map((answer, idx) => {
-    const q = getSavedReportQuestion(source, saved, answer.questionId);
+    const q = (questions || []).find(item => item.id === answer.questionId);
     const original = (source.questions || []).find(item => item.id === answer.questionId);
-    const savedReference = getSavedGradingReference(saved, answer);
-    const currentReference = getEssayGradingReference(original || { correctAnswer: '' });
+    const reference = getEssayGradingReference(original || q || { correctAnswer: '' });
     const response = answer.stepGradingResponse;
     const steps = response?.analysis?.length ? response.analysis : answer.stepAnalysis || [];
     const selectedText = answer.selectedOptionText || q?.options?.find(o => o.id === answer.selectedAnswer)?.text;
     const essay = q ? isEssayQuestion(q) : !!(answer.studentSolutionText || answer.essayImages?.length);
-    const pending = isSubmissionAnswerPending(source, saved, answer);
-    const selectionIssue = !hasTeacherGrade(answer) && getMultipleChoiceSelectionIssue(q, answer);
+    const pending = answer.teacherScore === undefined && !answer.teacherReviewed && !!(answer.needsTeacherReview || answer.isProvisional || answer.aiGradingError || response?.needsTeacherReview || (saved.gradingStatus === 'pending_teacher_grading' && essay));
     const photos = (answer.essayImages || []).map((url, i) => image(url, `Ảnh bài làm câu này ${i + 1}`)).join('');
     const rows = steps.map(step => `<tr><td>${escape(step.stepIndex)}${step.pageIndex === undefined ? '' : `<br>Ảnh ${escape(step.pageIndex + 1)}`}</td><td class="text">${escape(step.studentLatex || step.studentText)}</td><td>${escape(step.status)}<br>${escape(step.contentType || '')}<br>Tin cậy: ${escape(step.confidence)}</td><td class="text">${escape(step.comment)}${step.correctionLatex ? `<br>Sửa: ${escape(step.correctionLatex)}` : ''}${step.crossedOutExplanation ? `<br>Gạch bỏ: ${escape(step.crossedOutExplanation)}` : ''}</td></tr>`).join('');
     const breakdown = response?.scoreBreakdown?.map(item => `<tr><td class="text">${escape(item.criterion)}</td><td>${escape(item.earnedPoints)}/${escape(item.maxPoints)}</td><td class="text">${escape(item.reason)}</td></tr>`).join('');
@@ -136,13 +123,8 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
       ${q?.options?.length && !essay ? block('Phương án trên đề học sinh', q.options.map(o => `${o.id}. ${o.text}`).join('\n')) : ''}
       ${original && (original.question !== q?.question || original.imageUrl !== q?.imageUrl) ? block('Đề nguồn hiện tại (khác bản học sinh đã nhận)', original.question) + (original.imageUrl ? image(original.imageUrl, 'Hình nguồn hiện tại') : '') : ''}
       ${block('Đáp án theo đề học sinh', answer.correctAnswer || q?.correctAnswer)}
-      ${block('Lời giải đã lưu cùng bài chấm', savedReference?.explanation)}${block('Barem/hướng dẫn chấm đã lưu', savedReference?.rubric)}
-      ${answer.aiGradingReference ? block('Căn cứ phân tích AI mới (giữ nguyên điểm giáo viên đã duyệt)', answer.aiGradingReference.rubric || answer.aiGradingReference.explanation) : ''}
-      ${answer.aiGradingReference?.imageUrl && answer.aiGradingReference.imageUrl !== savedReference?.imageUrl ? image(answer.aiGradingReference.imageUrl, 'Hình dùng cho phân tích AI mới, điểm giáo viên được giữ nguyên') : ''}
-      ${savedReference?.imageUrl && savedReference.imageUrl !== q?.imageUrl ? image(savedReference.imageUrl, 'Hình nguồn đã lưu cùng phân tích chấm') : ''}
-      <details><summary>Nguồn hiện tại để đối chiếu (có thể khác căn cứ chấm đã lưu)</summary>${block('Đáp án nguồn hiện tại', currentReference.correctAnswer)}${block('Lời giải nguồn hiện tại', original?.explanation)}${block('Barem nguồn hiện tại', original?.rubric)}</details>
+      ${block('Đáp án nguồn hiện tại', reference.correctAnswer)}${block('Lời giải nguồn', original?.explanation || q?.explanation)}${block('Barem/hướng dẫn chấm nguồn', original?.rubric || q?.rubric)}
       ${block('Bài làm học sinh', essay ? answer.studentSolutionText || answer.selectedAnswer : `${answer.selectedAnswer || 'Chưa trả lời'}${selectedText ? ` — ${selectedText}` : ''}`)}${photos}
-      ${selectionIssue ? `<p class="warning">${escape(selectionIssue)} Điểm cũ và dữ liệu JSON được giữ nguyên.</p>` : ''}
       <p><b>Điểm đã lưu: ${escape(answer.pointsEarned)}/${escape(answer.maxPoints)}</b> · Điểm AI: ${escape(answer.aiScore ?? response?.score ?? 'Chưa có')} · Điểm giáo viên: ${escape(answer.teacherScore ?? 'Chưa nhập')}</p>
       <p>${pending ? 'Cần giáo viên kiểm tra' : 'Theo trạng thái đã lưu'} · ${answer.teacherReviewed ? 'Giáo viên đã duyệt' : ''}</p>
       ${block('Nhận xét AI', answer.aiFeedback || response?.feedback)}${block('Nhận xét giáo viên', answer.teacherFeedback)}
@@ -157,8 +139,6 @@ export async function buildSubmissionExport(assignment: Assignment, submission: 
     body{font:16px/1.6 Arial,sans-serif;color:#17213c;margin:24px auto;padding:0 20px;max-width:1100px}h1{font-size:26px}h2{font-size:21px;color:#3730a3}h4{margin-bottom:6px}.text{white-space:pre-wrap;overflow-wrap:anywhere}section{border-top:2px solid #cbd5e1;padding:16px 0;margin-top:20px}table{border-collapse:collapse;width:100%;font-size:14px}td,th{border:1px solid #cbd5e1;padding:8px;text-align:left;vertical-align:top}th{background:#eef2ff}img{display:block;max-width:100%;height:auto}figure{margin:16px 0}figcaption{font-size:13px;color:#475569}.warning{background:#fff7ed;padding:12px;color:#9a3412}@media print{body{margin:0;max-width:none}h2,h4{break-after:avoid}tr,figure{break-inside:avoid}th{background:#eee}}
     </style><body><h1>Bài làm và kết quả chấm đã lưu</h1><p><b>${escape(saved.studentName)}</b> · Lớp ${escape(saved.className)} · ${escape(source.title)}</p><p>Điểm: <b>${escape(saved.totalScore)}/${escape(saved.maxScore)}</b> · Trạng thái: ${escape(saved.gradingStatus || '')} ${saved.isProvisional || saved.needsTeacherReview ? '— cần giáo viên duyệt' : ''}</p><p>Nộp: ${escape(saved.submittedAt)} · Xuất: ${escape(exportedAt)}</p><p>Bản này giữ kết quả đã lưu tại thời điểm xuất. Công thức trong dữ liệu được giữ nguyên để đối chiếu với ảnh gốc.</p>
     ${missing ? `<p class="warning">Thiếu ${missing} tệp ảnh/PDF chưa tải được. Cần gửi bổ sung để kiểm tra đủ căn cứ.</p>` : ''}
-    ${audit.pendingCount ? `<p class="warning">Có ${audit.pendingCount} câu cần đối chiếu theo dữ liệu đã lưu. Bản xuất không tự chấm lại hoặc sửa điểm.</p>` : ''}
-    ${sourceIssue ? `<p class="warning">${escape(sourceIssue)}</p>` : ''}
     ${source.pdfUrl && assetPaths.get(source.pdfUrl) ? `<p><a href="${escape(assetPaths.get(source.pdfUrl))}">Mở đề PDF gốc</a></p>` : ''}
     ${saved.teacherFeedback ? block('Nhận xét chung của giáo viên', saved.teacherFeedback) : ''}
     ${(saved.essayImages || []).map((url, i) => image(url, `Ảnh bài làm đính kèm chung ${i + 1}`)).join('')}${sections}</body></html>`;
@@ -178,129 +158,6 @@ export async function downloadSubmissionExport(assignment: Assignment, submissio
   const result = await buildSubmissionExport(assignment, submission, onProgress);
   const url = URL.createObjectURL(new Blob([result.bytes.buffer as ArrayBuffer], { type: 'application/zip' }));
   const link = document.createElement('a'); link.href = url; link.download = result.filename;
-  document.body.appendChild(link);
-  try { link.click(); } finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000); }
-  return result;
-}
-
-
-// Export saved submissions in one archive without AI calls or database writes.
-// Each sub-archive is identical in format to "Xuất bài đã chấm" for one student.
-export const MAX_BATCH_EXPORT_SUBMISSIONS = 25;
-const MAX_BATCH_EXPORT_BYTES = 120 * 1024 * 1024;
-
-const safeArchivePart = (text: string) =>
-  String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[đĐ]/g, 'd').replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 48) || 'unknown';
-
-const csvValue = (value: unknown): string => {
-  // Prevent spreadsheet formula execution when opening a student-supplied name.
-  const raw = String(value ?? '');
-  const safe = /^[\s]*[=+\-@]/.test(raw) ? "'" + raw : raw;
-  return '"' + safe.replace(/"/g, '""') + '"';
-};
-
-export async function buildBatchSubmissionExport(
-  assignment: Assignment,
-  submissions: Submission[],
-  onProgress?: (done: number, total: number, studentName: string) => void
-) {
-  if (!submissions.length) throw new Error('Chưa có bài nộp nào trong bộ lọc để xuất.');
-  if (submissions.length > MAX_BATCH_EXPORT_SUBMISSIONS) {
-    throw new Error('Mỗi lần xuất tối đa ' + MAX_BATCH_EXPORT_SUBMISSIONS + ' lượt nộp. Hãy lọc theo tên hoặc chia thành nhiều đợt.');
-  }
-  // Validate the complete selection before fetching any attachment.
-  const ids = new Set<string>();
-  for (const item of submissions) {
-    if (!item.id || item.assignmentId !== assignment.id || ids.has(item.id)) {
-      throw new Error('Danh sách bài nộp không hợp lệ hoặc trùng ID; chưa xuất ZIP.');
-    }
-    ids.add(item.id);
-  }
-
-  // Capture the whole batch before the first asynchronous photo download. An edit
-  // or filter change during export must not mix different versions of saved grades.
-  assignment = JSON.parse(JSON.stringify(assignment));
-  submissions = JSON.parse(JSON.stringify(submissions));
-
-  const exportedAt = new Date().toISOString();
-  const entries: Entry[] = [];
-  const manifest: Array<Record<string, unknown>> = [];
-  const counts = new Map<string, number>();
-  const attachmentMemo: AttachmentMemo = new Map();
-  let bytesTotal = 0, missingAttachments = 0;
-  for (let i = 0; i < submissions.length; i++) {
-    const item = submissions[i];
-    const audit = getSubmissionSummary(assignment, item);
-    const sourceReviewIssue = getSubmissionReportSourceIssue(assignment, item);
-    const result = await buildSubmissionExport(assignment, item, undefined, attachmentMemo);
-    bytesTotal += result.bytes.byteLength;
-    if (bytesTotal > MAX_BATCH_EXPORT_BYTES) {
-      throw new Error('Bộ ảnh/bài làm vượt giới hạn 120 MB cho một lần xuất. Hãy lọc và xuất ít bài hơn.');
-    }
-    const index = String(i + 1).padStart(3, '0');
-    const path = 'bai-cham/' + index + '_' + safeArchivePart(item.studentName) + '.zip';
-    entries.push({ path, bytes: result.bytes });
-    missingAttachments += result.missingAttachments;
-    const groupKey = [item.studentName, item.className].map(s =>
-      String(s || '').normalize('NFC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi')).join('|');
-    const order = (counts.get(groupKey) || 0) + 1;
-    counts.set(groupKey, order);
-    manifest.push({
-      stt: i + 1, file: path, submissionId: item.id,
-      studentName: item.studentName, className: item.className,
-      submittedAt: item.submittedAt, attemptNumber: item.attemptNumber ?? null,
-      sameNameClassOccurrence: order, submissionSource: item.submissionSource || 'unknown',
-      gradingStatus: item.gradingStatus || 'unknown',
-      needsTeacherReview: Boolean(item.needsTeacherReview || item.isProvisional || audit.pendingCount || sourceReviewIssue),
-      savedNeedsTeacherReview: Boolean(item.needsTeacherReview || item.isProvisional),
-      pendingAnswerCount: audit.pendingCount, sourceReviewIssue,
-      score: item.totalScore, maxScore: item.maxScore,
-      missingAttachments: result.missingAttachments
-    });
-    onProgress?.(i + 1, submissions.length, item.studentName);
-  }
-
-  const columns = [
-    'STT', 'File ZIP', 'ID lượt nộp', 'Họ tên', 'Lớp', 'Thời điểm nộp',
-    'Số lượt đã lưu', 'Thứ tự cùng họ tên/lớp trong bộ xuất', 'Nguồn bài',
-    'Trạng thái chấm đã lưu', 'Cần giáo viên đối chiếu', 'Điểm', 'Điểm tối đa', 'Tệp đính kèm thiếu', 'Số câu cần đối chiếu'
-  ];
-  const csvRows: unknown[][] = manifest.map(row => [
-    row.stt, row.file, row.submissionId, row.studentName, row.className, row.submittedAt,
-    row.attemptNumber, row.sameNameClassOccurrence, row.submissionSource,
-    row.gradingStatus, row.needsTeacherReview ? 'Có' : 'Không',
-    row.score, row.maxScore, row.missingAttachments, row.pendingAnswerCount
-  ]);
-  entries.push(textEntry('BANG_KE_LUOT_NOP.csv', '\uFEFF' + [columns, ...csvRows].map(row => row.map(csvValue).join(',')).join('\r\n')));
-  entries.push(textEntry('THONG_TIN_XUAT.json', JSON.stringify({
-    format: 'matsuda-batch-graded-submissions', version: 1, exportedAt,
-    assignmentId: assignment.id, assignmentTitle: assignment.title,
-    exportedSubmissions: submissions.length, distinctNameClassGroups: counts.size,
-    missingAttachments, note: 'Mỗi hàng là một lượt nộp, KHÔNG phải một học sinh duy nhất; các lượt cùng tên/lớp có thể là nộp lại. Không tự kết luận lượt nào là lỗi hoặc điểm cuối cùng.',
-    submissions: manifest
-  }, null, 2)));
-  entries.push(textEntry('HUONG_DAN.txt',
-    'Giải nén ZIP tổng. Mỗi tệp trong bai-cham/ là ZIP độc lập chứa bai-cham.html, du-lieu-cham.json và ảnh/PDF gốc đã lưu.\n' +
-    'Mở BANG_KE_LUOT_NOP.csv để đối chiếu từng lượt nộp; KHÔNG tính số lượt nộp thành số học sinh.\n' +
-    'Có thể lọc trên màn hình kết quả trước khi xuất. Bản xuất KHÔNG gọi AI, KHÔNG sửa điểm, KHÔNG xóa lượt nộp.\n' +
-    'Chỉ chia sẻ dữ liệu học sinh với người được phép. Những tệp không tải được sẽ được báo số lượng; cần gửi tệp gốc bổ sung.\n'));
-  const bytes = zip(entries);
-  return {
-    bytes, filename: 'Bai_cham_hang_loat_' + safeArchivePart(assignment.assignmentCode || assignment.id) +
-      '_' + exportedAt.replace(/[:.]/g, '-') + '.zip',
-    exportedCount: submissions.length, distinctStudentGroups: counts.size, missingAttachments
-  };
-}
-
-export async function downloadBatchSubmissionExport(
-  assignment: Assignment, submissions: Submission[],
-  onProgress?: (done: number, total: number, studentName: string) => void
-) {
-  const result = await buildBatchSubmissionExport(assignment, submissions, onProgress);
-  const url = URL.createObjectURL(new Blob([result.bytes.buffer as ArrayBuffer], { type: 'application/zip' }));
-  const link = document.createElement('a');
-  link.href = url; link.download = result.filename;
   document.body.appendChild(link);
   try { link.click(); } finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000); }
   return result;
