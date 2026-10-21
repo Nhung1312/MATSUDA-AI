@@ -1,7 +1,6 @@
 import { 
   db, 
   auth,
-  firebaseConfig,
   collection, 
   doc, 
   getDoc, 
@@ -14,11 +13,9 @@ import {
   orderBy,
   serverTimestamp 
 } from '../firebase';
-import { getDocFromServer, deleteField, updateDoc } from 'firebase/firestore';
+import { getDocFromServer } from 'firebase/firestore';
 import { assertTeacherCanDeleteSubmission, isSubmissionDeletionEnabled } from './submissionDeletionService';
 import { Assignment, Submission, ClassRoom, ExamTemplate, Contest, ContestSubmission } from '../types';
-import { ExamCloudSaveError, examPayloadBytes } from '../utils/examSaveDiagnostics';
-import { compactSubmissionImages } from '../utils/submissionImageUtils';
 
 export const EXAMS_COLLECTION = 'exams';
 export const RESULTS_COLLECTION = 'results';
@@ -76,22 +73,14 @@ export class FirestoreService {
     assignment: Assignment, 
     teacherUser?: { uid: string; email?: string | null; displayName?: string | null }
   ): Promise<void> {
-    const diagnostics = {
-      code: 'unknown', stage: 'prepare' as 'prepare' | 'firestore',
-      projectId: firebaseConfig.projectId,
-      authState: (auth.currentUser ? (auth.currentUser.isAnonymous ? 'anonymous' : 'firebase') : 'none') as 'firebase' | 'anonymous' | 'none',
-      ownerMatches: !auth.currentUser || !teacherUser || teacherUser.uid === auth.currentUser.uid,
-      payloadBytes: 0
-    };
     try {
       const examDocRef = doc(db, EXAMS_COLLECTION, assignment.id);
       const currentAuthUser = auth.currentUser;
-      const effectiveTeacher = currentAuthUser ? {
+      const effectiveTeacher = teacherUser || (currentAuthUser ? {
         uid: currentAuthUser.uid,
         email: currentAuthUser.email || '',
         displayName: currentAuthUser.displayName || 'Giáo viên'
-      } : teacherUser;
-      if (!diagnostics.ownerMatches) throw Object.assign(new Error(), { code: 'owner-mismatch' });
+      } : undefined);
        
       const payload: any = {
         ...assignment,
@@ -108,21 +97,11 @@ export class FirestoreService {
       // Làm sạch toàn bộ các giá trị undefined trước khi setDoc
       const cleanPayload = sanitizeForFirestore(payload);
 
-      diagnostics.payloadBytes = examPayloadBytes(cleanPayload);
-      // A single UTF-8 string over 1 MiB cannot fit in any Firestore document.
-      // Other sizing decisions stay with Firestore; JSON size is diagnostic only.
-      const oversized = (value: any): boolean => typeof value === 'string'
-        ? new TextEncoder().encode(value).length > 1048487
-        : value && typeof value === 'object' && Object.values(value).some(oversized);
-      if (oversized(cleanPayload)) throw Object.assign(new Error(), { code: 'document-too-large' });
-      diagnostics.stage = 'firestore';
       await setDoc(examDocRef, cleanPayload, { merge: true });
       console.log(`[Firestore] Đã lưu đề thi ${assignment.id} (${assignment.assignmentCode}) lên Cloud Firestore thành công.`);
     } catch (error) {
-      const code = String((error as any)?.code || 'unknown');
-      diagnostics.code = /^[a-zA-Z0-9_/-]{1,80}$/.test(code) ? code : 'unknown';
-      console.warn('[Firestore] Lưu đề chưa được xác nhận', diagnostics);
-      throw new ExamCloudSaveError(diagnostics);
+      console.error('[Firestore Error] Không thể lưu đề thi lên Firestore:', error);
+      throw error;
     }
   }
 
@@ -195,7 +174,7 @@ export class FirestoreService {
       const resultDocRef = doc(db, RESULTS_COLLECTION, submission.id);
        
       const payload = {
-        ...compactSubmissionImages(submission),
+        ...submission,
         createdAt: new Date().toISOString()
       };
 
@@ -722,34 +701,14 @@ export class FirestoreService {
     if (!teacherId) return;
     try {
       const teacherDocRef = doc(db, TEACHERS_COLLECTION, teacherId);
-      const payload: Record<string, unknown> = {
+      const payload = {
         ...data,
         updatedAt: new Date().toISOString()
       };
-      // NEVER persist paid Gemini API secrets in the teacher profile.
-      // Existing teachers collection rules permit broad reads; keep secrets
-      // only on the teacher's local device until a server-side vault exists.
-      delete payload.geminiApiKey;
       await setDoc(teacherDocRef, sanitizeForFirestore(payload), { merge: true });
       console.log(`[Firestore] Đã lưu thông tin giáo viên ${teacherId} lên Cloud Firestore.`);
     } catch (error) {
       console.warn('[Firestore Error] Không thể lưu thông tin giáo viên:', error);
-    }
-  }
-
-  /**
-   * Remove a historically synced API key from a teacher document.
-   * Run after sign-in; this never touches classes, exams, scores or other data.
-   */
-  static async removeLegacyTeacherGeminiApiKey(teacherId: string): Promise<void> {
-    if (!teacherId) return;
-    if (auth.currentUser?.uid !== teacherId || auth.currentUser.isAnonymous) {
-      throw new Error('Cần đăng nhập Firebase đúng chủ hồ sơ để dọn trường key cũ.');
-    }
-    try {
-      await updateDoc(doc(db, TEACHERS_COLLECTION, teacherId), { geminiApiKey: deleteField() });
-    } catch (error: any) {
-      if (error?.code !== 'not-found') throw new Error('Chưa xác nhận xóa trường key cũ trên Cloud.');
     }
   }
 
@@ -772,10 +731,8 @@ export class FirestoreService {
       const snap = await getDoc(teacherDocRef);
       if (snap.exists()) {
         const data = snap.data() || {};
-        const publicProfile = { ...data };
-        delete publicProfile.geminiApiKey;
         return {
-          ...publicProfile,
+          ...data,
           classes: Array.isArray(data.classes) ? data.classes : [],
           deletedAssignmentKeys: Array.isArray(data.deletedAssignmentKeys) ? data.deletedAssignmentKeys : [],
           cloudInitialized: Boolean(data.cloudInitialized)

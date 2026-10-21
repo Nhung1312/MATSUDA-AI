@@ -14,7 +14,6 @@ import {
 } from '../data';
 import { FirestoreService } from './firestoreService';
 import { auth } from '../firebase';
-import { compactSubmissionImages } from '../utils/submissionImageUtils';
 
 const STORAGE_KEYS = {
   CLASSES: 'toan_thcs_classes_v4',
@@ -514,7 +513,7 @@ export class StorageService {
     localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(safe));
   }
 
-  static saveAssignment(assignment: Assignment, options: { syncCloud?: boolean } = {}): void {
+  static saveAssignment(assignment: Assignment): void {
     this.unmarkAssignmentAsDeleted(assignment.id, assignment.assignmentCode);
     const assignments = this.getAssignments();
     const index = assignments.findIndex(a => a.id === assignment.id);
@@ -526,7 +525,7 @@ export class StorageService {
     localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(assignments));
 
     // Tự động đẩy đề thi lên Cloud Firestore nếu người dùng đã đăng nhập
-    if (options.syncCloud !== false && auth.currentUser) {
+    if (auth.currentUser) {
       FirestoreService.saveExam(assignment, auth.currentUser ? {
         uid: auth.currentUser.uid,
         email: auth.currentUser.email || '',
@@ -612,7 +611,6 @@ export class StorageService {
   }
 
   static saveSubmission(submission: Submission, options: { syncCloud?: boolean } = {}): void {
-    submission = compactSubmissionImages(submission);
     const submissions = this.getSubmissions();
     const idx = submissions.findIndex(s => s.id === submission.id);
     if (idx >= 0) {
@@ -631,7 +629,7 @@ export class StorageService {
   }
 
   static async saveSubmissionAsync(submission: Submission): Promise<void> {
-    this.saveSubmission(submission, { syncCloud: false });
+    this.saveSubmission(submission);
     try {
       await FirestoreService.saveResult(submission);
     } catch (err) {

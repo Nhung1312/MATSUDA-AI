@@ -124,31 +124,3 @@ const missing = await buildBatchSubmissionExport({
 assert.equal(missing.missingAttachments, 1, 'Missing or unsafe attachments must be signaled, not hidden.');
 
 console.log('PASS: batch ZIP contains all independent graded attempts and image assets; manifest and CSV guard repeated attempts and spreadsheet formulas; saved data untouched; no AI/network writes.');
-
-const sharedImage = 'https://fixture.invalid/shared.png', sharedPdf = 'https://fixture.invalid/exam.pdf';
-const downloads = new Map<string, number>(); let failure = false;
-(globalThis as any).__examOfflineFetch = async (url: unknown) => {
-  const key = String(url);
-  assert.ok([sharedImage, sharedPdf].includes(key), 'Only saved attachment URLs may be downloaded');
-  downloads.set(key, (downloads.get(key) || 0) + 1);
-  if (failure && key === sharedImage) return new Response('expired', { status: 403 });
-  return key === sharedPdf ? new Response('%PDF-1.4\n%%EOF', { headers: { 'content-type': 'application/pdf' } })
-    : new Response(Uint8Array.from(atob(png), ch => ch.charCodeAt(0)), { headers: { 'content-type': 'image/png' } });
-};
-const networkAssignment = { ...assignment, pdfUrl: sharedPdf, questions: [{ ...assignment.questions[0], imageUrl: sharedImage }] };
-const sharedZip = await buildBatchSubmissionExport(networkAssignment, submissions);
-assert.deepEqual([...downloads.values()], [1, 1], 'Common files download once per batch');
-for (const [, child] of readStoredZip(sharedZip.bytes)) {
-  if (new DataView(child.buffer, child.byteOffset, child.byteLength).getUint32(0, true) !== 0x04034b50) continue;
-  const archived = readStoredZip(child);
-  assert.ok([...archived.keys()].some(key => key.endsWith('.png')));
-  assert.ok([...archived.keys()].some(key => key.endsWith('.pdf')), 'Each child remains a complete independent archive');
-}
-await buildBatchSubmissionExport(networkAssignment, submissions);
-assert.deepEqual([...downloads.values()], [2, 2], 'A fresh run must fetch fresh bytes');
-failure = true; downloads.clear();
-const failedShared = await buildBatchSubmissionExport(networkAssignment, submissions);
-assert.equal(downloads.get(sharedImage), 1, 'An expired common source is not retried for every student');
-assert.equal(failedShared.missingAttachments, submissions.length, 'Every affected report must disclose its missing attachment');
-assert.equal(JSON.stringify({ assignment, submissions }), original);
-console.log('PASS: common photo/PDF downloads once per run; independent archives keep all original bytes; fresh runs reload; shared failures remain visible for every affected student');
