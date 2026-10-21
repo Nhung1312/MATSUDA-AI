@@ -105,6 +105,9 @@ export interface QuestionVerificationResult {
   inputFingerprint?: string;
   reusedResult?: boolean;
   sourceIssue?: boolean;
+  answerProposal?: boolean;
+  proposedExplanation?: string;
+  proposedRubric?: string;
 }
 
 export interface IAIService {
@@ -127,6 +130,7 @@ export interface IAIService {
     grade?: string;
     topic?: string;
     onActivity?: (message: string) => void;
+    proposeMissingAnswers?: boolean;
     onProgress?: (current: number, total: number) => void;
     force?: boolean;
   }): Promise<QuestionVerificationResult[]>;

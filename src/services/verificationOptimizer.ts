@@ -13,14 +13,15 @@ export interface VerificationParams {
   onProgress?: (current: number, total: number) => void;
   force?: boolean;
   onActivity?: (message: string) => void;
+  proposeMissingAnswers?: boolean;
 }
 
 const MODEL = VERIFICATION_MODEL;
 const ENGINE = 'verification-v4-independent-batches';
 const inFlight = new Map<string, Promise<QuestionVerificationResult[]>>();
 
-export async function verificationFingerprint(q: Question, grade = '7', topic = 'Toán THCS'): Promise<string | null> {
-  return fingerprintAIInput({ engine: ENGINE, model: MODEL, grade, topic, question: q.question,
+export async function verificationFingerprint(q: Question, grade = '7', topic = 'Toán THCS', proposal = false): Promise<string | null> {
+  return fingerprintAIInput({ ...(proposal ? { purpose: 'missing-answer-proposal-v1' } : {}), engine: ENGINE, model: MODEL, grade, topic, question: q.question,
     type: isEssayQuestion(q) ? 'essay' : q.type, options: isEssayQuestion(q) ? [] : q.options, correctAnswer: q.correctAnswer,
     explanation: q.explanation || '', rubric: q.rubric || '', points: q.points, imageUrl: q.imageUrl || '' });
 }
@@ -95,9 +96,9 @@ function parseList(text: string): any[] {
 }
 
 export async function verifyWithReuse(params: VerificationParams, apiKey: string | null): Promise<QuestionVerificationResult[]> {
-  const { questions, grade = '7', topic = 'Toán THCS', force = false, onProgress, onActivity } = params;
+  const { questions, grade = '7', topic = 'Toán THCS', force = false, onProgress, onActivity, proposeMissingAnswers = false } = params;
   if (!questions.length) return [];
-  const fingerprints = await Promise.all(questions.map(q => verificationFingerprint(q, grade, topic)));
+  const fingerprints = await Promise.all(questions.map(q => verificationFingerprint(q, grade, topic, proposeMissingAnswers && !hasVerificationReference(q))));
   const runKey = await fingerprintAIInput({ fingerprints, ids: questions.map(q => q.id), force, credential: apiKey ? await fingerprintAIInput({ apiKey }) : null });
   if (runKey && inFlight.has(runKey)) {
     const results = await inFlight.get(runKey)!;
@@ -149,7 +150,7 @@ export async function verifyWithReuse(params: VerificationParams, apiKey: string
         const images = new Map<string, { mimeType: string; data: string }>();
         const valid: Question[] = [];
         for (const q of batch) {
-          if (!hasVerificationReference(q)) {
+          if (!hasVerificationReference(q) && !proposeMissingAnswers) {
             finish(q, resultFor(q, 'Chưa có đáp án/lời giải/barem để đối chiếu. Giáo viên cần bổ sung trước khi thẩm định.'));
             continue;
           }
@@ -175,7 +176,8 @@ export async function verifyWithReuse(params: VerificationParams, apiKey: string
           }
           return parts;
         };
-        const describe = (q: Question, includeSource: boolean) => `[Mã: ${q.id}] (Câu ${q.order})\nLoại: ${isEssayQuestion(q) ? 'TỰ LUẬN' : q.type === 'short_answer' ? 'TRẢ LỜI NGẮN' : q.type === 'true_false' ? 'ĐÚNG/SAI' : 'TRẮC NGHIỆM'}\nĐề bài: ${q.question}\n${isEssayQuestion(q) ? '(Tự luận)' : (q.options || []).map(o => `${o.id}. ${o.text}`).join(' | ')}${includeSource ? `\n[Đáp án hiện tại]: ${q.correctAnswer || 'Chưa có'}\n[Điểm của câu]: ${q.points}\n[Lời giải hiện tại]: ${q.explanation || ''}\n[Biểu điểm nguồn]: ${q.rubric && q.rubric !== q.explanation ? q.rubric : ''}` : ''}`;
+        const isProposal = (q: Question) => proposeMissingAnswers && !hasVerificationReference(q);
+        const describe = (q: Question, includeSource: boolean) => `[Mã: ${q.id}] (Câu ${q.order})\nLoại: ${isEssayQuestion(q) ? 'TỰ LUẬN' : q.type === 'short_answer' ? 'TRẢ LỜI NGẮN' : q.type === 'true_false' ? 'ĐÚNG/SAI' : 'TRẮC NGHIỆM'}\nĐề bài: ${q.question}\n${isEssayQuestion(q) ? '(Tự luận)' : (q.options || []).map(o => `${o.id}. ${o.text}`).join(' | ')}${includeSource && isProposal(q) ? `\n[Điểm của câu]: ${q.points}` : ''}${includeSource && !isProposal(q) ? `\n[Đáp án hiện tại]: ${q.correctAnswer || 'Chưa có'}\n[Điểm của câu]: ${q.points}\n[Lời giải hiện tại]: ${q.explanation || ''}\n[Biểu điểm nguồn]: ${q.rubric && q.rubric !== q.explanation ? q.rubric : ''}` : ''}`;
 
         const pass1 = new Map<string, any>();
         const toRead: Question[] = [];
@@ -192,7 +194,8 @@ export async function verifyWithReuse(params: VerificationParams, apiKey: string
   Geometry Vision Guard: chỉ dùng dữ kiện đề, ký hiệu rõ hoặc chứng minh hợp lệ; không đoán vuông góc/song song/bằng nhau từ hình trông giống.
   Mỗi kết quả phải có đúng questionId. Chỉ matchesCurrentAnswer=true, confidence="high", needsReview=false khi toàn bộ câu và nguồn đúng. Nhận xét ngắn; giữ đủ kết luận các ý.
   ${toRead.map(q => describe(q, true)).join('\n\n')}
-  Trả DUY NHẤT JSON Array: [{"questionId":"mã","proposedAnswer":"đáp án/kết luận","matchesCurrentAnswer":true,"confidence":"high","needsReview":false,"reason":"căn cứ ngắn"}].`;
+  ${toRead.some(isProposal) ? 'Các câu không có đáp án nguồn: hãy tự giải để ĐỀ XUẤT đáp án, lời giải đầy đủ và hướng dẫn chấm theo đúng điểm đã có, tuyệt đối không khẳng định đã khớp đáp án nguồn. Luôn matchesCurrentAnswer=false, needsReview=true; lượt độc lập tiếp theo và giáo viên sẽ kiểm tra.' : ''}
+  Trả DUY NHẤT JSON Array: [{"questionId":"mã","proposedAnswer":"đáp án/kết luận","matchesCurrentAnswer":true,"confidence":"high","needsReview":false,"reason":"căn cứ ngắn","proposedExplanation":"lời giải cho câu chưa có đáp án","proposedRubric":"hướng dẫn chấm cho câu tự luận chưa có nguồn"}].`;
           const list = await callAI(partsFor(prompt, toRead));
           for (const q of toRead) {
             const item = uniqueItem(list, q.id);
@@ -211,7 +214,7 @@ export async function verifyWithReuse(params: VerificationParams, apiKey: string
           const reference = getEssayGradingReference(q);
           const hasSource = essay ? !!(reference.correctAnswer || reference.rubric) : !!q.correctAnswer?.trim();
           const validMC = essay || q.type !== 'multiple_choice' || (q.options?.length >= 2 && q.options.every(o => o.text?.trim()) && q.options.some(o => o.id === proposed));
-          const passes = hasSource && validMC && !!proposed && item?.matchesCurrentAnswer === true && item?.confidence === 'high'
+          const passes = !isProposal(q) && hasSource && validMC && !!proposed && item?.matchesCurrentAnswer === true && item?.confidence === 'high'
             && item?.needsReview === false && (essay || proposed === normalizeProposed(q, q.correctAnswer));
           if (passes) finish(q, { questionId: q.id, order: q.order, currentAnswer: q.correctAnswer, proposedAnswer: proposed,
             matchesCurrentAnswer: true, confidence: 'high', needsReview: false, reason: item.reason || 'Khớp nguồn, đủ các ý.', pass1Answer: proposed, sanityCheckNote: item.reason || 'Khớp nguồn.' });
@@ -237,6 +240,19 @@ export async function verifyWithReuse(params: VerificationParams, apiKey: string
             const p1 = normalize(first?.proposedAnswer);
             const p2 = normalize(second?.pass2Answer);
             const current = normalize(q.correctAnswer);
+            if (isProposal(q)) {
+              const validAnswer = (answer: string) => !!answer && (q.type !== 'multiple_choice' || q.options?.some(option => option.id === answer));
+              const proposedAnswer = validAnswer(p1) ? p1 : validAnswer(p2) ? p2 : '';
+              const agreement = validAnswer(p1) && validAnswer(p2) && p1 === p2 && first?.confidence === 'high' && second?.confidence === 'high';
+              const note = `Chưa có đáp án nguồn; đây là đề xuất AI, cần giáo viên duyệt. ${agreement ? 'Hai lượt độc lập cùng đáp án.' : 'Hai lượt chưa đủ căn cứ đồng thuận; kiểm tra kỹ các ý.'} Lượt 1: ${first?.reason || 'Chưa đủ kết quả.'} | Lượt 2: ${second?.reason || 'Chưa đủ kết quả.'}`;
+              finish(q, { questionId: q.id, order: q.order, currentAnswer: q.correctAnswer, proposedAnswer,
+                matchesCurrentAnswer: false, confidence: 'needs_review', needsReview: true, reason: note,
+                pass1Answer: p1 || undefined, pass2Answer: p2 || undefined, sanityCheckNote: note,
+                answerProposal: true,
+                proposedExplanation: typeof first?.proposedExplanation === 'string' ? first.proposedExplanation : undefined,
+                proposedRubric: essay && typeof first?.proposedRubric === 'string' ? first.proposedRubric : undefined });
+              continue;
+            }
             // Never blanket-reject all essays. Approve only if the independent
             // second pass and explicit source agree, with all subparts present.
             // Keep existing strict multiple-choice/short-answer logic unchanged.

@@ -142,6 +142,44 @@ try {
   (globalThis as any).__examOfflineFetch = apiFetch;
   console.log('PASS: old/new image-source failures do not poison retries; restored source reaches Gemini, progress is visible and successful results still reuse cache');
 
+  // Explicit answer generation uses this same guarded engine, but every new
+  // answer requires two independent calls and stays pending teacher approval.
+  const blankExam = questions.map(q => ({ ...q, id: q.id + '-blank', correctAnswer: '', explanation: '', rubric: '' }));
+  const beforeProposal = JSON.stringify(blankExam);
+  requests = [];
+  handler = async request => {
+    const prompt = request.contents[0].parts[0].text;
+    assert.ok(!prompt.includes('[Đáp án hiện tại]') && !prompt.includes('[Lời giải hiện tại]'), 'A source-free proposal must not invent a teacher reference');
+    if (prompt.includes('chuyên gia độc lập')) assert.ok(!prompt.includes('proposedExplanation') && !prompt.includes('x=1: lời giải đề xuất'), 'Pass 2 cannot see pass 1');
+    const result = await successful()(request); const body = await result.json();
+    const items = JSON.parse(body.candidates[0].content.parts[0].text);
+    for (const item of items) if (item.proposedAnswer) { item.proposedExplanation = 'x=1: lời giải đề xuất'; item.proposedRubric = 'Kết luận: 1.75 điểm'; }
+    return response(items);
+  };
+  const proposals = await aiService.verifyExamQuestions({ questions: blankExam, grade: '9', proposeMissingAnswers: true });
+  assert.equal(requests.length, 10); assert.equal(proposals.length, 16);
+  assert.ok(proposals.every(q => q.answerProposal && q.needsReview && !q.matchesCurrentAnswer && q.pass1Answer && q.pass2Answer));
+  assert.ok(proposals.filter(q => q.questionId.startsWith('tl-')).every(q => q.proposedExplanation && q.proposedRubric));
+  assert.equal(JSON.stringify(blankExam), beforeProposal, 'Generation cannot write a source key or approve anything');
+  requests = []; await aiService.verifyExamQuestions({ questions: blankExam, grade: '9', proposeMissingAnswers: true });
+  assert.equal(requests.length, 0, 'Proposal reuse must not repeat completed independent calls');
+  const verifyBlanks = await aiService.verifyExamQuestions({ questions: blankExam, grade: '9' });
+  assert.ok(verifyBlanks.every(q => q.sourceIssue && !q.answerProposal), 'Proposal cache must never pretend to verify an absent source');
+  assert.equal(requests.length, 0);
+  const partialBlanks = blankExam.map(q => ({ ...q, question: q.question + ' Khôi phục đề xuất.' }));
+  const proposeSuccess = handler; requests = [];
+  handler = async request => requests.length === 3
+    ? new Response(JSON.stringify({ error: { code: 429, message: 'RESOURCE_EXHAUSTED' } }), { status: 429 })
+    : proposeSuccess(request);
+  let proposalError: any;
+  try { await aiService.verifyExamQuestions({ questions: partialBlanks, grade: '9', proposeMissingAnswers: true }); } catch (e) { proposalError = e; }
+  assert.equal(requests.length, 3); assert.equal(proposalError.status, 429);
+  assert.equal(proposalError.partialResults.length, 4); assert.ok(proposalError.partialResults.every((r: any) => r.answerProposal && r.needsReview));
+  advance += 61000; requests = []; handler = proposeSuccess;
+  const proposalResume = await aiService.verifyExamQuestions({ questions: partialBlanks, grade: '9', proposeMissingAnswers: true });
+  assert.equal(requests.length, 8); assert.equal(proposalResume.filter(q => q.reusedResult).length, 4);
+  console.log('PASS: source-free 12 TN + 4 TL explicitly generates 16 proposals in 10 independent calls; keeps all pending teacher review, separates cache from source verification, preserves 4 completed proposals on quota and resumes without repeating them');
+
   // Actual UI catch must retain completed results and old manual approvals for
   // questions that were not completed, rather than clearing the whole dialog.
   const uiSource = fs.readFileSync(new URL('../src/components/AiSolveExamModal.tsx', import.meta.url), 'utf8');

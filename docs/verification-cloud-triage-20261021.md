@@ -50,3 +50,15 @@ Các adapter Cloud/Gemini trong test đều giả lập và bị chặn mạng. 
 - Test offline: ảnh nguồn lỗi → 0 request Gemini; ảnh phục hồi → 1 request và đúng kết quả; bấm lại → dùng kết quả thành công, 0 request. Lỗi 429 vẫn giữ 4 câu đã hoàn tất, mã lỗi hiện trong hộp thẩm định; thiếu nguồn/key không báo thành công.
 
 Cách thử: tải lại Preview bằng Ctrl+Shift+R, mở đúng đề Toán 9 rồi bấm **Thẩm định trắc nghiệm (12)** một lần. Chụp dòng trạng thái ngay dưới tiêu đề sau khi chạy. Chỉ chạy tự luận khi phần TN đã có kết quả hoặc đã xác định nguyên nhân dừng; gặp 429 thì dừng. Không xóa cache hay thay dữ liệu học sinh.
+
+
+## Nguyên nhân xác định từ tài khoản thật: đề chưa có đáp án (22/10/2026)
+Ảnh tiếp theo hiện rõ: **12 câu chưa gửi AI vì thiếu đáp án/lời giải/barem; tổng 16 câu thiếu nguồn**. Đây là chặn trước request, không phải 429 của lượt này. Guard yêu cầu nguồn đã có trên main trước PR #52. Đồng thời nút “AI giải & đáp án” ở màn nhập đề cũng mở modal chỉ đối chiếu nguồn, nên không có đường giải đề thiếu đáp án ở đó. Chưa kết luận vì sao các trường đáp án của đề thật trống (nhập thiếu, bản sao hoặc dữ liệu cũ); không ghi đè hoặc khôi phục bằng phỏng đoán.
+
+Khắc phục bằng chính engine nhóm nhỏ và đối soát hiện có:
+- Thêm hành động rõ **AI giải đề chưa có đáp án**. Chỉ giải câu thiếu nguồn chưa được giáo viên duyệt, tách nhóm 4 TN / 2 TL; bắt buộc lượt độc lập thứ hai cho các câu này. Không gọi service cũ có fallback/retry hoặc tự mặc định A.
+- Đáp án/lời giải/hướng dẫn chấm là **đề xuất**, luôn needs_review dù hai lượt đồng thuận. Giáo viên xem và bấm Chấp nhận đáp án AI hoặc tự sửa; chỉ khi chấp nhận mới chép vào các trường correctAnswer/explanation/rubric sẵn có. Không thay câu hỏi, điểm, thứ tự hoặc bài nộp.
+- Cache đề xuất tách fingerprint khỏi cache đối chiếu đáp án nguồn. 429 giữ các nhóm đã có đủ hai lượt, dừng nhóm tiếp theo; tiếp tục không lặp nhóm hoàn tất. Đóng/lưu khi chưa chấp nhận không biến đáp án trống thành verified.
+- Test giả lập: 16 câu không đáp án → 10 request (5 nhóm x 2 lượt), cả 16 vẫn chờ duyệt; 429 sau nhóm đầu → giữ 4 đề xuất, tiếp tục 12 câu bằng 8 request; giáo viên chấp nhận và tải lại kết quả không gọi AI lại. Source và điểm cũ không đổi.
+
+Tài khoản thật: Ctrl+Shift+R trên Preview, mở đề Toán 9 và bấm nút màu cam **AI giải đề chưa có đáp án (16)** một lần. Chờ trạng thái; xem các lượt giải và lời giải, duyệt từng câu rồi lưu trên đề thử. Chưa xác nhận thực tế Gemini đã giải đúng đề thật trước khi giáo viên chạy và kiểm tra kết quả.
