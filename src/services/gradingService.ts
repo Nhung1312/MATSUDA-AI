@@ -723,6 +723,10 @@ export class GradingService {
     const gradingQuestions = assignment.questions.map(q => {
       const snapshot = submission.shuffledQuestions?.find(saved => saved.id === q.id);
       if (!snapshot || isEssayQuestion(q)) return q;
+      // Preserve the exact student snapshot while an objective key recorded as
+      // provisional is still unverified. Invalid keys must not abort essay grading.
+      const wasHeld = submission.answers.some(a => a.questionId === q.id && !!a.selectionReviewIssue);
+      if (wasHeld && getObjectiveGradingHoldReason(q)) return snapshot;
       if (q.type === 'short_answer' || (q.type === 'true_false' && !q.options?.length)) return q;
       const sourceCorrect = q.options?.find(option => option.id.trim().toUpperCase() === q.correctAnswer.trim().toUpperCase())
         || q.options?.find(option => option.text.trim() === q.correctAnswer.trim());
@@ -754,6 +758,16 @@ export class GradingService {
       }
 
       if (!isEssay) {
+        // A teacher may grade essays before verifying a separate objective key.
+        // Keep the provisional objective answer intact and out of wrong counts.
+        if (existingAns?.selectionReviewIssue && getObjectiveGradingHoldReason(
+          assignment.questions.find(source => source.id === q.id) || q
+        )) {
+          overallNeedsReview = true;
+          totalEarned += existingAns.pointsEarned || 0;
+          updatedAnswers.push({ ...existingAns, needsTeacherReview: true, isProvisional: true, maxPoints });
+          continue;
+        }
         const issue = existingAns && getMultipleChoiceSelectionIssue(q, existingAns);
         if (issue) {
           overallNeedsReview = true;
@@ -791,6 +805,10 @@ export class GradingService {
           pointsEarned: points,
           maxPoints,
           correctAnswer: q.correctAnswer,
+          selectionReviewIssue: undefined,
+          needsTeacherReview: false,
+          isProvisional: false,
+          aiGradingError: false,
           gradingReference: captureGradingReference(q, submission.shuffledQuestions?.find(saved => saved.id === q.id) || q)
         });
         continue;
