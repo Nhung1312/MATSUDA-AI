@@ -129,6 +129,7 @@ try {
     });
     localStorage.setItem('synthetic-draft', 'unfinished-student-work');
     await Promise.all([handler(), handler()]);
+    console.log('TRACE submit outcome', { failCloud, cloudWrites: cloudWrites.length, finished: state.finished.length, error: state.error, lock: state.lock.current });
     assert.equal(cloudWrites.length, 1, 'Unlimited submission must not also use StorageService auto-sync');
     assert.equal(state.finished.length, failCloud ? 0 : 1, 'Never announce success after cloud failure');
     assert.equal(state.lock.current, false);
