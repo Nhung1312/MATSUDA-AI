@@ -129,8 +129,42 @@ export class FileParserService {
   }
 
   static parseLatexText(raw: string, fileName: string = 'de-thi.tex'): ParseResult {
+    // Never silently import an incomplete subset of a 20-question source.
+    const starts = [...raw.matchAll(/\\begin\{(ex|bt|vd)\}/gi)];
+    const ends = [...raw.matchAll(/\\end\{(ex|bt|vd)\}/gi)];
+    if (starts.length !== ends.length) {
+      throw new Error('Đề LaTeX có \\begin{ex} hoặc \\end{ex} chưa khép đủ. Vui lòng kiểm tra nguồn.');
+    }
+    const sourceBlocks = [...raw.matchAll(/\\begin\{(ex|bt|vd)\}([\s\S]*?)\\end\{\1\}/gi)];
+    for (const [index, block] of sourceBlocks.entries()) {
+      const marks = [...block[2].matchAll(/\\True\b/gi)];
+      if (marks.length > 1) {
+        throw new Error('Câu ' + (index + 1) + ' có nhiều phương án \\True; cần sửa đề nguồn.');
+      }
+      const sourceKey = block[2].match(/\\loigiai\s*\{\s*Đáp\s*án\s*đúng\s*[:：]\s*([A-D])\b/i);
+      if (marks.length === 1 && sourceKey) {
+        const choiceSection = block[2].split(/\\choice(?:TF)?\s*/i)[1] || '';
+        const groups: string[] = [];
+        let cursor = 0;
+        for (let i = 0; i < 4; i++) {
+          while (cursor < choiceSection.length && /\s/.test(choiceSection[cursor])) cursor++;
+          const group = this.readBalancedGroup(choiceSection, cursor);
+          if (!group) break;
+          groups.push(group.value);
+          cursor = group.endIndex + 1;
+        }
+        const marked = groups.findIndex(value => /\\True\b/i.test(value));
+        if (marked !== -1 && String.fromCharCode(65 + marked) !== sourceKey[1].toUpperCase()) {
+          throw new Error('Câu ' + (index + 1) + ': \\True không khớp với Đáp án đúng trong \\loigiai.');
+        }
+      }
+    }
     const normalized = this.normalizeLatexExamText(raw);
-    return this.normalizeParseResult(this.parseRawText(normalized, fileName, 'text'));
+    const result = this.normalizeParseResult(this.parseRawText(normalized, fileName, 'text'));
+    if (starts.length && (sourceBlocks.length !== starts.length || result.totalFound !== starts.length)) {
+      throw new Error('Đề có ' + starts.length + ' câu LaTeX nhưng chỉ nhận được ' + result.totalFound + '. Không nhập thiếu câu.');
+    }
+    return result;
   }
 
   private static normalizeLatexExamText(raw: string): string {
@@ -604,6 +638,11 @@ export class FileParserService {
   static parseRawText(rawText: string, fileName: string = 'Đề thi', fileType: 'excel' | 'word' | 'pdf' | 'text' = 'text'): ParseResult {
     if (!rawText || !rawText.trim()) {
       return { fileName, fileType, totalFound: 0, multipleChoiceCount: 0, essayCount: 0, items: [] };
+    }
+    // Direct paste and TXT/MD uploads can also contain LaTeX ex/choice macros.
+    // Use the same deterministic offline parser; do not call Gemini.
+    if (/\\begin\{(?:ex|bt|vd)\}/i.test(rawText)) {
+      return this.parseLatexText(rawText, fileName);
     }
 
     const pdfParts = fileType === 'pdf' ? separatePdfAnswerSections(rawText) : null;
