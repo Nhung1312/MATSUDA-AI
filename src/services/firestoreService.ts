@@ -14,7 +14,7 @@ import {
   orderBy,
   serverTimestamp 
 } from '../firebase';
-import { getDocFromServer, deleteField, updateDoc } from 'firebase/firestore';
+import { getDocFromServer, getDocsFromServer, deleteField, updateDoc } from 'firebase/firestore';
 import { assertTeacherCanDeleteSubmission, isSubmissionDeletionEnabled } from './submissionDeletionService';
 import { Assignment, Submission, ClassRoom, ExamTemplate, Contest, ContestSubmission } from '../types';
 import { ExamCloudSaveError, examPayloadBytes } from '../utils/examSaveDiagnostics';
@@ -210,11 +210,15 @@ export class FirestoreService {
   /**
    * Lấy danh sách đề thi của giáo viên (lọc theo teacherId) hoặc toàn bộ đề trên Firestore
    */
-  static async getExams(teacherId?: string, teacherEmail?: string | null): Promise<Assignment[]> {
+  static async getExams(teacherId?: string, teacherEmail?: string | null,
+    options: { requireServer?: boolean; onQuery?: (counts: { uidMatches: number; emailMatches: number; emailQueryFailed: boolean }) => void } = {}
+  ): Promise<Assignment[]> {
+    const counts = { uidMatches: 0, emailMatches: 0, emailQueryFailed: false };
+    const readDocs = options.requireServer ? getDocsFromServer : getDocs;
     try {
       if (!teacherId) {
         const q = query(collection(db, EXAMS_COLLECTION));
-        const querySnapshot = await getDocs(q);
+        const querySnapshot = await readDocs(q);
         const exams: Assignment[] = [];
         querySnapshot.forEach((docSnap) => {
           exams.push(normalizeAssignmentDoc(docSnap.data(), docSnap.id));
@@ -227,12 +231,13 @@ export class FirestoreService {
         collection(db, EXAMS_COLLECTION),
         where('teacherId', '==', teacherId)
       );
-      const querySnapshot = await getDocs(q);
+      const querySnapshot = await readDocs(q);
       const map = new Map<string, Assignment>();
       querySnapshot.forEach((docSnap) => {
         map.set(docSnap.id, normalizeAssignmentDoc(docSnap.data(), docSnap.id));
       });
 
+      counts.uidMatches = querySnapshot.size ?? map.size;
       // Nếu có email giáo viên, query thêm theo teacherEmail để không bị sót đề cũ tạo trước đó
       if (teacherEmail) {
         try {
@@ -240,20 +245,24 @@ export class FirestoreService {
             collection(db, EXAMS_COLLECTION),
             where('teacherEmail', '==', teacherEmail)
           );
-          const emailSnap = await getDocs(qEmail);
+          const emailSnap = await readDocs(qEmail);
+          counts.emailMatches = emailSnap.size ?? 0;
           emailSnap.forEach((docSnap) => {
             if (!map.has(docSnap.id)) {
               map.set(docSnap.id, normalizeAssignmentDoc(docSnap.data(), docSnap.id));
             }
           });
         } catch (emailErr) {
-          console.warn('[Firestore] Query teacherEmail fallback non-fatal:', emailErr);
+          counts.emailQueryFailed = true;
+          console.warn('[Firestore] Chưa hoàn tất truy vấn teacherEmail.');
         }
       }
 
+      options.onQuery?.(counts);
       return Array.from(map.values());
     } catch (error) {
-      console.error('[Firestore Error] Lỗi tải danh sách đề thi:', error);
+      if (options.requireServer) throw error;
+      console.warn('[Firestore] Chưa tải được danh sách đề thi.');
       return [];
     }
   }
@@ -312,10 +321,10 @@ export class FirestoreService {
   /**
    * Lấy toàn bộ kết quả bài nộp từ Firestore (Dùng cho Giáo viên đồng bộ giữa các máy)
    */
-  static async getAllResults(): Promise<Submission[]> {
+  static async getAllResults(options: { requireServer?: boolean } = {}): Promise<Submission[]> {
     try {
       const q = query(collection(db, RESULTS_COLLECTION));
-      const querySnapshot = await getDocs(q);
+      const querySnapshot = await (options.requireServer ? getDocsFromServer(q) : getDocs(q));
       const results: Submission[] = [];
       querySnapshot.forEach((docSnap) => {
         results.push({
@@ -325,7 +334,8 @@ export class FirestoreService {
       });
       return results;
     } catch (error) {
-      console.error('[Firestore Error] Lỗi tải tất cả kết quả từ Firestore:', error);
+      if (options.requireServer) throw error;
+      console.warn('[Firestore] Chưa tải được bài nộp từ Cloud.');
       return [];
     }
   }
@@ -756,7 +766,7 @@ export class FirestoreService {
   /**
    * Đọc cấu hình và trạng thái của Giáo viên từ Cloud Firestore
    */
-  static async getTeacherProfile(teacherId: string): Promise<{
+  static async getTeacherProfile(teacherId: string, options: { requireServer?: boolean } = {}): Promise<{
     email?: string;
     displayName?: string;
     hasClearedDemoData?: boolean;
@@ -769,21 +779,22 @@ export class FirestoreService {
     if (!teacherId) return null;
     try {
       const teacherDocRef = doc(db, TEACHERS_COLLECTION, teacherId);
-      const snap = await getDoc(teacherDocRef);
+      const snap = await (options.requireServer ? getDocFromServer(teacherDocRef) : getDoc(teacherDocRef));
       if (snap.exists()) {
         const data = snap.data() || {};
         const publicProfile = { ...data };
         delete publicProfile.geminiApiKey;
         return {
           ...publicProfile,
-          classes: Array.isArray(data.classes) ? data.classes : [],
+          classes: Array.isArray(data.classes) ? data.classes : undefined,
           deletedAssignmentKeys: Array.isArray(data.deletedAssignmentKeys) ? data.deletedAssignmentKeys : [],
           cloudInitialized: Boolean(data.cloudInitialized)
         };
       }
       return null;
     } catch (error) {
-      console.warn('[Firestore Error] Lỗi đọc thông tin giáo viên:', error);
+      if (options.requireServer) throw error;
+      console.warn('[Firestore] Chưa đọc được hồ sơ giáo viên.');
       return null;
     }
   }

@@ -1039,7 +1039,7 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
             // Students use the cloud exam, not the teacher's localStorage copy.
             await FirestoreService.saveExam(updatedAsg);
             // 2. Lưu bộ nhớ máy LocalStorage
-            StorageService.saveAssignment(updatedAsg);
+            StorageService.saveAssignment(updatedAsg, { syncCloud: false });
             alert(`Đã cập nhật trạng thái thẩm định cho đề "${updatedAsg.title}"!\nTrạng thái: ${allVerified ? 'ĐÃ THẨM ĐỊNH 100% (Đủ điều kiện đề mẫu)' : 'CẦN XEM LẠI CÁC CÂU NGHI VẤN'}.`);
             setAiSolvingAssignment(null);
             await onRefresh();

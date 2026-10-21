@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { Assignment } from '../../types';
 import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
 import { auth } from '../../firebase';
+import { getTeacherSyncDiagnostics, subscribeTeacherSyncDiagnostics } from '../../services/teacherSyncDiagnostics';
 import { VERIFICATION_MODEL } from '../../services/geminiDiagnostics';
 import type { TestConnectionResult } from '../../services/aiService';
 import { aiService, HybridAIService } from '../../services/aiService';
@@ -50,6 +51,7 @@ interface ImportAnalysisData {
 }
 
 export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, onClearDemoData }) => {
+  const syncDiagnostic = useSyncExternalStore(subscribeTeacherSyncDiagnostics, getTeacherSyncDiagnostics);
   // Gemini API state
   const hybridAi = aiService as HybridAIService;
   const [apiKeyInput, setApiKeyInput] = useState<string>('');
@@ -507,6 +509,14 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
           </div>
         </div>
 
+        <details className="rounded-xl border border-slate-300 p-3 text-xs text-slate-700">
+          <summary className="font-bold cursor-pointer">Kiểm tra tài khoản và đồng bộ Cloud (chỉ đọc)</summary>
+          <p className="mt-2 break-all">Phiên ứng dụng UID: {syncDiagnostic.uid || 'chưa có'}<br />Firebase UID hiện tại: {auth.currentUser?.uid || 'chưa đăng nhập Firebase'}<br />Email truy vấn: {syncDiagnostic.email || 'chưa có'}<br />Dự án Firebase: {syncDiagnostic.projectId || 'chưa xác định'}</p>
+          <p className="mt-2">Trạng thái: {syncDiagnostic.status}; theo UID: {syncDiagnostic.uidMatches ?? '—'}; theo email: {syncDiagnostic.emailMatches ?? '—'}; đề Cloud: {syncDiagnostic.cloudExams ?? '—'}; đang hiển thị: {syncDiagnostic.visibleExams ?? '—'}.</p>
+          <p>Lớp trong hồ sơ Cloud: {syncDiagnostic.classesState || 'chưa đọc'}; số lớp: {syncDiagnostic.classCount ?? '—'}.</p>
+          {syncDiagnostic.emailQueryFailed && <p>Truy vấn teacherEmail chưa thành công; số đề hiện tại có thể chưa đầy đủ.</p>}
+          {syncDiagnostic.errorCode && <p>Mã lỗi đọc Cloud: {syncDiagnostic.errorCode}. Không tự ghi dữ liệu máy lên Cloud.</p>}
+        </details>
         {/* API Key Form */}
         <div className="space-y-4">
           <div>
@@ -664,7 +674,7 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
                   )}
                   {testResult.modelUsed && (
                     <div className="mt-1 font-mono text-[11px] opacity-75">
-                      Model kiểm tra: {testResult.modelUsed}<br />Model thẩm định: {testResult.verificationModel || VERIFICATION_MODEL}
+                      Model kiểm tra: {testResult.modelUsed}{testResult.modelReturned && <><br />Model Google trả về: {testResult.modelReturned}</>}<br />Model thẩm định: {testResult.verificationModel || VERIFICATION_MODEL}
                       <br />Dấu vân tay key SHA-256: {testResult.keyFingerprint || 'chưa có'} — {testResult.usesSavedKey ? 'trùng key đã lưu' : 'key chưa lưu, chưa dùng thẩm định'}
                     </div>
                   )}

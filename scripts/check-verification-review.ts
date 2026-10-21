@@ -75,13 +75,13 @@ console.log('PASS: independent essay pass-2 agreement is conservative; missing s
 
 const good=(id:string)=>({questionId:id,order:1,currentAnswer:'x=1',proposedAnswer:'x=1',matchesCurrentAnswer:true,confidence:'high',needsReview:false,reason:'Đúng.'});
 function harness(questions:any[]) {
- const state:any={lock:{current:false},map:{},choices:Object.fromEntries(questions.map(q=>[q.id,q.correctAnswer||''])),decisions:{},stale:new Set(),calls:[],saved:null,alerts:[]};
+ const state:any={lock:{current:false},map:{},choices:Object.fromEntries(questions.map(q=>[q.id,q.correctAnswer||''])),decisions:{},stale:new Set(),calls:[],saved:null,alerts:[],hasKey:true};
  let provider:any=async(params:any)=>Promise.all(params.questions.map(async(q:any)=>({...good(q.id),inputFingerprint:await verificationFingerprint(q,'7','Toán')})));
  const deps=()=>({isOpen:true,isChecking:false,questions,grade:'7',topic:'Toán',verificationFingerprint,hasVerificationReference,isEssayQuestion,
  verificationBusy:false,verificationOperationLock:state.lock,verificationMap:state.map,userSelectedMap:state.choices,manualDecisionMap:state.decisions,
  staleQuestionIds:state.stale,quickPasteText:'1A 2B',
- aiService:{hasApiKey:()=>true,verifyExamQuestions:async(p:any)=>{state.calls.push(p);return provider(p);},verifySingleQuestion:async(p:any)=>provider({questions:[p.question]}).then((v:any)=>v[0])},
- setIsChecking:(v:any)=>{state.checking=v;},setHasApiKey:()=>{},setIsSolving:()=>{},setIsSaving:()=>{},setReverifyingId:()=>{},setProgress:()=>{},setFilterMode:()=>{},setShowQuickPaste:()=>{},setQuickPasteText:()=>{},
+ aiService:{hasApiKey:()=>state.hasKey,verifyExamQuestions:async(p:any)=>{state.calls.push(p);return provider(p);},verifySingleQuestion:async(p:any)=>provider({questions:[p.question]}).then((v:any)=>v[0])},
+ setVerificationMessage:(v:any)=>{state.message=v;},setIsChecking:(v:any)=>{state.checking=v;},setHasApiKey:()=>{},setIsSolving:()=>{},setIsSaving:()=>{},setReverifyingId:()=>{},setProgress:()=>{},setFilterMode:()=>{},setShowQuickPaste:()=>{},setQuickPasteText:()=>{},
  setStaleQuestionIds:(v:any)=>{state.stale=v;},setVerificationMap:(v:any)=>{state.map=typeof v==='function'?v(state.map):v;},
  setUserSelectedMap:(v:any)=>{state.choices=typeof v==='function'?v(state.choices):v;},setManualDecisionMap:(v:any)=>{state.decisions=typeof v==='function'?v(state.decisions):v;},
  alert:(m:any)=>state.alerts.push(m),onApplyAnswers:async(v:any)=>{state.saved=v;},onClose:()=>{state.closed=true;}});
@@ -114,6 +114,20 @@ const mc={...q,id:'mc',order:1,type:'multiple_choice',correctAnswer:'A',options:
 const paste=harness([mc,{...q,order:2}]);paste.call('handleApplyQuickPaste');assert.equal(paste.state.choices[q.id],'x=1');
 console.log('PASS: explicit force reaches the optimizer, rapid clicks are blocked, fresh analysis clears old manual decisions, blank references cannot be approved, quick-paste does not replace essay answers');
 
+// Imported questions may already carry status='unverified'. Merely opening
+// the dialog (or a failed AI request) must never synthesize a successful check.
+const importedUnverified = { ...mc, verificationStatus: 'unverified', needsReview: false };
+const notChecked = harness([importedUnverified]);
+notChecked.call('initialize'); await until(() => notChecked.state.checking === false);
+assert.equal(notChecked.state.map[mc.id].needsReview, true);
+assert.equal(notChecked.state.map[mc.id].matchesCurrentAnswer, false);
+notChecked.setProvider(async () => { throw new Error('Synthetic failed verification'); });
+await notChecked.call('handleStartVerification');
+await notChecked.call('handleConfirmApply');
+assert.equal(notChecked.state.saved[0].verificationStatus, 'needs_review');
+assert.notEqual(notChecked.state.saved[0].teacherVerified, true);
+console.log('PASS: imported unverified status cannot become verified just by opening/saving the dialog or after AI failure');
+
 const scoped = harness([mc, q]);
 scoped.setProvider(async (p:any) => p.questions.map((item:any) => good(item.id)));
 await scoped.call('handleStartVerification', false, 'objective');
@@ -132,3 +146,65 @@ assert.ok(hasVerificationReference({...blank,rubric:'Kết luận x=1: 1 điểm
 console.log('PASS: missing-reference verification returns teacher-review results with zero API calls, even without a key; existing rubric-only references remain eligible');
 assert.ok(text.includes('max-w-6xl'));assert.ok(text.includes('min-h-0'));
 console.log('VERIFICATION REVIEW: PASS (network blocked; synthetic data)');
+
+// An absent Preview key must be visible after the click, with no provider call.
+const noPreviewKey = harness([mc]);
+noPreviewKey.state.hasKey = false;
+await noPreviewKey.call('handleStartVerification');
+assert.equal(noPreviewKey.state.calls.length, 0);
+assert.equal(noPreviewKey.state.message.kind, 'error');
+assert.match(noPreviewKey.state.message.text, /địa chỉ web này/);
+
+const missingMessage = harness([blank]);
+missingMessage.setProvider(async () => [{ ...good(blank.id), sourceIssue: true, needsReview: true,
+  matchesCurrentAnswer: false, confidence: 'needs_review', reason: 'Chưa có đáp án/lời giải/barem để đối chiếu.' }]);
+await missingMessage.call('handleStartVerification');
+assert.match(missingMessage.state.message.text, /1 câu chưa gửi AI/);
+assert.match(missingMessage.state.message.text, /Chưa có đáp án/);
+assert.equal(missingMessage.state.map[blank.id].needsReview, true);
+console.log('PASS: Preview missing-key and source-blocked runs remain visible, name the cause and never claim successful AI verification');
+
+const sourceFree = { ...q, id: 'proposal-essay', correctAnswer: '', explanation: '', rubric: '' };
+const proposalReview = harness([sourceFree, mc]);
+const draft = { ...good(sourceFree.id), answerProposal: true, needsReview: true, matchesCurrentAnswer: false,
+  confidence: 'needs_review', pass1Answer: 'x=1', pass2Answer: 'x=1',
+  proposedExplanation: 'x+1=2 nên x=1.', proposedRubric: 'Biến đổi và kết luận: 1 điểm.' };
+proposalReview.setProvider(async () => [draft]);
+await proposalReview.call('handleStartVerification', false, 'all', true);
+assert.deepEqual(proposalReview.state.calls[0].questions.map((item: any) => item.id), [sourceFree.id]);
+assert.equal(proposalReview.state.calls[0].proposeMissingAnswers, true);
+await proposalReview.call('handleConfirmApply');
+assert.equal(proposalReview.state.saved[0].correctAnswer, '');
+assert.equal(proposalReview.state.saved[0].explanation, '');
+assert.equal(proposalReview.state.saved[0].verificationStatus, 'needs_review');
+proposalReview.call('handleAcceptAi', sourceFree, 'x=1');
+await proposalReview.call('handleConfirmApply');
+const accepted = proposalReview.state.saved[0];
+assert.equal(accepted.correctAnswer, 'x=1');
+assert.equal(accepted.explanation, draft.proposedExplanation);
+assert.equal(accepted.rubric, draft.proposedRubric);
+assert.equal(accepted.verificationStatus, 'verified');
+assert.equal(accepted.teacherVerified, true);
+assert.deepEqual(proposalReview.state.saved[1].options, mc.options);
+assert.equal(sourceFree.correctAnswer, '');
+const reopenedProposal = harness([JSON.parse(JSON.stringify(accepted))]);
+reopenedProposal.call('initialize'); await until(() => reopenedProposal.state.checking === false);
+assert.equal(reopenedProposal.state.decisions[accepted.id], 'keep');
+await reopenedProposal.call('handleStartVerification');
+assert.equal(reopenedProposal.state.calls.length, 0, 'Reloaded teacher-approved proposal does not consume API again');
+const customProposal = harness([sourceFree]);
+customProposal.state.map[sourceFree.id] = draft;
+customProposal.call('handleCustomAnswer', sourceFree, 'x=2');
+await customProposal.call('handleConfirmApply');
+assert.equal(customProposal.state.saved[0].explanation, '', 'Custom teacher answer must not inherit an unrelated AI solution');
+const noProposalKey = harness([sourceFree]); noProposalKey.state.hasKey = false;
+await noProposalKey.call('handleStartVerification', false, 'all', true);
+assert.equal(noProposalKey.state.calls.length, 0); assert.equal(noProposalKey.state.message.kind, 'error');
+console.log('PASS: only explicit proposal action generates missing answers; source stays blank until teacher acceptance, accepted solution uses existing answer fields, custom answers do not inherit AI explanations, and missing key makes zero requests');
+
+const retryProposal = harness([sourceFree]);
+retryProposal.setProvider(async () => [draft]);
+await retryProposal.call('handleSolveSingle', sourceFree);
+assert.equal(retryProposal.state.calls[0].proposeMissingAnswers, true);
+assert.equal(retryProposal.state.calls[0].force, true);
+assert.equal(retryProposal.state.map[sourceFree.id].needsReview, true);

@@ -15,7 +15,7 @@ import { isEssayQuestion, formatQuestionSubItems, sanitizeMathString, getEssayGr
 import { normalizeMediaExamQuestions } from '../utils/examImportUtils';
 import type { PdfQuestionReference } from '../utils/reconcileGeminiPdf';
 import { verifyWithReuse, VerificationParams } from './verificationOptimizer';
-import { VERIFICATION_MODEL, checkGeminiCooldown, safeGeminiError, apiKeyFingerprint } from './geminiDiagnostics';
+import { VERIFICATION_MODEL, VERIFICATION_TIMEOUT_MS, runCheckedGeminiRequest, safeGeminiError, apiKeyFingerprint } from './geminiDiagnostics';
 import type { GeminiDiagnostic } from './geminiDiagnostics';
 import { isAIQuotaError } from '../utils/aiResultCache';
 
@@ -82,9 +82,10 @@ export interface TestConnectionResult {
   success: boolean;
   message: string;
   modelUsed?: string;
-  errorType?: 'quota' | 'unsupported' | 'invalid_key' | 'permission' | 'general';
+  errorType?: 'quota' | 'unsupported' | 'invalid_key' | 'permission' | 'timeout' | 'general';
   diagnostic?: GeminiDiagnostic;
   keyFingerprint?: string;
+  modelReturned?: string;
   usesSavedKey?: boolean;
   verificationModel?: string;
 }
@@ -103,6 +104,10 @@ export interface QuestionVerificationResult {
   sanityCheckNote?: string;
   inputFingerprint?: string;
   reusedResult?: boolean;
+  sourceIssue?: boolean;
+  answerProposal?: boolean;
+  proposedExplanation?: string;
+  proposedRubric?: string;
 }
 
 export interface IAIService {
@@ -124,6 +129,8 @@ export interface IAIService {
     questions: Question[];
     grade?: string;
     topic?: string;
+    onActivity?: (message: string) => void;
+    proposeMissingAnswers?: boolean;
     onProgress?: (current: number, total: number) => void;
     force?: boolean;
   }): Promise<QuestionVerificationResult[]>;
@@ -458,15 +465,14 @@ export class HybridAIService implements IAIService {
 
     const identity = { keyFingerprint: await apiKeyFingerprint(activeKey), usesSavedKey: activeKey === this.getApiKey(), verificationModel: VERIFICATION_MODEL };
     try {
-      checkGeminiCooldown(activeKey);
-      const ai = new GoogleGenAI({ apiKey: activeKey, httpOptions: { retryOptions: { attempts: 1 } } });
+      const ai = new GoogleGenAI({ apiKey: activeKey, httpOptions: { timeout: VERIFICATION_TIMEOUT_MS, retryOptions: { attempts: 1 } } });
       // Test the same JSON response mode required by verification, once only.
-      const response = await ai.models.generateContent({ model: modelToTest,
+      const response = await runCheckedGeminiRequest(activeKey, modelToTest, 'connection-probe', () => ai.models.generateContent({ model: modelToTest,
         contents: [{ text: 'Return JSON only: {"ok":true}' }],
-        config: { responseMimeType: 'application/json', temperature: 0.1 } });
+        config: { responseMimeType: 'application/json', temperature: 0.1 } }));
       const parsed = JSON.parse((response.text || '').replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim());
       if (parsed?.ok !== true) throw new Error('Unexpected probe response');
-      return { success: true, modelUsed: modelToTest, ...identity,
+      return { success: true, modelUsed: modelToTest, modelReturned: /^gemini-[a-zA-Z0-9.-]+$/.test(response.modelVersion || '') ? response.modelVersion : undefined, ...identity,
         message: `Model ${modelToTest} nhận key và trả JSON hợp lệ. Đây là kiểm tra kết nối, chưa xác nhận Billing Tier hay chất lượng thẩm định đề.` };
     } catch (error: unknown) {
       const safe = safeGeminiError(error, modelToTest, activeKey);

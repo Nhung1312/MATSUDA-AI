@@ -5,7 +5,7 @@
  */
 
 import { ClassRoom, Assignment, Submission } from '../types';
-import { 
+import {
   INITIAL_ALL_ASSIGNMENTS,
   GRADE6_ASSIGNMENTS,
   GRADE7_ASSIGNMENTS,
@@ -140,11 +140,27 @@ export const INITIAL_SUBMISSIONS: Submission[] = [
 ];
 
 export class StorageService {
+  // Cloud snapshots live in memory. Never require the browser to persist every
+  // question/image in a teacher's full archive, or overwrite old disk data on quota.
+  private static cloudAssignments: Assignment[] | undefined;
+  private static cloudClasses: ClassRoom[] | undefined;
+  private static cloudSubmissions: Submission[] | undefined;
+  private static cloudOwner: string | null = null;
+
+  static setCloudCacheOwner(owner: string | null): void {
+    if (this.cloudOwner === owner) return;
+    this.cloudOwner = owner;
+    this.cloudAssignments = this.cloudClasses = this.cloudSubmissions = undefined;
+  }
+  static cacheCloudAssignments(items: Assignment[]): void { this.cloudAssignments = [...items]; }
+  static cacheCloudClasses(items: ClassRoom[]): void { this.cloudClasses = [...items]; }
+  static cacheCloudSubmissions(items: Submission[]): void { this.cloudSubmissions = [...items]; }
+
   /**
    * Kiểm tra xem người dùng đã xóa dữ liệu mẫu hay chưa
    */
   static hasClearedDemoData(): boolean {
-    return localStorage.getItem(STORAGE_KEYS.HAS_CLEARED_DEMO) === 'true';
+    try { return localStorage.getItem(STORAGE_KEYS.HAS_CLEARED_DEMO) === 'true'; } catch { return false; }
   }
 
   /**
@@ -162,27 +178,29 @@ export class StorageService {
    * Khởi tạo dữ liệu mẫu nếu chưa có và người dùng chưa từng yêu cầu xóa dữ liệu mẫu
    */
   static initDemoData(): void {
-    if (this.hasClearedDemoData()) {
-      localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
-      if (localStorage.getItem(STORAGE_KEYS.CLASSES) === null) {
-        localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify([]));
+    try {
+      if (this.hasClearedDemoData()) {
+        localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
+        if (localStorage.getItem(STORAGE_KEYS.CLASSES) === null) {
+          localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify([]));
+        }
+        if (localStorage.getItem(STORAGE_KEYS.ASSIGNMENTS) === null) {
+          localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify([]));
+        }
+        if (localStorage.getItem(STORAGE_KEYS.SUBMISSIONS) === null) {
+          localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify([]));
+        }
+        return;
       }
-      if (localStorage.getItem(STORAGE_KEYS.ASSIGNMENTS) === null) {
-        localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify([]));
-      }
-      if (localStorage.getItem(STORAGE_KEYS.SUBMISSIONS) === null) {
-        localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify([]));
-      }
-      return;
-    }
 
-    const initialized = localStorage.getItem(STORAGE_KEYS.INITIALIZED);
-    if (!initialized) {
-      localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(INITIAL_CLASSES));
-      localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(INITIAL_ASSIGNMENTS));
-      localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify(INITIAL_SUBMISSIONS));
-      localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
-    }
+      const initialized = localStorage.getItem(STORAGE_KEYS.INITIALIZED);
+      if (!initialized) {
+        localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(INITIAL_CLASSES));
+        localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(INITIAL_ASSIGNMENTS));
+        localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify(INITIAL_SUBMISSIONS));
+        localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
+      }
+    } catch { /* Disk quota/privacy failure must not block cloud reads or destroy stored data. */ }
   }
 
   /**
@@ -195,6 +213,7 @@ export class StorageService {
     localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify(INITIAL_SUBMISSIONS));
     localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
     localStorage.removeItem(STORAGE_KEYS.DELETED_ASSIGNMENT_KEYS);
+    this.cloudAssignments = this.cloudClasses = this.cloudSubmissions = undefined;
   }
 
   /**
@@ -307,7 +326,7 @@ export class StorageService {
     // Lọc bỏ toàn bộ dữ liệu mẫu
     const remainingAssignments = currentAssignments.filter(a => !isSampleAssignment(a));
     const remainingClasses = currentClasses.filter(c => !isSampleClass(c));
-    const remainingSubmissions = currentSubmissions.filter(s => 
+    const remainingSubmissions = currentSubmissions.filter(s =>
       !s.id.startsWith('sub_demo_') && !isSampleAssignment({ id: s.assignmentId } as any)
     );
 
@@ -319,6 +338,9 @@ export class StorageService {
     localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(remainingClasses));
     localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(remainingAssignments));
     localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify(remainingSubmissions));
+    this.cloudAssignments = remainingAssignments;
+    this.cloudClasses = remainingClasses;
+    this.cloudSubmissions = remainingSubmissions;
     localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
 
     return {
@@ -388,6 +410,7 @@ export class StorageService {
 
   // --- CLASSES ---
   static getClasses(): ClassRoom[] {
+    if (this.cloudClasses) return [...this.cloudClasses];
     this.initDemoData();
     const isCleared = this.hasClearedDemoData();
     try {
@@ -422,6 +445,7 @@ export class StorageService {
   static setClasses(classes: ClassRoom[]): void {
     const safe = Array.isArray(classes) ? classes : [];
     localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(safe));
+    this.cloudClasses = undefined;
   }
 
   static saveClass(classRoom: ClassRoom): void {
@@ -433,6 +457,7 @@ export class StorageService {
       classes.unshift(classRoom);
     }
     localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(classes));
+    this.cloudClasses = classes;
 
     // Tự động đẩy danh sách lớp học lên Cloud nếu đã đăng nhập
     if (auth.currentUser?.uid) {
@@ -445,6 +470,7 @@ export class StorageService {
   static deleteClass(classId: string): void {
     const classes = this.getClasses().filter(c => c.id !== classId);
     localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(classes));
+    this.cloudClasses = classes;
 
     // Tự động cập nhật danh sách lớp học lên Cloud nếu đã đăng nhập
     if (auth.currentUser?.uid) {
@@ -456,6 +482,7 @@ export class StorageService {
 
   // --- ASSIGNMENTS ---
   static getAssignments(): Assignment[] {
+    if (this.cloudAssignments) return [...this.cloudAssignments];
     this.initDemoData();
     const deletedKeys = this.getDeletedAssignmentKeys();
     const isCleared = this.hasClearedDemoData();
@@ -512,10 +539,11 @@ export class StorageService {
   static setAssignments(assignments: Assignment[]): void {
     const safe = Array.isArray(assignments) ? assignments : [];
     localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(safe));
+    this.cloudAssignments = undefined;
   }
 
   static saveAssignment(assignment: Assignment, options: { syncCloud?: boolean } = {}): void {
-    this.unmarkAssignmentAsDeleted(assignment.id, assignment.assignmentCode);
+    if (options.syncCloud !== false) this.unmarkAssignmentAsDeleted(assignment.id, assignment.assignmentCode);
     const assignments = this.getAssignments();
     const index = assignments.findIndex(a => a.id === assignment.id);
     if (index >= 0) {
@@ -523,10 +551,12 @@ export class StorageService {
     } else {
       assignments.unshift(assignment);
     }
+    if (options.syncCloud === false) { this.cacheCloudAssignments(assignments); return; }
     localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(assignments));
+    this.cloudAssignments = assignments;
 
     // Tự động đẩy đề thi lên Cloud Firestore nếu người dùng đã đăng nhập
-    if (options.syncCloud !== false && auth.currentUser) {
+    if (auth.currentUser) {
       FirestoreService.saveExam(assignment, auth.currentUser ? {
         uid: auth.currentUser.uid,
         email: auth.currentUser.email || '',
@@ -561,6 +591,7 @@ export class StorageService {
       return a.id !== assignmentId && !deletedKeys.has(a.id) && !deletedKeys.has(c);
     });
     localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(assignments));
+    this.cloudAssignments = assignments;
   }
 
   /**
@@ -589,6 +620,7 @@ export class StorageService {
 
   // --- SUBMISSIONS ---
   static getSubmissions(): Submission[] {
+    if (this.cloudSubmissions) return [...this.cloudSubmissions];
     this.initDemoData();
     try {
       const data = localStorage.getItem(STORAGE_KEYS.SUBMISSIONS);
@@ -609,6 +641,7 @@ export class StorageService {
   static setSubmissions(submissions: Submission[]): void {
     const safe = Array.isArray(submissions) ? submissions : [];
     localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify(safe));
+    this.cloudSubmissions = undefined;
   }
 
   static saveSubmission(submission: Submission, options: { syncCloud?: boolean } = {}): void {
@@ -621,6 +654,7 @@ export class StorageService {
       submissions.unshift(submission);
     }
     localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify(submissions));
+    this.cloudSubmissions = submissions;
 
     // Luôn ghi trực tiếp lên Cloud Firestore để giáo viên trên máy khác xem được
     if (options.syncCloud !== false) {

@@ -28,7 +28,9 @@
     "check:media-import": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-media-import-review.ts",
     "check:verification-review": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-verification-review.ts",
     "check:pdf-reconciliation": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-pdf-reconciliation.ts && node --import ./scripts/offline-test-guard.mjs --import tsx scripts/test-gemini-pdf-reconcile.mjs && node --import ./scripts/offline-test-guard.mjs --import tsx scripts/test-pdf-answer-sections.ts && node --import ./scripts/offline-test-guard.mjs --import tsx --test scripts/test-gemini-pdf-import.mjs",
-    "check:urgent-readiness": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-urgent-readiness.ts && node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-gemini-diagnostics.ts"
+    "check:urgent-readiness": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-urgent-readiness.ts && node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-gemini-diagnostics.ts",
+    "check:verification-recovery": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-verification-recovery.ts",
+    "check:cloud-cache": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-cloud-cache.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

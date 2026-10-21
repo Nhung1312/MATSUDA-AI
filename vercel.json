@@ -8,5 +8,10 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "fix/verification-cloud-cache-20261021": true
+    }
+  }
 }

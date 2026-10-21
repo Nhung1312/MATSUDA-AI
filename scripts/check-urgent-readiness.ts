@@ -77,7 +77,7 @@ const saveCache = bind('../src/services/storageService.ts', 'saveAssignment', {
   auth: { currentUser: { uid: 'test-owner' } },
   FirestoreService: { saveExam: async () => { extraCloudWrites++; } }
 }, true);
-const cacheReceiver = { unmarkAssignmentAsDeleted() {}, getAssignments: () => [] };
+const cacheReceiver = { unmarkAssignmentAsDeleted() {}, getAssignments: () => [], cacheCloudAssignments() {} };
 saveCache.call(cacheReceiver, { id: 'cache', assignmentCode: 'CACHE' }, { syncCloud: false });
 assert.equal(extraCloudWrites, 0);
 saveCache.call(cacheReceiver, { id: 'cache', assignmentCode: 'CACHE' });

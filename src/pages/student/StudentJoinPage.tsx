@@ -119,7 +119,7 @@ export const StudentJoinPage: React.FC<StudentJoinPageProps> = ({ initialCode = 
         found = await FirestoreService.getExamByCode(cleanCode);
         if (found) {
           // Cache in local storage for faster subsequent access
-          StorageService.saveAssignment(found);
+          StorageService.saveAssignment(found, { syncCloud: false });
         } else {
           // Kiểm tra xem có phải mã Cuộc thi trực tuyến (Contest) không
           const contest = await FirestoreService.getContestByCode(cleanCode);
