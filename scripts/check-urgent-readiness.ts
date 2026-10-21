@@ -69,6 +69,20 @@ function bind(file: string, name: string, deps: Record<string, any>, method = fa
   return new Function(...Object.keys(deps), js + `\nreturn ${method ? 'Subject.' : ''}${name};`)(...Object.values(deps));
 }
 
+// Execute the actual local cache method: confirmed saves must suppress its
+// default cloud auto-sync without changing the old default for other callers.
+let extraCloudWrites = 0;
+const saveCache = bind('../src/services/storageService.ts', 'saveAssignment', {
+  localStorage: { setItem() {} }, STORAGE_KEYS: { ASSIGNMENTS: 'synthetic-cache' },
+  auth: { currentUser: { uid: 'test-owner' } },
+  FirestoreService: { saveExam: async () => { extraCloudWrites++; } }
+}, true);
+const cacheReceiver = { unmarkAssignmentAsDeleted() {}, getAssignments: () => [] };
+saveCache.call(cacheReceiver, { id: 'cache', assignmentCode: 'CACHE' }, { syncCloud: false });
+assert.equal(extraCloudWrites, 0);
+saveCache.call(cacheReceiver, { id: 'cache', assignmentCode: 'CACHE' });
+assert.equal(extraCloudWrites, 1, 'Old auto-sync default remains available');
+
 let failure: any = null, writes = 0;
 const records = new Map<string, any>();
 const auth: any = { currentUser: { uid: 'test-owner', isAnonymous: false } };

@@ -23,6 +23,10 @@ assert.equal(calls[0].key, 'synthetic-saved-key'); assert.ok(calls[0].url.includ
 result = await aiService.testConnection('synthetic-unsaved-key', VERIFICATION_MODEL);
 assert.equal(result.usesSavedKey, false); assert.notEqual(result.keyFingerprint, await apiKeyFingerprint('synthetic-saved-key'));
 assert.equal(aiService.getApiKey(), 'synthetic-saved-key', 'Testing another key must not silently save it');
+const beforeEmpty = calls.length;
+const emptyKey = await aiService.testConnection('', VERIFICATION_MODEL);
+assert.equal(emptyKey.success, false); assert.equal(emptyKey.errorType, 'invalid_key');
+assert.equal(calls.length, beforeEmpty, 'Explicit empty input must not silently test the previously saved key');
 payload = [{ questionId: 'verify-saved', proposedAnswer: 'A', matchesCurrentAnswer: true, confidence: 'high', needsReview: false, reason: 'Synthetic' }];
 const savedQuestion: any = { id: 'verify-saved', order: 1, question: '1+1?', type: 'multiple_choice', options: [{ id: 'A', text: '2' }, { id: 'B', text: '3' }], correctAnswer: 'A', points: 1 };
 const verified = await aiService.verifyExamQuestions({ questions: [savedQuestion], force: true });

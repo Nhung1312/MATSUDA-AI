@@ -445,7 +445,7 @@ export class HybridAIService implements IAIService {
    * - Tuyệt đối KHÔNG tự động chuyển sang Flash Lite khi model được chọn bị lỗi/hết quota
    */
   async testConnection(key?: string, specificModel?: string): Promise<TestConnectionResult> {
-    const activeKey = key?.trim() || this.getApiKey();
+    const activeKey = key === undefined ? this.getApiKey() : key.trim();
     if (!activeKey) {
       return {
         success: false,
