@@ -779,12 +779,9 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
         };
       }
 
-      // 1. Save to Cloud Firestore
-      try {
-        await FirestoreService.saveExam(savedAssignment, user || undefined);
-      } catch (firestoreErr) {
-        console.warn('Lưu Firestore thất bại, lưu dự phòng LocalStorage:', firestoreErr);
-      }
+      // Student links and quota checks use Firestore, not localStorage.
+      // Never announce a shareable exam if the cloud refused this write.
+      await FirestoreService.saveExam(savedAssignment, user || undefined);
 
       // 2. Save to Local Cache
       StorageService.saveAssignment(savedAssignment);
@@ -795,7 +792,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
     } catch (err) {
       console.error('Lỗi khi lưu đề thi:', err);
       setIsSaving(false);
-      alert('Có lỗi xảy ra khi lưu đề thi. Vui lòng thử lại.');
+      alert('Chưa lưu được đề lên Firebase. Không gửi link cho học sinh; hãy kiểm tra mạng và thử lưu lại.');
     }
   };
 

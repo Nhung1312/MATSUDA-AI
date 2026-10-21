@@ -296,6 +296,85 @@ assert.equal((await saveTeacherLimit(exam())).maxSubmissions, 0);
 const changed = await saveTeacherLimit(exam(), 1);
 assert.equal(changed.maxSubmissions, 1); assert.equal(changed.id, 'limit_exam');
 assert.equal((await saveTeacherLimit(exam(3))).maxSubmissions, 3);
+
+// A teacher must not see "saved" or a link-ready state when the live Firestore
+// exam (including maxSubmissions) was NOT updated.
+{
+  const cloud: Assignment[] = [], localSaved: Assignment[] = [], completed: Assignment[] = [], alerts: string[] = [];
+  const failedSave = bind(teacherFile, 'handleSave', {
+    editingAssignment: exam(1), isEditing: true, maxSubmissions: 2,
+    title: 'Đề kiểm tra làm lại', grade: '7', topic: 'Phương trình', classId: 'all',
+    durationMinutes: 45, deadline: '', allowViewResult: true, resultReviewMode: 'full',
+    examMode: 'text', questions: exam(1).questions, targetTotalPoints: 2,
+    classes: [], BILLING_ENABLED: false, user: undefined,
+    isEssayQuestion, normalizeQuestion, calculateQuestionsTotalPoints, toPointUnits,
+    setIsSaving: () => {}, alert: (message: string) => alerts.push(message),
+    console: { warn: () => {}, error: () => {} },
+    FirestoreService: { saveExam: async (item: Assignment) => { cloud.push(clone(item)); throw Error('Firestore offline'); } },
+    StorageService: { generateAssignmentCode: () => 'RETAKE-2026', saveAssignment: (item: Assignment) => localSaved.push(clone(item)) },
+    onSaveSuccess: (item: Assignment) => completed.push(item)
+  });
+  await failedSave({ preventDefault: () => {} });
+  assert.equal(cloud.length, 1, 'Saving a new attempt limit must contact the cloud');
+  assert.equal(localSaved.length, 0, 'Never cache a quota change as published after cloud failure');
+  assert.equal(completed.length, 0, 'Failed quota change must not report success');
+  assert.ok(alerts.some(message => /Firebase/.test(message) && /Không gửi link/.test(message)));
+  console.log('PASS: Firestore failure during retake-limit update cannot show a false teacher success');
+}
+
+// A new assignment ID/code resets a student's quota without deleting or
+// modifying historical attempts. Reopening the old code remains blocked.
+{
+  const previousExam = exam(1);
+  const previous = result('old-attempt-kept');
+  const copied = await ExamGeneratorService.generateVariantAssignment(previousExam, {
+    mode: 'permutation', variantCode: 'LAN-2', shuffleQuestions: false, shuffleOptions: false
+  });
+  assert.notEqual(copied.id, previousExam.id);
+  assert.notEqual(copied.assignmentCode, previousExam.assignmentCode);
+  assert.equal(copied.maxSubmissions, 1);
+  assert.equal(copied.questions.length, previousExam.questions.length);
+  const isolated = fixture(copied, [previous]);
+  assert.equal((await isolated.service.check(copied, participant)).remaining, 1,
+    'Only attempts in the new assignment count against its quota');
+  const newAttempt = result('new-work', { assignmentId: copied.id });
+  const acceptedRedo = await isolated.service.commit(copied, participant, newAttempt);
+  assert.equal(acceptedRedo.attemptNumber, 1);
+  assert.equal(isolated.records.size, 2);
+  assert.deepEqual(isolated.records.get(previous.id), previous,
+    'The initial attempt must remain completely unchanged');
+  console.log('PASS: new variant code accepts a clean retake and preserves all historical scores');
+}
+
+// Generating a new code must require Firestore persistence; otherwise a student
+// joining the share link sees a code that exists only in teacher localStorage.
+for (const cloudAvailable of [false, true]) {
+  let created: Assignment | null = null;
+  const savedCloud: Assignment[] = [], savedLocal: Assignment[] = [], done: Assignment[] = [], warnings: string[] = [];
+  const handleGenerate = bind('../src/components/GenerateSimilarExamModal.tsx', 'handleGenerate', {
+    assignment: exam(1), classes: [], selectedClassId: 'all', mode: 'permutation',
+    variantCode: 'LAN-2', shuffleQuestions: false, shuffleOptions: false,
+    title: 'Đề thử lại', setIsGenerating: () => {}, setProgress: () => {},
+    ExamGeneratorService,
+    FirestoreService: { saveExam: async (item: Assignment) => {
+      savedCloud.push(clone(item)); if (!cloudAvailable) throw Error('Firestore offline');
+    } },
+    StorageService: { saveAssignment: (item: Assignment) => savedLocal.push(clone(item)) },
+    setCreatedAssignment: (item: Assignment) => { created = item; },
+    onSuccess: (item: Assignment) => done.push(item),
+    console: { error: () => {}, warn: () => {} },
+    alert: (message: string) => warnings.push(message)
+  });
+  await handleGenerate();
+  assert.equal(savedCloud.length, 1);
+  assert.equal(savedLocal.length, cloudAvailable ? 1 : 0);
+  assert.equal(done.length, cloudAvailable ? 1 : 0);
+  assert.equal(Boolean(created), cloudAvailable);
+  if (!cloudAvailable) assert.ok(warnings.some(message => /Firebase/.test(message) && /Không gửi link/.test(message)));
+  else assert.notEqual(done[0].id, exam(1).id);
+}
+console.log('PASS: the Create Similar Exam button only returns a shareable link after cloud save succeeds');
+
 const variant = await ExamGeneratorService.generateVariantAssignment(exam(), { mode: 'permutation', shuffleQuestions: false, shuffleOptions: false });
 assert.equal(variant.maxSubmissions, 1);
 const copiedUnlimited = await ExamGeneratorService.generateVariantAssignment(exam(0), { mode: 'permutation', shuffleQuestions: false, shuffleOptions: false });
