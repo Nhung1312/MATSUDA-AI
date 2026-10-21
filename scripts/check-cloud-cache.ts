@@ -140,5 +140,6 @@ console.log('PASS: explicit local class/exam edits remain visible; profile reads
 
 const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
 assert.ok(!app.includes('const syncTeacherCloudData ='), 'Automatic cache-to-cloud migration must be removed');
-assert.equal(JSON.parse(fs.readFileSync(new URL('../vercel.json', import.meta.url), 'utf8')).git.deploymentEnabled['fix/verification-cloud-cache-20261021'], false);
+const deploymentBranches = JSON.parse(fs.readFileSync(new URL('../vercel.json', import.meta.url), 'utf8')).git.deploymentEnabled;
+assert.deepEqual(deploymentBranches, { 'fix/verification-cloud-cache-20261021': true }, 'Preview authorization must apply only to this feature branch');
 console.log('CLOUD CACHE: PASS (read/write adapters mocked; no Production access)');

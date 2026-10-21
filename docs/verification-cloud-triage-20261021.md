@@ -1,8 +1,8 @@
 # Thẩm định đề và đồng bộ kho đề: bản sửa để kiểm thử
 
 Nhánh xuất phát từ main `d4468ec7fa3bbe36944e512be17ded94a13c7734` (đã có PR #51).
-Không thay thang điểm, exporter, Firestore Rules hoặc cấu trúc bài nộp. Không merge/deploy trong đợt này.
-`vercel.json` tắt auto-deployment **chỉ cho nhánh sửa lỗi này**, kể cả Preview.
+Không thay thang điểm, exporter, Firestore Rules hoặc cấu trúc bài nộp. Không merge hoặc triển khai Production. Ngày 22/10/2026, chủ ứng dụng đã cho phép triển khai Preview để kiểm thử.
+`vercel.json` bật triển khai **chỉ cho nhánh sửa lỗi này** theo xác nhận Preview của chủ ứng dụng; không thay cấu hình main. Preview vẫn dùng Firebase được cấu hình cho dự án: xem dữ liệu là thao tác đọc; bấm lưu đề/kết quả có thể ghi Cloud thật. Kiểm thử lưu trên bản sao đề thử, không chỉnh đề hoặc bài nộp cũ.
 
 ## Kết luận có bằng chứng
 
