@@ -39,3 +39,14 @@ Tương tự, chưa đọc hồ sơ thật để kết luận hai cửa sổ dù
 - Các regression hiện có kiểm tra học sinh nộp đề chưa thẩm định, giới hạn lượt, đảo đề, giáo viên duyệt đáp án, xử lý bài chờ chấm, bảo toàn điểm cũ và xuất phiếu.
 
 Các adapter Cloud/Gemini trong test đều giả lập và bị chặn mạng. Đạt test không đồng nghĩa đã xác minh Billing/quota hoặc dữ liệu tài khoản thật.
+
+
+## Theo dõi thẩm định trên Preview (22/10/2026)
+Ảnh kiểm thử Toán 9 cho thấy 0/16 câu (12 TN + 4 TL), chưa có phản hồi lỗi Gemini nhìn thấy; Console chỉ cho thấy đề đã lưu Cloud và cache bài nộp bị đầy. Chưa đủ bằng chứng xác định nguyên nhân của 16 câu thật. Ảnh 20/20 của đề Toán 6 cũng chưa chứng minh đã phát sinh một lượt API mới thay vì đọc kết quả cũ.
+
+- Hộp thẩm định nay giữ thông báo lỗi/quota, số câu xử lý và trạng thái giải/đối soát độc lập; không chỉ dùng alert có thể biến mất.
+- Báo rõ thiếu key tại địa chỉ web hiện tại, thiếu đáp án/lời giải/hình nguồn, hoặc đang dùng lại kết quả cũ. Không tự sinh đáp án thay nguồn rồi duyệt.
+- Lỗi tái hiện được trong mã: kết quả không tải được ảnh nguồn từng bị cache như kết quả AI. Không cache lỗi nguồn nữa; bỏ qua cache cũ không có kết quả lượt 1 để lần thử sau kiểm tra lại nguồn. Kết quả AI thành công vẫn được dùng lại.
+- Test offline: ảnh nguồn lỗi → 0 request Gemini; ảnh phục hồi → 1 request và đúng kết quả; bấm lại → dùng kết quả thành công, 0 request. Lỗi 429 vẫn giữ 4 câu đã hoàn tất, mã lỗi hiện trong hộp thẩm định; thiếu nguồn/key không báo thành công.
+
+Cách thử: tải lại Preview bằng Ctrl+Shift+R, mở đúng đề Toán 9 rồi bấm **Thẩm định trắc nghiệm (12)** một lần. Chụp dòng trạng thái ngay dưới tiêu đề sau khi chạy. Chỉ chạy tự luận khi phần TN đã có kết quả hoặc đã xác định nguyên nhân dừng; gặp 429 thì dừng. Không xóa cache hay thay dữ liệu học sinh.

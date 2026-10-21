@@ -6,6 +6,7 @@ import { VERIFICATION_MODEL, VERIFICATION_TIMEOUT_MS } from '../src/services/gem
 import { verificationFingerprint } from '../src/services/verificationOptimizer';
 import { hasVerificationReference } from '../src/utils/verificationUtils';
 import { isEssayQuestion } from '../src/utils/questionUtils';
+import { readAIResult, writeAIResult } from '../src/utils/aiResultCache';
 assert.ok(String(globalThis.fetch).includes('__examOfflineFetch'));
 const data = new Map<string, string>();
 Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
@@ -111,6 +112,36 @@ try {
   }
   console.log('PASS: real SDK abort timeout and 404 stop further groups, retain completed work and never approve failed questions');
 
+  // Recover from transient image failure even with a legacy cached rejection.
+  advance += 61000; simulateTimeout = false; handler = successful(); requests = [];
+  const imageQuestion = { ...questions[0], id: 'tn-image', question: 'Cho hình bên. Chọn đáp án đúng.', imageUrl: 'https://offline.invalid/source.png' };
+  const imageFingerprint = await verificationFingerprint(imageQuestion, '9');
+  writeAIResult('verification', imageFingerprint, { questionId: imageQuestion.id, proposedAnswer: '',
+    needsReview: true, confidence: 'needs_review', matchesCurrentAnswer: false, reason: 'Chưa đọc được hình nguồn.' });
+  const apiFetch = (globalThis as any).__examOfflineFetch;
+  let imageAvailable = false;
+  (globalThis as any).__examOfflineFetch = async (url: any, init: any) => {
+    if (String(url) === imageQuestion.imageUrl) return imageAvailable
+      ? new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } })
+      : new Response('', { status: 503 });
+    return apiFetch(url, init);
+  };
+  const blocked = await aiService.verifyExamQuestions({ questions: [imageQuestion], grade: '9' });
+  assert.equal(blocked[0].sourceIssue, true); assert.equal(requests.length, 0);
+  imageAvailable = true;
+  const activities: string[] = [];
+  const recovered = await aiService.verifyExamQuestions({ questions: [imageQuestion], grade: '9', onActivity: value => activities.push(value) });
+  assert.equal(requests.length, 1); assert.equal(recovered[0].needsReview, false);
+  assert.match(activities[0], /Đang giải/);
+  requests = []; await aiService.verifyExamQuestions({ questions: [imageQuestion], grade: '9' });
+  assert.equal(requests.length, 0, 'Completed AI answers still reuse cache');
+  imageAvailable = false;
+  const newImageQuestion = { ...imageQuestion, question: imageQuestion.question + ' Thử lại nguồn.' };
+  await aiService.verifyExamQuestions({ questions: [newImageQuestion], grade: '9' });
+  assert.equal(readAIResult('verification', await verificationFingerprint(newImageQuestion, '9')), undefined, 'Do not cache transient source failures');
+  (globalThis as any).__examOfflineFetch = apiFetch;
+  console.log('PASS: old/new image-source failures do not poison retries; restored source reaches Gemini, progress is visible and successful results still reuse cache');
+
   // Actual UI catch must retain completed results and old manual approvals for
   // questions that were not completed, rather than clearing the whole dialog.
   const uiSource = fs.readFileSync(new URL('../src/components/AiSolveExamModal.tsx', import.meta.url), 'utf8');
@@ -119,14 +150,18 @@ try {
   const visit = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(ast) === 'handleStartVerification') fn = n; ts.forEachChild(n, visit); }; visit(ast); assert.ok(fn);
   const js = ts.transpileModule(`const ${fn!.getText(ast)};`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   let uiResults: any = { 'tl-12': { proposedAnswer: 'old answer', needsReview: true } }, decisions: any = { 'tl-12': 'keep' }, alerts: string[] = [];
+  let uiMessage: any;
   const deps = { isChecking: false, verificationOperationLock: { current: false }, setIsSolving() {}, questions: changed, grade: '9', topic: 'Toán THCS',
-    verificationFingerprint, hasVerificationReference, isEssayQuestion, setProgress() {}, setFilterMode() {},
+    verificationFingerprint, hasVerificationReference, isEssayQuestion, setProgress() {}, setFilterMode() {}, setHasApiKey() {}, setVerificationMessage: (value: any) => { uiMessage = value; },
     aiService: { hasApiKey: () => true, verifyExamQuestions: async () => { throw interrupted; } },
     setVerificationMap: (f: any) => { uiResults = f(uiResults); }, setManualDecisionMap: (f: any) => { decisions = f(decisions); },
     alert: (m: string) => alerts.push(m), console: { warn() {} } };
   await new Function(...Object.keys(deps), js + '\nreturn handleStartVerification;')(...Object.values(deps))();
   assert.equal(Object.keys(uiResults).length, 5); assert.equal(decisions['tl-12'], 'keep');
   assert.equal(uiResults['tl-12'].proposedAnswer, 'old answer'); assert.match(alerts[0], /429/);
+  assert.match(uiMessage.text, /429/);
+  assert.match(uiMessage.text, /4 câu/);
+  assert.equal(uiMessage.kind, 'error');
   assert.ok(!JSON.stringify(interrupted.diagnostic).includes('synthetic-tier-one-key'));
   console.log('VERIFICATION RECOVERY: PASS (offline, synthetic Toán 9 structure; no paid key or production data)');
 } finally { Date.now = realNow; globalThis.setTimeout = realTimeout; }

@@ -75,13 +75,13 @@ console.log('PASS: independent essay pass-2 agreement is conservative; missing s
 
 const good=(id:string)=>({questionId:id,order:1,currentAnswer:'x=1',proposedAnswer:'x=1',matchesCurrentAnswer:true,confidence:'high',needsReview:false,reason:'Đúng.'});
 function harness(questions:any[]) {
- const state:any={lock:{current:false},map:{},choices:Object.fromEntries(questions.map(q=>[q.id,q.correctAnswer||''])),decisions:{},stale:new Set(),calls:[],saved:null,alerts:[]};
+ const state:any={lock:{current:false},map:{},choices:Object.fromEntries(questions.map(q=>[q.id,q.correctAnswer||''])),decisions:{},stale:new Set(),calls:[],saved:null,alerts:[],hasKey:true};
  let provider:any=async(params:any)=>Promise.all(params.questions.map(async(q:any)=>({...good(q.id),inputFingerprint:await verificationFingerprint(q,'7','Toán')})));
  const deps=()=>({isOpen:true,isChecking:false,questions,grade:'7',topic:'Toán',verificationFingerprint,hasVerificationReference,isEssayQuestion,
  verificationBusy:false,verificationOperationLock:state.lock,verificationMap:state.map,userSelectedMap:state.choices,manualDecisionMap:state.decisions,
  staleQuestionIds:state.stale,quickPasteText:'1A 2B',
- aiService:{hasApiKey:()=>true,verifyExamQuestions:async(p:any)=>{state.calls.push(p);return provider(p);},verifySingleQuestion:async(p:any)=>provider({questions:[p.question]}).then((v:any)=>v[0])},
- setIsChecking:(v:any)=>{state.checking=v;},setHasApiKey:()=>{},setIsSolving:()=>{},setIsSaving:()=>{},setReverifyingId:()=>{},setProgress:()=>{},setFilterMode:()=>{},setShowQuickPaste:()=>{},setQuickPasteText:()=>{},
+ aiService:{hasApiKey:()=>state.hasKey,verifyExamQuestions:async(p:any)=>{state.calls.push(p);return provider(p);},verifySingleQuestion:async(p:any)=>provider({questions:[p.question]}).then((v:any)=>v[0])},
+ setVerificationMessage:(v:any)=>{state.message=v;},setIsChecking:(v:any)=>{state.checking=v;},setHasApiKey:()=>{},setIsSolving:()=>{},setIsSaving:()=>{},setReverifyingId:()=>{},setProgress:()=>{},setFilterMode:()=>{},setShowQuickPaste:()=>{},setQuickPasteText:()=>{},
  setStaleQuestionIds:(v:any)=>{state.stale=v;},setVerificationMap:(v:any)=>{state.map=typeof v==='function'?v(state.map):v;},
  setUserSelectedMap:(v:any)=>{state.choices=typeof v==='function'?v(state.choices):v;},setManualDecisionMap:(v:any)=>{state.decisions=typeof v==='function'?v(state.decisions):v;},
  alert:(m:any)=>state.alerts.push(m),onApplyAnswers:async(v:any)=>{state.saved=v;},onClose:()=>{state.closed=true;}});
@@ -146,3 +146,20 @@ assert.ok(hasVerificationReference({...blank,rubric:'Kết luận x=1: 1 điểm
 console.log('PASS: missing-reference verification returns teacher-review results with zero API calls, even without a key; existing rubric-only references remain eligible');
 assert.ok(text.includes('max-w-6xl'));assert.ok(text.includes('min-h-0'));
 console.log('VERIFICATION REVIEW: PASS (network blocked; synthetic data)');
+
+// An absent Preview key must be visible after the click, with no provider call.
+const noPreviewKey = harness([mc]);
+noPreviewKey.state.hasKey = false;
+await noPreviewKey.call('handleStartVerification');
+assert.equal(noPreviewKey.state.calls.length, 0);
+assert.equal(noPreviewKey.state.message.kind, 'error');
+assert.match(noPreviewKey.state.message.text, /địa chỉ web này/);
+
+const missingMessage = harness([blank]);
+missingMessage.setProvider(async () => [{ ...good(blank.id), sourceIssue: true, needsReview: true,
+  matchesCurrentAnswer: false, confidence: 'needs_review', reason: 'Chưa có đáp án/lời giải/barem để đối chiếu.' }]);
+await missingMessage.call('handleStartVerification');
+assert.match(missingMessage.state.message.text, /1 câu chưa gửi AI/);
+assert.match(missingMessage.state.message.text, /Chưa có đáp án/);
+assert.equal(missingMessage.state.map[blank.id].needsReview, true);
+console.log('PASS: Preview missing-key and source-blocked runs remain visible, name the cause and never claim successful AI verification');

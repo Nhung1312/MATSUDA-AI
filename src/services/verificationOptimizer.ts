@@ -12,6 +12,7 @@ export interface VerificationParams {
   topic?: string;
   onProgress?: (current: number, total: number) => void;
   force?: boolean;
+  onActivity?: (message: string) => void;
 }
 
 const MODEL = VERIFICATION_MODEL;
@@ -26,7 +27,7 @@ export async function verificationFingerprint(q: Question, grade = '7', topic = 
 
 function resultFor(q: Question, reason: string): QuestionVerificationResult {
   return { questionId: q.id, order: q.order, currentAnswer: q.correctAnswer, proposedAnswer: '',
-    matchesCurrentAnswer: false, confidence: 'needs_review', reason, sanityCheckNote: reason, needsReview: true };
+    matchesCurrentAnswer: false, confidence: 'needs_review', reason, sanityCheckNote: reason, needsReview: true, sourceIssue: true };
 }
 
 function uniqueItem(list: any[], id: string): any {
@@ -94,7 +95,7 @@ function parseList(text: string): any[] {
 }
 
 export async function verifyWithReuse(params: VerificationParams, apiKey: string | null): Promise<QuestionVerificationResult[]> {
-  const { questions, grade = '7', topic = 'Toán THCS', force = false, onProgress } = params;
+  const { questions, grade = '7', topic = 'Toán THCS', force = false, onProgress, onActivity } = params;
   if (!questions.length) return [];
   const fingerprints = await Promise.all(questions.map(q => verificationFingerprint(q, grade, topic)));
   const runKey = await fingerprintAIInput({ fingerprints, ids: questions.map(q => q.id), force, credential: apiKey ? await fingerprintAIInput({ apiKey }) : null });
@@ -117,12 +118,13 @@ export async function verifyWithReuse(params: VerificationParams, apiKey: string
       const full = { ...result, questionId: q.id, order: q.order, currentAnswer: q.correctAnswer,
         inputFingerprint: fpById.get(q.id) || undefined };
       output.set(q.id, full);
-      writeAIResult('verification', fpById.get(q.id) || null, full);
+      // A temporary source/image failure must not become a permanent cached failure.
+      if (!full.sourceIssue) writeAIResult('verification', fpById.get(q.id) || null, full);
       onProgress?.(++completed, questions.length);
     };
     for (const q of questions) {
       const cached = !force && readAIResult<QuestionVerificationResult>('verification', fpById.get(q.id) || null);
-      if (cached) finish(q, { ...cached, reusedResult: true });
+      if (cached && !cached.sourceIssue && cached.pass1Answer) finish(q, { ...cached, reusedResult: true });
       else pending.push(q);
     }
     if (!pending.length) return questions.map(q => output.get(q.id)!);
@@ -182,6 +184,7 @@ export async function verifyWithReuse(params: VerificationParams, apiKey: string
           if (cached) pass1.set(q.id, { ...cached, questionId: q.id }); else toRead.push(q);
         }
         if (toRead.length) {
+          onActivity?.(`Đang giải và đối chiếu câu ${toRead.map(q => q.order).join(', ')} (${isEssayQuestion(toRead[0]) ? 'tự luận' : 'trắc nghiệm'}). Chờ Gemini trả kết quả; không cần bấm lại.`);
           const prompt = `Bạn là chuyên gia thẩm định Toán THCS. Khối ${grade}, chủ đề ${topic}.
   Giải độc lập từng câu trước rồi so với đáp án/lời giải/biểu điểm nguồn. Kiểm tra đủ mọi ý, điều kiện, phương án và điểm; không tự sửa dữ liệu nguồn.
   Tự luận: kết luận/đáp số theo từng ý, giữ nguyên chữ hoa/thường của ký hiệu toán, không trả A/B/C/D. Nếu đáp án trống hoặc ghi "Xem lời giải chi tiết", đối chiếu lời giải/biểu điểm đầy đủ theo tương đương toán học. Không có nguồn đối chiếu thì cần giáo viên duyệt.
@@ -216,6 +219,7 @@ export async function verifyWithReuse(params: VerificationParams, apiKey: string
         }
 
         if (suspects.length) {
+          onActivity?.(`Đang đối soát độc lập lần 2 cho câu ${suspects.map(q => q.order).join(', ')}. Kết quả các câu đã xong được giữ nguyên.`);
           // Independent second pass: no current answer, explanation or pass-1 result.
           const prompt = `Bạn là chuyên gia độc lập thẩm định Toán THCS, khối ${grade}. Giải từng câu dưới đây từ đề và hình nguồn, không biết kết quả lượt trước.
   Giải độc lập đầy đủ các ý của câu tự luận; kết luận theo từng ý, giữ nguyên chữ hoa/thường, không trả A/B/C/D cho tự luận. Trắc nghiệm: thử ngược hoặc giải bằng cách khác, kiểm tra đáp án tồn tại và duy nhất. Trả lời ngắn: kết quả số/biểu thức. Đúng/sai: kiểm tra từng mệnh đề.
