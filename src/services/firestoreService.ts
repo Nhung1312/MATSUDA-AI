@@ -702,7 +702,7 @@ export class FirestoreService {
     if (!teacherId) return;
     try {
       const teacherDocRef = doc(db, TEACHERS_COLLECTION, teacherId);
-      const payload = {
+      const payload: Record<string, unknown> = {
         ...data,
         updatedAt: new Date().toISOString()
       };
