@@ -16,9 +16,6 @@ Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
   removeItem: (key: string) => localData.delete(key)
 } });
 aiService.setApiKey('synthetic-key-never-sent-to-network');
-const realNow = Date.now;
-let clockAdvance = 0;
-Date.now = () => realNow() + clockAdvance;
 const oldKey = process.env.GEMINI_API_KEY;
 process.env.GEMINI_API_KEY = 'synthetic-server-key-never-sent-to-network';
 
@@ -104,9 +101,6 @@ try {
   assert.equal(providerCalls - before, 2);
   sdkHandler = goodVerification;
   before = providerCalls;
-  await assert.rejects(() => aiService.verifyExamQuestions({ questions: partial }), (error: any) => error.status === 429);
-  assert.equal(providerCalls, before, 'Cooldown blocks repeated calls after 429');
-  clockAdvance += 61000;
   await aiService.verifyExamQuestions({ questions: partial });
   assert.equal(providerCalls - before, 3);
   console.log('PASS: quota stops immediately; retry skips 4 already verified questions');
@@ -117,7 +111,6 @@ try {
   sdkHandler = async request => ++pass2QuotaSequence === 2 ? { status: 429 } : suspectedFixture(request);
   await assert.rejects(() => aiService.verifyExamQuestions({ questions: pass1Only }));
   sdkHandler = suspectedFixture;
-  clockAdvance += 61000;
   before = providerCalls;
   await aiService.verifyExamQuestions({ questions: pass1Only });
   assert.equal(providerCalls - before, 1);
@@ -200,8 +193,7 @@ try {
     assert.equal(providerCalls - before, 0);
     assert.equal(endpointCalls, endpointsBeforeReuse);
     assert.equal(savedGrade.reusedResult, true);
-  } finally {
-  Date.now = realNow; Date.now = originalNow; }
+  } finally { Date.now = originalNow; }
   console.log('PASS: a matching saved student result is reused even when the local cache has expired');
 
   before = providerCalls;

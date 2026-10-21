@@ -43,7 +43,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   initialTab = 'pdf',
   defaultGrade = '8'
 }) => {
-  const [activeTab, setActiveTab] = useState<'pdf' | 'image' | 'file' | 'text'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'pdf' | 'image' | 'file'>(initialTab);
   const [selectedGrade, setSelectedGrade] = useState<string>(defaultGrade);
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -53,7 +53,6 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const [filterCategory, setFilterCategory] = useState<'all' | 'trac_nghiem' | 'tu_luan'>('all');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isTakingLong, setIsTakingLong] = useState(false);
-  const [pastedQuestionText, setPastedQuestionText] = useState<string>('');
 
   // Gemini API Key State
   const [hasApiKey, setHasApiKey] = useState<boolean>(aiService.hasApiKey());
@@ -204,14 +203,9 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
 
     try {
       const base64Data = await fileToBase64(file);
-      setAiProgressStatus('Đang kiểm tra cấu trúc PDF để đối chiếu số câu...');
-
-      let pdfReference: ParseResult | undefined;
-      try { pdfReference = await FileParserService.parsePdfFile(file); }
-      catch (error) { console.warn('Chưa đọc được văn bản PDF để đối chiếu:', error); }
       setAiProgressStatus('Đang gửi file sang Gemini 3.8 Flash để nhận diện câu hỏi & công thức...');
+
       const result = await aiService.extractQuestionsFromMedia({
-        pdfReference,
         media: [
           {
             base64Data,
@@ -239,24 +233,16 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         selected: true
       }));
 
-      const issues = auditNewMediaQuestions(result.questions, result);
-      if (pdfReference?.items.some(item => item.category === 'tu_luan' && item.explanation?.trim())
-        && result.questions.length > pdfReference.totalFound) {
-        issues.push({ order: 0, level: 'error', message: `AI trả ${result.questions.length} mục nhưng phần đề PDF có ${pdfReference.totalFound} câu. Chưa đủ căn cứ ghép lời giải; cần đối chiếu nguồn trước khi nhập.` });
-      }
-      if (result.pdfRecoveryNote) issues.push({ order: 0, level: 'warning', message: result.pdfRecoveryNote });
+      setAiPdfIssues(auditNewMediaQuestions(result.questions));
 
-      const normalized = FileParserService.normalizeParseResult({
+      setParseResult(FileParserService.normalizeParseResult({
         fileName: file.name,
         fileType: 'pdf',
         totalFound: parsedItems.length,
         multipleChoiceCount: parsedItems.filter(i => i.category === 'trac_nghiem').length,
         essayCount: parsedItems.filter(i => i.category === 'tu_luan').length,
         items: parsedItems
-      });
-      if (normalized.totalFound < parsedItems.length) issues.push({ order: 0, level: 'error', message: 'Có mục AI trích xuất bị rỗng. Cần kiểm tra PDF gốc trước khi nhập.' });
-      setAiPdfIssues(issues);
-      setParseResult(normalized);
+      }));
     } catch (err: any) {
       console.error('PDF AI Extraction Error:', err);
       setErrorMsg(toFriendlyAiError(err, 'Không thể tách đề PDF bằng AI lúc này. Hãy thử lại.'));
@@ -396,36 +382,6 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       setErrorMsg('Đã có lỗi khi đọc tệp: ' + (err.message || 'Tệp không đúng định dạng.'));
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // Offline text/LaTeX paste. No Gemini API call or quota required.
-  const handleProcessPastedText = () => {
-    const source = pastedQuestionText.trim();
-    if (!source) {
-      setErrorMsg('Bạn chưa dán nội dung đề. Dán mã LaTeX \\begin{ex}... hoặc văn bản Câu 1...');
-      return;
-    }
-    setErrorMsg(null);
-    setParseResult(null);
-    setAiPdfIssues([]);
-    try {
-      const result = FileParserService.normalizeParseResult(
-        FileParserService.parseRawText(source, 'Đề dán trực tiếp', 'text')
-      );
-      if (!result.totalFound) {
-        setErrorMsg('Không tách được câu hỏi. Vui lòng kiểm tra cấu trúc đề.');
-        return;
-      }
-      // Generic text fallback may return one essay for a broken LaTeX string:
-      // don't advertise that as a successful 20-question extraction.
-      if (/\\choice(?:TF)?\b/.test(source) && !result.multipleChoiceCount) {
-        setErrorMsg('Đề có \\choice nhưng chưa tách được trắc nghiệm. Hãy kiểm tra \\begin{ex}, \\end{ex}.');
-        return;
-      }
-      setParseResult(result);
-    } catch (error: any) {
-      setErrorMsg(String(error?.message || 'Không thể tách nội dung đề nguồn.'));
     }
   };
 
@@ -691,18 +647,6 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
               <span>Word / LaTeX</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('text')}
-              className={`shrink-0 pb-3 px-3 font-extrabold text-xs flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
-                activeTab === 'text'
-                  ? 'border-indigo-600 text-indigo-600'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <FileText className="w-4 h-4 text-indigo-600" />
-              <span>Dán văn bản / LaTeX</span>
             </button>
           </div>
         )}
@@ -1120,36 +1064,6 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                   </details>
                 </div>
               )}
-
-              {/* Offline pasted questions. LaTeX ex/choice/True/loigiai is
-                  parsed deterministically and never consumes Gemini quota. */}
-              {activeTab === 'text' && (
-                <div className="space-y-3">
-                  <div className="text-xs font-bold text-slate-800">
-                    Dán toàn bộ đề (LaTeX hoặc văn bản thường)
-                  </div>
-                  <textarea
-                    value={pastedQuestionText}
-                    onChange={(e) => setPastedQuestionText(e.target.value)}
-                    rows={13}
-                    spellCheck={false}
-                    placeholder="\\begin{ex}\nNội dung câu hỏi...\n\\choice\n{A}\n{\\True B}\n{C}\n{D}\n\\loigiai{Đáp án đúng: B}\n\\end{ex}"
-                    className="w-full rounded-xl border border-slate-300 bg-white p-3 font-mono text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <p className="text-[11px] text-slate-600">
-                    Đọc trên máy, không gọi Gemini. Giữ nguyên công thức và đáp án
-                    đánh dấu \\True; không tự sửa nội dung Toán.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleProcessPastedText}
-                    disabled={!pastedQuestionText.trim()}
-                    className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-xs font-extrabold text-white hover:bg-indigo-700 disabled:opacity-50"
-                  >
-                    Tách câu hỏi từ văn bản (không dùng API)
-                  </button>
-                </div>
-              )}
             </>
           )}
 
@@ -1197,9 +1111,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                 )}
                 <div>
                   <div className="font-black">
-                    {aiPdfIssues.some(issue => issue.level === 'error')
-                      ? 'Có lỗi PDF cần kiểm tra trước khi nhập câu hỏi'
-                      : reviewCount > 0
+                    {reviewCount > 0
                       ? `Có ${reviewCount} câu trắc nghiệm cần kiểm tra trước khi giao bài`
                       : aiPdfIssues.length > 0
                         ? `Có ${aiPdfIssues.length} cảnh báo PDF cần giáo viên đối chiếu`

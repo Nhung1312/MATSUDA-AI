@@ -6,9 +6,6 @@ import { FirestoreService } from '../src/services/firestoreService';
 import { saveSubmissionConfirmed } from '../src/services/submissionSaveService';
 import { stepGradingService } from '../src/services/stepGradingService';
 import { refreshSubmissionTotals, confirmMultipleChoiceSelection, getSubmissionSourceIssue } from '../src/utils/submissionReviewUtils';
-import { captureGradingReference } from '../src/utils/submissionReportUtils';
-import { selectBatchGradingItems } from '../src/utils/batchGradingUtils';
-import { getEssayGradingReference } from '../src/utils/questionUtils';
 
 assert.ok(String(globalThis.fetch).includes('__examOfflineFetch'), 'Mandatory offline guard is missing');
 const local = new Map<string, string>();
@@ -45,16 +42,16 @@ FirestoreService.saveResult = async submission => { cloudCalls.push(clone(submis
 function harness(initial: any, questions: any[]) {
   const state: any = { selected: initial, inputs: {}, choices: {}, feedback: {}, saved: {}, lock: { current: false }, dirty: { current: new Set<string>() }, pending: { current: null }, notice: null, aiCalls: 0, wholeCalls: 0 };
   const assignment = { id: 'a', grade: '7', topic: 'Toán', questions };
-  let ai: (request: any, options?: any) => Promise<any> = async () => response(.5);
+  let ai: (request: any) => Promise<any> = async () => response(.5);
   const dependencies = (): Record<string, any> => ({
     selectedSubmissionDetail: state.selected, currentAssignment: assignment,
     reviewOperationLock: state.lock, editedTeacherInputs: state.dirty, pendingCloudSave: state.pending,
     teacherScoreInput: state.inputs, teacherFeedbackInput: state.feedback,
     mcqReviewChoice: state.choices, confirmMultipleChoiceSelection, getSubmissionSourceIssue,
-    stepGradingService: { analyzeStepByStep: async (request: any, options?: any) => { state.aiCalls++; state.lastOptions = options; return ai(request, options); } },
+    stepGradingService: { analyzeStepByStep: async (request: any) => { state.aiCalls++; return ai(request); } },
     GradingService: { gradeSingleSubmissionWithAI: async () => { state.wholeCalls++; throw Error('Unexpected whole grading'); } },
-    getEssayGradingReference, captureGradingReference, isEssayQuestion: (q: any) => q.type === 'essay',
-    setGradingAiInProgress: () => {}, setActionNotice: (notice: any) => { state.action = notice; }, setExpandedStepAnalysis: () => {}, setGradingSingleInProgress: () => {},
+    getEssayGradingReference: (q: any) => ({ correctAnswer: q.correctAnswer, rubric: q.rubric }), isEssayQuestion: (q: any) => q.type === 'essay',
+    setGradingAiInProgress: () => {}, setActionNotice: () => {}, setExpandedStepAnalysis: () => {}, setGradingSingleInProgress: () => {},
     setSelectedSubmissionDetail: (sub: any) => { state.selected = sub; },
     setTeacherScoreInput: (fn: any) => { state.inputs = fn(state.inputs); }, setTeacherFeedbackInput: (fn: any) => { state.feedback = fn(state.feedback); },
     setSavedGradeSuccess: (fn: any) => { state.saved = fn(state.saved); },
@@ -94,45 +91,6 @@ try {
   await h.call('handleSaveTeacherManualGrade', h.state.selected.answers[0], q);
   assert.equal(h.state.selected.answers[0].teacherScore, .8);
   console.log('PASS: AI refresh plus Save retains both the approved teacher score and feedback');
-
-  const priorFetch = (globalThis as any).__examOfflineFetch;
-  const priorQuotaUntil = (stepGradingService as any).quotaUntil;
-  let providers = 0, returnQuota = false;
-  (globalThis as any).__examOfflineFetch = async (url: any) => {
-    assert.equal(String(url), '/api/grading/step-analysis'); providers++;
-    return new Response(JSON.stringify(returnQuota ? {} : response(.5)), { status: returnQuota ? 429 : 200, headers: { 'content-type': 'application/json' } });
-  };
-  try {
-    const rq = question('reuse-real-service');
-    const reuse = harness({ id: 'reuse-fixture', assignmentId: 'a', maxScore: 1, answers: [answer(rq.id)], shuffledQuestions: [clone(rq)] }, [rq]);
-    reuse.setAI((request, options) => stepGradingService.analyzeStepByStep(request, options));
-    const grade = (force = false) => reuse.call('handleAiGradeSingleQuestion', reuse.state.selected.answers[0], rq, force);
-    cloudCalls = [];
-    await grade(); assert.equal(providers, 1); assert.equal(cloudCalls.length, 1);
-    const saved = JSON.stringify(reuse.state.selected);
-    await grade(); assert.equal(providers, 1); assert.equal(cloudCalls.length, 1);
-    assert.equal(JSON.stringify(reuse.state.selected), saved);
-    assert.ok(reuse.state.lastOptions.previousResult.requestFingerprint);
-    assert.match(reuse.state.action.text, /không phát sinh lượt gọi AI mới/);
-    await grade(true); assert.equal(providers, 2);
-    rq.rubric = 'Barem đã sửa: 0,5 điểm cho biến đổi, 0,5 điểm kết luận.';
-    await grade(); assert.equal(providers, 3);
-    reuse.state.selected.answers[0].studentSolutionText = 'x=2';
-    await grade(); assert.equal(providers, 4);
-    rq.imageUrl = 'data:image/png;base64,Zmlyc3Q=';
-    await grade(); assert.equal(providers, 5);
-    rq.imageUrl = 'data:image/png;base64,c2Vjb25k';
-    await grade(); assert.equal(providers, 6);
-    Object.assign(reuse.state.selected.answers[0], { teacherScore: .8, teacherReviewed: true, pointsEarned: .8, teacherFeedback: 'Giáo viên đã duyệt.' });
-    await grade(true); assert.equal(providers, 7);
-    assert.equal(reuse.state.selected.answers[0].teacherScore, .8);
-    const beforeQuota = JSON.stringify(reuse.state.selected);
-    returnQuota = true;
-    await grade(true); assert.equal(providers, 8);
-    assert.equal(JSON.stringify(reuse.state.selected), beforeQuota);
-    await grade(true); assert.equal(providers, 8, 'Quota cooldown also applies to explicit regrading');
-    console.log('PASS: actual single-question handler reuses identical input with zero new API/cloud writes; rubric/work/figure edits and explicit regrading call AI; teacher grades and quota stopping remain safe');
-  } finally { (globalThis as any).__examOfflineFetch = priorFetch; (stepGradingService as any).quotaUntil = priorQuotaUntil; }
 
   const mcq: any = { id: 'mcq', type: 'multiple_choice', question: 'Tìm x', points: 1, correctAnswer: 'B',
     options: [{ id: 'A', text: 'x=2' }, { id: 'B', text: 'x=1' }] };
@@ -230,7 +188,6 @@ try {
   let items: any[] = [{ id: manual.id }], toast: any, updateOptions: any;
   const graded: any = { submission: manual, needsTeacherReview: false, totalErrors: 0, persistence: { localSaved: true, cloudSaved: false } };
   await bind(batchText, 'handleGradeSingle', { isGrading: false, assignment: { id: 'a' }, submissions: [manual],
-    gradingOperationLock: { current: false }, setGradingSingleId: () => {},
     setItems: (fn: any) => { items = fn(items); }, GradingService: { gradeSingleSubmissionWithAI: async () => graded },
     onSubmissionsUpdated: (_subs: any, options: any) => { updateOptions = options; }, showToast: (text: string, type: string) => { toast = { text, type }; }
   })(items[0]);
@@ -242,8 +199,6 @@ try {
   let batchCalls = 0;
   const toasts: any[] = [];
   await bind(batchText, 'handleStartBatch', { isGrading: false, skipAlreadyGraded: true, items: batchItems,
-    gradingOperationLock: { current: false },
-    selectBatchGradingItems, filterSource: 'all', filterStatus: 'all',
     assignment: { id: 'a' }, submissions: batchItems.map(item => item.submission), abortControllerRef: { current: null },
     setIsGrading: () => {}, setCurrentGradingIndex: () => {}, setProgressText: () => {},
     setItems: (fn: any) => { batchItems = fn(batchItems); },

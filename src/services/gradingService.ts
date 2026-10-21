@@ -23,10 +23,6 @@ import { stepGradingService } from './stepGradingService';
 import { saveSubmissionConfirmed, type SubmissionSaveResult } from './submissionSaveService';
 import type { AIImageMemo } from '../utils/aiResultCache';
 import { getCorrectOptionLabel, getMultipleChoiceSelectionIssue, hasTeacherGrade, refreshSubmissionTotals, getSubmissionSourceIssue } from '../utils/submissionReviewUtils';
-import { captureGradingReference } from '../utils/submissionReportUtils';
-import { compactSubmissionImages } from '../utils/submissionImageUtils';
-import { selectLatestStudentSubmissions } from '../utils/studentSubmissionUtils';
-import { getObjectiveGradingHoldReason } from '../utils/objectiveGradingGuard';
 
 export interface GradeSingleSubmissionWithAiResult {
   success: boolean;
@@ -360,7 +356,6 @@ export class GradingService {
     studentSolutions?: Record<string, string>; // questionId -> text solution
     essayImagesByQuestion?: Record<string, string[]>; // questionId -> image base64 / urls
     generalEssayImages?: string[]; // exam level images
-    requireVerifiedObjectiveKeys?: boolean; // online submit fail-safe; default off for legacy workflows
     studentName: string;
     studentId?: string;
     classId: string;
@@ -390,7 +385,6 @@ export class GradingService {
       studentSolutions = {},
       essayImagesByQuestion = {},
       generalEssayImages = [],
-      requireVerifiedObjectiveKeys = false,
       studentName, 
       studentId, 
       classId, 
@@ -422,8 +416,6 @@ export class GradingService {
       const aiEval = aiFeedbacks[q.id];
 
       const isEssay = isEssayQuestion(q);
-      const objectiveHoldReason = !isEssay && !!selected && requireVerifiedObjectiveKeys
-        ? getObjectiveGradingHoldReason(q) : null;
       let isCorrect = false;
       let pointsEarned = 0;
       let isUnanswered = false;
@@ -450,8 +442,8 @@ export class GradingService {
             isCorrect = pointsEarned >= q.points;
           }
           earnedEssayPoints += pointsEarned;
-        } else if (solutionText || images.length > 0 || generalEssayImages.length > 0 || selected) {
-          // Đã có lời giải/ảnh (kể cả ảnh chung) nhưng chưa chấm
+        } else if (solutionText || images.length > 0 || selected) {
+          // Đã có lời giải/ảnh nhưng chưa chấm
           pointsEarned = 0;
           isCorrect = false;
         } else {
@@ -475,12 +467,6 @@ export class GradingService {
           originalSelectedLabel = evalRes.originalSelectedLabel;
           pointsEarned = isCorrect ? q.points : 0;
         }
-        if (objectiveHoldReason) {
-          // Key not trustworthy yet: do not claim a wrong answer or award points.
-          // Preserve student's original option, originalId and selected text.
-          isCorrect = false;
-          pointsEarned = 0;
-        }
         earnedMcqPoints += pointsEarned;
       }
 
@@ -497,11 +483,7 @@ export class GradingService {
         }
       }
 
-      const answerNeedsReview = Boolean(objectiveHoldReason) ||
-        (isEssay && !!(aiEval?.needsTeacherReview || aiEval?.isProvisional || aiEval?.aiGradingError ||
-          aiEval?.stepGradingResponse?.needsTeacherReview || aiEval?.stepGradingResponse?.analysisSource === 'rule' ||
-          aiEval?.stepGradingResponse?.analysisSource === 'unavailable' ||
-          ((solutionText || images.length > 0 || generalEssayImages.length > 0 || selected) && !aiEval)));
+      const answerNeedsReview = isEssay && !!(aiEval?.needsTeacherReview || aiEval?.isProvisional || aiEval?.aiGradingError || aiEval?.stepGradingResponse?.needsTeacherReview || aiEval?.stepGradingResponse?.analysisSource === 'rule' || aiEval?.stepGradingResponse?.analysisSource === 'unavailable' || ((solutionText || images.length > 0 || selected) && !aiEval));
       if (isUnanswered) {
         unansweredCount++;
       } else if (answerNeedsReview) {
@@ -523,11 +505,9 @@ export class GradingService {
         isCorrect,
         pointsEarned,
         maxPoints: q.points,
-        gradingReference: captureGradingReference(q, q),
-        aiFeedback: objectiveHoldReason || aiEval?.feedback,
+        aiFeedback: aiEval?.feedback,
         aiScore: aiEval?.score,
         aiGraded: aiEval?.graded,
-        selectionReviewIssue: objectiveHoldReason || undefined,
         stepAnalysis: (aiEval as any)?.stepAnalysis || (aiEval as any)?.stepGradingResponse?.analysis,
         firstErrorStep: (aiEval as any)?.firstErrorStep !== undefined ? (aiEval as any)?.firstErrorStep : (aiEval as any)?.stepGradingResponse?.firstErrorStep,
         firstErrorType: (aiEval as any)?.firstErrorType || (aiEval as any)?.stepGradingResponse?.firstErrorType,
@@ -600,7 +580,6 @@ export class GradingService {
     totalClassStudents: number,
     submissions: Submission[]
   ): AssignmentStats {
-    submissions = selectLatestStudentSubmissions(assignment, submissions);
     const submittedCount = submissions.length;
     const unsubmittedCount = Math.max(0, totalClassStudents - submittedCount);
 
@@ -723,10 +702,6 @@ export class GradingService {
     const gradingQuestions = assignment.questions.map(q => {
       const snapshot = submission.shuffledQuestions?.find(saved => saved.id === q.id);
       if (!snapshot || isEssayQuestion(q)) return q;
-      // Preserve the exact student snapshot while an objective key recorded as
-      // provisional is still unverified. Invalid keys must not abort essay grading.
-      const wasHeld = submission.answers.some(a => a.questionId === q.id && !!a.selectionReviewIssue);
-      if (wasHeld && getObjectiveGradingHoldReason(q)) return snapshot;
       if (q.type === 'short_answer' || (q.type === 'true_false' && !q.options?.length)) return q;
       const sourceCorrect = q.options?.find(option => option.id.trim().toUpperCase() === q.correctAnswer.trim().toUpperCase())
         || q.options?.find(option => option.text.trim() === q.correctAnswer.trim());
@@ -758,16 +733,6 @@ export class GradingService {
       }
 
       if (!isEssay) {
-        // A teacher may grade essays before verifying a separate objective key.
-        // Keep the provisional objective answer intact and out of wrong counts.
-        if (existingAns?.selectionReviewIssue && getObjectiveGradingHoldReason(
-          assignment.questions.find(source => source.id === q.id) || q
-        )) {
-          overallNeedsReview = true;
-          totalEarned += existingAns.pointsEarned || 0;
-          updatedAnswers.push({ ...existingAns, needsTeacherReview: true, isProvisional: true, maxPoints });
-          continue;
-        }
         const issue = existingAns && getMultipleChoiceSelectionIssue(q, existingAns);
         if (issue) {
           overallNeedsReview = true;
@@ -804,12 +769,7 @@ export class GradingService {
           isCorrect,
           pointsEarned: points,
           maxPoints,
-          correctAnswer: q.correctAnswer,
-          selectionReviewIssue: undefined,
-          needsTeacherReview: false,
-          isProvisional: false,
-          aiGradingError: false,
-          gradingReference: captureGradingReference(q, submission.shuffledQuestions?.find(saved => saved.id === q.id) || q)
+          correctAnswer: q.correctAnswer
         });
         continue;
       }
@@ -836,8 +796,7 @@ export class GradingService {
           maxPoints,
           aiFeedback: 'Học sinh chưa điền lời giải hoặc chưa tải ảnh bài làm cho câu này.',
           aiScore: 0,
-          aiGraded: true,
-          gradingReference: captureGradingReference(q, submission.shuffledQuestions?.find(saved => saved.id === q.id) || q)
+          aiGraded: true
         });
         continue;
       }
@@ -911,10 +870,6 @@ export class GradingService {
           isProvisional: needsReview,
           aiGradingError: stepRes.analysisSource === 'rule' || stepRes.analysisSource === 'unavailable',
           stepGradingResponse: stepRes,
-          gradingReference: !hasManualGrade && stepRes.success && stepRes.analysisSource === 'ai'
-            ? captureGradingReference(q, submission.shuffledQuestions?.find(saved => saved.id === q.id) || q) : existingAns?.gradingReference,
-          aiGradingReference: hasManualGrade && stepRes.success && stepRes.analysisSource === 'ai'
-            ? captureGradingReference(q, submission.shuffledQuestions?.find(saved => saved.id === q.id) || q) : existingAns?.aiGradingReference,
           hasCrossedOutDetection: stepRes.hasCrossedOutDetection,
           uncertainCorrectionDetected: stepRes.uncertainCorrectionDetected,
           teacherCorrectionNotice: stepRes.teacherCorrectionNotice
@@ -955,10 +910,10 @@ export class GradingService {
 
     const hasAnyProvisional = updatedAnswers.some(a => a.isProvisional || (a.needsTeacherReview && a.teacherScore === undefined));
 
-    const updatedSubmission: Submission = compactSubmissionImages(refreshSubmissionTotals(assignment, {
+    const updatedSubmission: Submission = refreshSubmissionTotals(assignment, {
       ...submission,
       answers: updatedAnswers,
-      shuffledQuestions: (submission.shuffledQuestions?.length ? submission.shuffledQuestions : assignment.questions).map(saved => {
+      shuffledQuestions: submission.shuffledQuestions?.map(saved => {
         const graded = gradingQuestions.find(q => q.id === saved.id);
         return graded && !isEssayQuestion(graded) ? { ...saved, correctAnswer: graded.correctAnswer } : saved;
       }),
@@ -976,7 +931,7 @@ export class GradingService {
         firstErrorType: firstFoundError?.type || null,
         firstErrorExplanation: firstFoundError?.explanation || null
       }
-    }));
+    });
 
     const persistence = await saveSubmissionConfirmed(updatedSubmission);
 

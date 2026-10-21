@@ -137,9 +137,6 @@ export function confirmMultipleChoiceSelection(assignment: Assignment, submissio
   const updated = { ...submission, answers: submission.answers.map(answer => answer.questionId !== id ? answer : {
     ...answer, selectedAnswer: option.id, selectedOptionText: option.text, originalSelectedLabel: (option as any).originalId || option.id,
     correctAnswer: key, isCorrect, pointsEarned: isCorrect ? answer.maxPoints : 0, teacherScore: isCorrect ? answer.maxPoints : 0,
-    gradingReference: { correctAnswer: key, points: answer.maxPoints, rubric: source.rubric || '',
-      explanation: source.explanation || '', ...(submission.shuffledQuestions?.some(q => q.id === id)
-        && (source.imageUrl || '') === (question.imageUrl || '') ? {} : { imageUrl: source.imageUrl || '' }) },
     teacherReviewed: true, teacherFeedback: answer.teacherFeedback || 'Giáo viên đã đối chiếu lựa chọn trên đề học sinh.',
     selectionReviewIssue: undefined, needsTeacherReview: false, isProvisional: false, aiGradingError: false
   }) };

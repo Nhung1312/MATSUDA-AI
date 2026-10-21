@@ -1035,9 +1035,12 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
               verificationStatus: allVerified ? 'verified' : (hasSuspicious ? 'needs_review' : 'unverified'),
               eligibleForSampleBank: allVerified ? true : false
             };
-            // 1. Confirm cloud save BEFORE claiming verification is effective.
-            // Students use the cloud exam, not the teacher's localStorage copy.
-            await FirestoreService.saveExam(updatedAsg);
+            // 1. Lưu đồng bộ lên Cloud Firestore
+            try {
+              await FirestoreService.saveExam(updatedAsg);
+            } catch (err) {
+              console.warn('Lỗi lưu Firestore:', err);
+            }
             // 2. Lưu bộ nhớ máy LocalStorage
             StorageService.saveAssignment(updatedAsg);
             alert(`Đã cập nhật trạng thái thẩm định cho đề "${updatedAsg.title}"!\nTrạng thái: ${allVerified ? 'ĐÃ THẨM ĐỊNH 100% (Đủ điều kiện đề mẫu)' : 'CẦN XEM LẠI CÁC CÂU NGHI VẤN'}.`);

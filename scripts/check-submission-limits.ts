@@ -5,8 +5,6 @@ import { webcrypto } from 'node:crypto';
 import { createSubmissionLimitService, getMaxSubmissions, SubmissionLimitError, type SubmissionLimitRepository } from '../src/services/submissionLimitService';
 import { GradingService } from '../src/services/gradingService';
 import { isEssayQuestion, getEssayGradingReference, normalizeQuestion, calculateQuestionsTotalPoints, toPointUnits } from '../src/utils/questionUtils';
-import { FileParserService } from '../src/services/fileParserService';
-import { formatExamSaveFailure } from '../src/utils/examSaveDiagnostics';
 import { ExamGeneratorService } from '../src/services/examGeneratorService';
 import { normalizeAssignmentDoc, sanitizeForFirestore } from '../src/services/firestoreService';
 import type { Assignment, Submission } from '../src/types';
@@ -159,7 +157,7 @@ Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
   setItem: (key: string, value: string) => draft.set(key, value),
   removeItem: (key: string) => draft.delete(key)
 } });
-function examUI(service: any, assignment = exam(1), options: { failLocal?: boolean; failAI?: boolean; staleDraft?: boolean; onCheck?: (count: number) => void; answers?: Record<string, string> } = {}) {
+function examUI(service: any, assignment = exam(1), options: { failLocal?: boolean; failAI?: boolean; staleDraft?: boolean; onAI?: () => void } = {}) {
   const key = 'draft-fixture'; draft.set(key, 'saved student answers');
   const state: any = { lock: { current: false }, busy: false, error: '', stages: [], aiCalls: 0, cloudCalls: 0, local: [], vault: [], finish: [], success: 0, checks: [] };
   const deps = {
@@ -167,14 +165,14 @@ function examUI(service: any, assignment = exam(1), options: { failLocal?: boole
     ...participant, isSubmittingRef: state.lock, isSubmittingWithAI: false, draftStorageKey: key,
     setShowSubmitModal: () => {}, setIsSubmittingWithAI: (value: boolean) => { state.busy = value; },
     setSubmissionStage: (stage: string) => state.stages.push(stage), setSubmissionError: (message: string) => { state.error = message; },
-    submissionLimitService: { check: async (a: Assignment, p: any) => { state.checks.push(a); const result = await service.check(a, p); options.onCheck?.(state.checks.length); return result; }, commit: service.commit }, SubmissionLimitError,
+    submissionLimitService: { check: async (a: Assignment, p: any) => { state.checks.push(a); return service.check(a, p); }, commit: service.commit }, SubmissionLimitError,
     document: { fullscreenElement: null }, console: { warn: () => {} },
     studentSolutions: { essay: 'x=5-2=3' }, essayImagesByQuestion: { essay: ['data:image/png;base64,original'] },
-    answers: options.answers || { mc: 'A' }, generalPdfImages: [], startedAt: '2026-10-13T00:00:00Z', tabSwitchCount: 0, violationEvents: [], isPdfMode: false,
+    answers: { mc: 'A' }, generalPdfImages: [], startedAt: '2026-10-13T00:00:00Z', tabSwitchCount: 0, violationEvents: [], isPdfMode: false,
     isEssayQuestion, getEssayGradingReference, GradingService,
     stepGradingService: { async analyzeStepByStep(request: any) {
       state.aiCalls++; state.request = request;
-      // No Gemini invocation should occur during student submission.
+      options.onAI?.();
       if (options.failAI) throw Error('AI unavailable');
       return { score: .8, feedback: 'Cần bổ sung kết luận', analysis: [], analysisSource: 'ai', needsTeacherReview: true };
     } },
@@ -201,39 +199,21 @@ const normal = fixture(exam(1));
 const success = examUI(normal.service, exam(1), { staleDraft: true });
 const firstClick = success.submit();
 await success.submit(); await firstClick;
-assert.equal(success.state.aiCalls, 0); assert.equal(normal.state.writes, 1); assert.equal(success.state.finish.length, 1);
+assert.equal(success.state.aiCalls, 1); assert.equal(normal.state.writes, 1); assert.equal(success.state.finish.length, 1);
 assert.equal(success.state.checks[0].maxSubmissions, 1, 'Quota comes from the joined assignment, not the stale shuffled draft');
 assert.equal(success.state.cloudCalls, 0, 'No unguarded saveResult follows the atomic save');
 assert.equal(success.state.local[0].options.syncCloud, false);
 assert.equal(success.state.local[0].submission.id, success.state.finish[0].id);
 assert.deepEqual(success.state.stages, ['checking', 'grading', 'saving']);
-assert.equal(success.state.finish[0].totalScore, 0, 'Unverified objective and essay responses are pending, not scored as wrong');
+assert.equal(success.state.finish[0].totalScore, 1.8);
 assert.equal(success.state.finish[0].answers[1].needsTeacherReview, true);
-assert.equal(success.state.finish[0].answers[0].needsTeacherReview, true, 'Unverified key remains pending');
-assert.deepEqual(success.state.finish[0].answers[1].essayImages, ['data:image/png;base64,original']);
-assert.equal(success.state.finish[0].wrongCount, 0, 'Pending answers cannot count as wrong');
-assert.equal(success.state.vault.length, 0, 'Pending responses must not enter Mistake Vault');
+assert.equal(success.state.request.correctAnswer, 'x=3'); assert.ok(success.state.request.rubric.includes('1 điểm'));
+assert.deepEqual(success.state.request.essayImages, ['data:image/png;base64,original']);
 assert.equal(draft.has(success.key), false);
 const acceptedBefore = clone([...normal.records.values()]);
 const later = examUI(normal.service); await later.submit();
 assert.equal(later.state.aiCalls, 0); assert.deepEqual([...normal.records.values()], acceptedBefore);
-console.log('PASS: successful submit preserves original essay images, queues unverified TN/TL, and double-click saves only once without calling AI');
-
-// Exercise all 20 original questions through the actual online submit handler,
-// quota transaction and unverified-objective guard, with no live writes.
-const twentySource = fs.readFileSync(new URL('./fixtures/toan6-20-cau.tex', import.meta.url), 'utf8');
-const twentyQuestions = FileParserService.convertToQuestions(FileParserService.parseRawText(twentySource, '20.tex', 'text').items);
-const twentyExam = { ...exam(1), id: 'new-twenty', assignmentCode: 'NEW-TWENTY', questions: twentyQuestions };
-const twentyRepo = fixture(twentyExam);
-const twentyUI = examUI(twentyRepo.service, twentyExam, { answers: Object.fromEntries(twentyQuestions.map(q => [q.id, q.correctAnswer])) });
-await twentyUI.submit();
-assert.equal(twentyRepo.state.writes, 1);
-assert.equal(twentyUI.state.finish.length, 1);
-assert.equal(twentyUI.state.finish[0].answers.length, 20);
-assert.equal(twentyUI.state.finish[0].ungradedCount, 20);
-assert.equal(twentyUI.state.finish[0].wrongCount, 0);
-assert.equal(twentyUI.state.aiCalls, 0);
-console.log('PASS: actual student submit accepts the new 20-question exam once; all unverified keys remain pending, with zero false wrong marks or Gemini calls');
+console.log('PASS: actual successful handler keeps original rubric/images, step grading and teacher review; double click grades/saves once and repeat submission uses zero AI calls');
 
 const saveFails = fixture(exam(1)); saveFails.state.failTransaction = true;
 const retry = examUI(saveFails.service); await retry.submit();
@@ -244,22 +224,21 @@ assert.equal(retry.state.finish.length, 1); assert.equal(saveFails.records.size,
 const localFails = examUI(fixture(exam(1)).service, exam(1), { failLocal: true }); await localFails.submit();
 assert.equal(localFails.state.finish.length, 1, 'Confirmed cloud acceptance must remain successful when local storage is full');
 const aiFails = examUI(fixture(exam(1)).service, exam(1), { failAI: true }); await aiFails.submit();
-assert.equal(aiFails.state.finish.length, 1); assert.equal(aiFails.state.finish[0].gradingStatus, 'needs_review');
-assert.equal(aiFails.state.aiCalls, 0, 'Teacher-side AI availability cannot affect student submission');
-assert.equal(aiFails.state.finish[0].answers[1].aiGraded, undefined);
+assert.equal(aiFails.state.finish.length, 1); assert.equal(aiFails.state.finish[0].gradingStatus, 'pending_teacher_grading');
+assert.equal(aiFails.state.finish[0].answers[1].aiGraded, false);
 assert.equal(aiFails.state.finish[0].answers[1].studentSolutionText, 'x=5-2=3');
 const oldUI = examUI(unlimited.service, exam()); await oldUI.submit();
-assert.equal(oldUI.state.cloudCalls, 1); assert.deepEqual(oldUI.state.local[0].options, { syncCloud: false });
+assert.equal(oldUI.state.cloudCalls, 1); assert.equal(oldUI.state.local[0].options, undefined);
 assert.equal(oldUI.state.finish.length, 1); assert.equal(draft.has(oldUI.key), false);
-console.log('PASS: failed transactions retain drafts; cloud success tolerates local quota; student submission queues essay review without needing AI');
+console.log('PASS: failed transactions retain drafts and allow retry; cloud success tolerates local quota; unavailable essay AI still queues teacher review; unlimited workflow remains intact');
 
 const updatedDuringGrading = fixture(exam(0), [old]);
-const changedDuringSubmit = examUI(updatedDuringGrading.service, exam(), { onCheck: (count) => { if (count === 1) updatedDuringGrading.setExam(exam(1)); } });
+const changedDuringSubmit = examUI(updatedDuringGrading.service, exam(), { onAI: () => updatedDuringGrading.setExam(exam(1)) });
 await changedDuringSubmit.submit();
 assert.equal(changedDuringSubmit.state.finish.length, 0); assert.match(changedDuringSubmit.state.error, /1\/1/);
 assert.equal(draft.has(changedDuringSubmit.key), true); assert.equal(updatedDuringGrading.state.writes, 0);
 assert.deepEqual(updatedDuringGrading.records.get(old.id), old);
-console.log('PASS: enabling a limit after the initial submission check is rechecked before saving; old teacher scores remain protected');
+console.log('PASS: enabling a limit during grading is checked before saving and never overwrites historical teacher grades');
 
 function joinUI(service: any, cached = exam()) {
   const state: any = { lock: { current: false }, error: '', starts: [], busy: false, current: cached };
@@ -301,7 +280,6 @@ async function saveTeacherLimit(editingAssignment?: Assignment, selected = initi
     durationMinutes: 45, deadline: '', allowViewResult: true, resultReviewMode: 'full',
     examMode: 'text', questions: assignment.questions, targetTotalPoints: 2, classes: [], BILLING_ENABLED: false, user: undefined,
     isEssayQuestion, normalizeQuestion, calculateQuestionsTotalPoints, toPointUnits,
-    saveLock: { current: false }, pendingIdentity: { current: null }, setSaveNotice: () => {}, formatExamSaveFailure,
     setIsSaving: () => {}, alert: () => {}, console: { warn: () => {}, error: () => {} },
     FirestoreService: { saveExam: async (item: Assignment) => { saved.push(clone(item)); } },
     StorageService: { generateAssignmentCode: () => 'NEW-EXAM', saveAssignment: (item: Assignment) => local.push(clone(item)) },
@@ -315,86 +293,6 @@ assert.equal((await saveTeacherLimit(exam())).maxSubmissions, 0);
 const changed = await saveTeacherLimit(exam(), 1);
 assert.equal(changed.maxSubmissions, 1); assert.equal(changed.id, 'limit_exam');
 assert.equal((await saveTeacherLimit(exam(3))).maxSubmissions, 3);
-
-// A teacher must not see "saved" or a link-ready state when the live Firestore
-// exam (including maxSubmissions) was NOT updated.
-{
-  const cloud: Assignment[] = [], localSaved: Assignment[] = [], completed: Assignment[] = [], alerts: string[] = [];
-  const failedSave = bind(teacherFile, 'handleSave', {
-    editingAssignment: exam(1), isEditing: true, maxSubmissions: 2,
-    title: 'Đề kiểm tra làm lại', grade: '7', topic: 'Phương trình', classId: 'all',
-    durationMinutes: 45, deadline: '', allowViewResult: true, resultReviewMode: 'full',
-    examMode: 'text', questions: exam(1).questions, targetTotalPoints: 2,
-    classes: [], BILLING_ENABLED: false, user: undefined,
-    isEssayQuestion, normalizeQuestion, calculateQuestionsTotalPoints, toPointUnits,
-    saveLock: { current: false }, pendingIdentity: { current: null }, setSaveNotice: () => {}, formatExamSaveFailure,
-    setIsSaving: () => {}, alert: (message: string) => alerts.push(message),
-    console: { warn: () => {}, error: () => {} },
-    FirestoreService: { saveExam: async (item: Assignment) => { cloud.push(clone(item)); throw Error('Firestore offline'); } },
-    StorageService: { generateAssignmentCode: () => 'RETAKE-2026', saveAssignment: (item: Assignment) => localSaved.push(clone(item)) },
-    onSaveSuccess: (item: Assignment) => completed.push(item)
-  });
-  await failedSave({ preventDefault: () => {} });
-  assert.equal(cloud.length, 1, 'Saving a new attempt limit must contact the cloud');
-  assert.equal(localSaved.length, 0, 'Never cache a quota change as published after cloud failure');
-  assert.equal(completed.length, 0, 'Failed quota change must not report success');
-  assert.ok(alerts.some(message => /Firebase/.test(message) && /Không gửi link/.test(message)));
-  console.log('PASS: Firestore failure during retake-limit update cannot show a false teacher success');
-}
-
-// A new assignment ID/code resets a student's quota without deleting or
-// modifying historical attempts. Reopening the old code remains blocked.
-{
-  const previousExam = exam(1);
-  const previous = result('old-attempt-kept');
-  const copied = await ExamGeneratorService.generateVariantAssignment(previousExam, {
-    mode: 'permutation', variantCode: 'LAN-2', shuffleQuestions: false, shuffleOptions: false
-  });
-  assert.notEqual(copied.id, previousExam.id);
-  assert.notEqual(copied.assignmentCode, previousExam.assignmentCode);
-  assert.equal(copied.maxSubmissions, 1);
-  assert.equal(copied.questions.length, previousExam.questions.length);
-  const isolated = fixture(copied, [previous]);
-  assert.equal((await isolated.service.check(copied, participant)).remaining, 1,
-    'Only attempts in the new assignment count against its quota');
-  const newAttempt = result('new-work', { assignmentId: copied.id });
-  const acceptedRedo = await isolated.service.commit(copied, participant, newAttempt);
-  assert.equal(acceptedRedo.attemptNumber, 1);
-  assert.equal(isolated.records.size, 2);
-  assert.deepEqual(isolated.records.get(previous.id), previous,
-    'The initial attempt must remain completely unchanged');
-  console.log('PASS: new variant code accepts a clean retake and preserves all historical scores');
-}
-
-// Generating a new code must require Firestore persistence; otherwise a student
-// joining the share link sees a code that exists only in teacher localStorage.
-for (const cloudAvailable of [false, true]) {
-  let created: Assignment | null = null;
-  const savedCloud: Assignment[] = [], savedLocal: Assignment[] = [], done: Assignment[] = [], warnings: string[] = [];
-  const handleGenerate = bind('../src/components/GenerateSimilarExamModal.tsx', 'handleGenerate', {
-    assignment: exam(1), classes: [], selectedClassId: 'all', mode: 'permutation',
-    variantCode: 'LAN-2', shuffleQuestions: false, shuffleOptions: false,
-    title: 'Đề thử lại', setIsGenerating: () => {}, setProgress: () => {},
-    ExamGeneratorService,
-    FirestoreService: { saveExam: async (item: Assignment) => {
-      savedCloud.push(clone(item)); if (!cloudAvailable) throw Error('Firestore offline');
-    } },
-    StorageService: { saveAssignment: (item: Assignment) => savedLocal.push(clone(item)) },
-    setCreatedAssignment: (item: Assignment) => { created = item; },
-    onSuccess: (item: Assignment) => done.push(item),
-    console: { error: () => {}, warn: () => {} },
-    alert: (message: string) => warnings.push(message)
-  });
-  await handleGenerate();
-  assert.equal(savedCloud.length, 1);
-  assert.equal(savedLocal.length, cloudAvailable ? 1 : 0);
-  assert.equal(done.length, cloudAvailable ? 1 : 0);
-  assert.equal(Boolean(created), cloudAvailable);
-  if (!cloudAvailable) assert.ok(warnings.some(message => /Firebase/.test(message) && /Không gửi link/.test(message)));
-  else assert.notEqual(done[0].id, exam(1).id);
-}
-console.log('PASS: the Create Similar Exam button only returns a shareable link after cloud save succeeds');
-
 const variant = await ExamGeneratorService.generateVariantAssignment(exam(), { mode: 'permutation', shuffleQuestions: false, shuffleOptions: false });
 assert.equal(variant.maxSubmissions, 1);
 const copiedUnlimited = await ExamGeneratorService.generateVariantAssignment(exam(0), { mode: 'permutation', shuffleQuestions: false, shuffleOptions: false });

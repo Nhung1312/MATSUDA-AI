@@ -1,4 +1,3 @@
-import { FirestoreService } from '../services/firestoreService';
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { 
   User, 
@@ -48,9 +47,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
-        // Only the authenticated owner may remove this one legacy field.
-        void FirestoreService.removeLegacyTeacherGeminiApiKey(currentUser.uid)
-          .catch(() => console.warn('Chưa xác nhận dọn trường Gemini key cũ. Mở Cài đặt AI để thử lại.'));
         setUser(currentUser);
         try {
           localStorage.setItem('toan_thcs_teacher_auth_session', JSON.stringify({

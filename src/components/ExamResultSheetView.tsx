@@ -15,9 +15,7 @@ import { Submission, Assignment, Question, StudentAnswer } from '../types';
 import { MathDisplay } from './MathDisplay';
 import { isEssayQuestion } from '../utils/questionUtils';
 import { GradingService } from '../services/gradingService';
-import { getCorrectOptionLabel, getSubmissionSummary, isSubmissionAnswerPending, isSubmissionAnswerBlank } from '../utils/submissionReviewUtils';
-import { getSavedReportQuestion, getSubmissionReportSourceIssue } from '../utils/submissionReportUtils';
-import { getSubmissionAnswerImages } from '../utils/submissionImageUtils';
+import { getStudentQuestion, getCorrectOptionLabel, getSubmissionSummary, isSubmissionAnswerPending, isSubmissionAnswerBlank } from '../utils/submissionReviewUtils';
 
 interface ExamResultSheetViewProps {
   submission: Submission;
@@ -34,9 +32,13 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
   onRetake,
   reviewMode = 'full'
 }) => {
+  const questionPool: Question[] =
+    submission.shuffledQuestions && submission.shuffledQuestions.length > 0
+      ? submission.shuffledQuestions
+      : assignment.questions;
+
   const isAnswerPending = (ans: StudentAnswer) => isSubmissionAnswerPending(assignment, submission, ans);
   const summary = getSubmissionSummary(assignment, submission);
-  const sourceIssue = getSubmissionReportSourceIssue(assignment, submission);
 
   const pendingAnswers = submission.answers.filter(isAnswerPending);
   const pendingCount = pendingAnswers.length;
@@ -54,7 +56,7 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
       submission.gradingStatus === 'needs_review' ||
       submission.gradingStatus === 'grading' ||
       submission.gradingStatus === 'failed'
-    ) || pendingCount > 0 || Boolean(sourceIssue);
+    ) || pendingCount > 0;
 
   const reviewedAnswers = submission.answers.filter(ans => !isAnswerPending(ans));
   const reviewedCorrectCount = summary.correctCount;
@@ -85,12 +87,13 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
   };
 
   const getQuestion = (ans: StudentAnswer, index: number) =>
-    getSavedReportQuestion(assignment, submission, ans.questionId);
+    getStudentQuestion(assignment, submission, ans.questionId) ||
+    questionPool[index];
 
   const getStudentAnswerLabel = (ans: StudentAnswer, question?: Question) => {
     if (!question) return ans.selectedAnswer || '—';
     if (isEssayQuestion(question)) {
-      const imageCount = getSubmissionAnswerImages(submission, ans).length;
+      const imageCount = ans.essayImages?.length || 0;
       if (ans.studentSolutionText && imageCount > 0) return `Tự luận • ${imageCount} ảnh`;
       if (ans.studentSolutionText) return 'Tự luận • đã nhập lời giải';
       if (imageCount > 0) return `Tự luận • ${imageCount} ảnh`;
@@ -281,7 +284,7 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
               {hasPendingReview ? 'Điểm tạm tính' : 'Điểm'}
             </div>
             <div className={`text-4xl font-black mt-1 ${hasPendingReview ? 'text-amber-700' : 'text-indigo-700'}`}>
-              {hasPendingReview ? '—' : scoreToDisplay.toFixed(1)}
+              {scoreToDisplay.toFixed(1)}
               <span className="text-base text-slate-400"> / {submission.maxScore || 10}</span>
             </div>
           </div>
@@ -317,7 +320,7 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
               : 'bg-slate-50 border-slate-200 text-slate-600'
           }`}
         >
-          {sourceIssue || statusNote}
+          {statusNote}
         </div>
 
         {reviewMode !== 'score_only' && (

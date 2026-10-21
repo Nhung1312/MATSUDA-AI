@@ -1,10 +1,9 @@
 import { invalidateEditedVerification } from '../../utils/questionUtils';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Assignment, ClassRoom, GradeLevel, Question, QuestionOption } from '../../types';
 import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
-import { formatExamSaveFailure } from '../../utils/examSaveDiagnostics';
 import { useAuth } from '../../context/AuthContext';
 import { aiService } from '../../services/aiService';
 import { FileUploadModal } from '../../components/FileUploadModal';
@@ -121,9 +120,6 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
 }) => {
   const { user } = useAuth();
   const [isSaving, setIsSaving] = useState(false);
-  const saveLock = useRef(false);
-  const pendingIdentity = useRef<{ id: string; code: string } | null>(null);
-  const [saveNotice, setSaveNotice] = useState<{ message: string; cloudSaved: boolean; code?: string } | null>(null);
   const [searchParams] = useSearchParams();
   const paramGrade = searchParams.get('grade');
   const validParamGrade = (paramGrade === '6' || paramGrade === '7' || paramGrade === '8' || paramGrade === '9') ? (paramGrade as GradeLevel) : undefined;
@@ -621,7 +617,6 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
   // --- LƯU BÀI TẬP (GỘP CHUNG 2 CHẾ ĐỘ) ---
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (saveLock.current) return;
     if (!title.trim()) {
       alert('Vui lòng nhập tên bài tập.');
       return;
@@ -732,14 +727,13 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
       if (!window.confirm(`Tổng điểm các câu là ${finalTotalPoints}, khác mục tiêu ${targetTotalPoints}.\nNếu lưu, hệ thống sẽ dùng tổng điểm thực tế ${finalTotalPoints} để chấm. Tiếp tục?`)) return;
     }
 
-    saveLock.current = true;
     setIsSaving(true);
-    setSaveNotice(null);
-    let cloudSaved = false;
-    let savedAssignment: Assignment | undefined;
+
     try {
       const targetClass = classes.find(c => c.id === classId);
       const className = targetClass ? targetClass.name : 'Toàn khối';
+
+      let savedAssignment: Assignment;
 
       if (isEditing && editingAssignment) {
         // CẬP NHẬT BÀI TẬP VÀ CÂU HỎI HIỆN CÓ
@@ -762,10 +756,9 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
         };
       } else {
         // TẠO BÀI TẬP MỚI
-        pendingIdentity.current ||= { id: `asg_${Date.now()}`, code: StorageService.generateAssignmentCode(grade, className) };
-        const assignmentCode = pendingIdentity.current.code;
+        const assignmentCode = StorageService.generateAssignmentCode(grade, className);
         savedAssignment = {
-          id: pendingIdentity.current.id,
+          id: `asg_${Date.now()}`,
           title: title.trim(),
           grade,
           topic: topic.trim(),
@@ -786,31 +779,23 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
         };
       }
 
-      // PR #50: setDoc must acknowledge before any shareable success.
-      await FirestoreService.saveExam(savedAssignment, user || undefined);
-      cloudSaved = true;
-      let localSaved = true;
-      try { StorageService.saveAssignment(savedAssignment, { syncCloud: false }); }
-      catch { localSaved = false; }
-      const message = localSaved
-        ? (isEditing ? 'Đã lưu cập nhật bài tập lên Cloud thành công!' : 'Đã tạo và lưu đề lên Cloud thành công!')
-        : 'Đề đã lưu thành công trên Cloud. Bộ nhớ máy chưa lưu được bản cache; mã đề vẫn dùng được. Không cần tạo lại đề.';
-      setSaveNotice({ message, cloudSaved: true, code: savedAssignment.assignmentCode });
-      alert(message);
-      try { await onSaveSuccess(savedAssignment); }
-      catch {
-        setSaveNotice({ message: 'Cloud đã lưu đề thành công nhưng chưa mở được màn hình tiếp theo. Dùng mã đề bên dưới; không cần tạo lại.', cloudSaved: true, code: savedAssignment.assignmentCode });
+      // 1. Save to Cloud Firestore
+      try {
+        await FirestoreService.saveExam(savedAssignment, user || undefined);
+      } catch (firestoreErr) {
+        console.warn('Lưu Firestore thất bại, lưu dự phòng LocalStorage:', firestoreErr);
       }
-    } catch (err) {
-      // A failure after cloud acknowledgement must never be labelled a failed cloud write.
-      const message = cloudSaved
-        ? 'Cloud đã lưu đề thành công. Chưa hoàn tất thao tác trên máy; mã đề vẫn dùng được.'
-        : formatExamSaveFailure(err);
-      setSaveNotice({ message, cloudSaved, code: cloudSaved ? savedAssignment?.assignmentCode : undefined });
-      alert(message);
-    } finally {
+
+      // 2. Save to Local Cache
+      StorageService.saveAssignment(savedAssignment);
+
       setIsSaving(false);
-      saveLock.current = false;
+      alert(isEditing ? 'Đã lưu cập nhật bài tập và câu hỏi thành công!' : 'Tạo bài tập thành công!');
+      onSaveSuccess(savedAssignment);
+    } catch (err) {
+      console.error('Lỗi khi lưu đề thi:', err);
+      setIsSaving(false);
+      alert('Có lỗi xảy ra khi lưu đề thi. Vui lòng thử lại.');
     }
   };
 
@@ -864,12 +849,6 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
         </div>
       </div>
 
-      {saveNotice && (
-        <div role="status" className={`rounded-xl border p-4 whitespace-pre-line ${saveNotice.cloudSaved ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-rose-300 bg-rose-50 text-rose-900'}`}>
-          <p>{saveNotice.message}</p>
-          {saveNotice.code && <p className="font-bold mt-2">Mã đề đã lưu Cloud: {saveNotice.code}</p>}
-        </div>
-      )}
       <form onSubmit={handleSave} className="space-y-6">
         
         {/* Section 1: General Assignment Info */}
