@@ -201,10 +201,11 @@ function AppContent() {
           setClasses(Array.isArray(localClasses) ? localClasses : []);
         }
 
-        // Tải toàn bộ bài tập và kết quả bài làm mới nhất từ Firestore
-        await refreshAllData();
       } catch (err) {
         console.warn('Lỗi khi đồng bộ dữ liệu giáo viên từ Cloud:', err);
+      } finally {
+        // Cache bị đầy không được ngăn việc đọc lại đề và kết quả thật từ Cloud.
+        await refreshAllData();
       }
     };
 
@@ -268,8 +269,12 @@ function AppContent() {
           profile.deletedAssignmentKeys.forEach(k => StorageService.markAssignmentAsDeleted(k, k));
         }
         if (Array.isArray(profile.classes)) {
-          StorageService.setClasses(profile.classes);
           setClasses(profile.classes);
+          try {
+            StorageService.setClasses(profile.classes);
+          } catch (cacheError) {
+            console.warn('Bộ nhớ trình duyệt đầy khi cache lớp; vẫn sử dụng lớp từ Cloud:', cacheError);
+          }
         }
       }
 
@@ -287,9 +292,13 @@ function AppContent() {
       });
 
       // TUYỆT ĐỐI KHÔNG MERGE LOCALSTORAGE VÀO FIRESTORE!
-      // Firestore là nguồn chính: Ghi đè vào Cache và State
-      StorageService.setAssignments(validCloudExams);
+      // Cloud là nguồn chính. Cache thiết bị có thể đầy nhưng không được chặn hiển thị đề.
       setAssignments(validCloudExams);
+      try {
+        StorageService.setAssignments(validCloudExams);
+      } catch (cacheError) {
+        console.warn('Bộ nhớ trình duyệt đầy khi cache đề; đề vẫn đã tải từ Cloud:', cacheError);
+      }
 
       // (iii) Tải kết quả bài nộp của học sinh từ Firestore thuộc về các đề của giáo viên này
       const allCloudResults = await FirestoreService.getAllResults();
@@ -309,9 +318,13 @@ function AppContent() {
         return teacherExamKeys.has(rawId) || teacherExamKeys.has(cleanId);
       });
 
-      // TUYỆT ĐỐI KHÔNG MERGE SUBMISSION CŨ TỪ LOCALSTORAGE!
-      StorageService.setSubmissions(teacherCloudSubmissions);
+      // Không đè dữ liệu Cloud bằng cache cũ; cache đầy vẫn phải hiển thị bài nộp.
       setSubmissions(teacherCloudSubmissions);
+      try {
+        StorageService.setSubmissions(teacherCloudSubmissions);
+      } catch (cacheError) {
+        console.warn('Bộ nhớ trình duyệt đầy khi cache bài nộp; bài vẫn đã tải từ Cloud:', cacheError);
+      }
     } catch (e) {
       console.warn('Lỗi đồng bộ dữ liệu từ Firestore:', e);
     }
