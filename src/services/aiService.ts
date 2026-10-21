@@ -15,6 +15,8 @@ import { isEssayQuestion, formatQuestionSubItems, sanitizeMathString, getEssayGr
 import { normalizeMediaExamQuestions } from '../utils/examImportUtils';
 import type { PdfQuestionReference } from '../utils/reconcileGeminiPdf';
 import { verifyWithReuse, VerificationParams } from './verificationOptimizer';
+import { VERIFICATION_MODEL, checkGeminiCooldown, safeGeminiError, apiKeyFingerprint } from './geminiDiagnostics';
+import type { GeminiDiagnostic } from './geminiDiagnostics';
 import { isAIQuotaError } from '../utils/aiResultCache';
 
 export interface GenerateQuestionsParams {
@@ -80,7 +82,11 @@ export interface TestConnectionResult {
   success: boolean;
   message: string;
   modelUsed?: string;
-  errorType?: 'quota' | 'unsupported' | 'invalid_key' | 'general';
+  errorType?: 'quota' | 'unsupported' | 'invalid_key' | 'permission' | 'general';
+  diagnostic?: GeminiDiagnostic;
+  keyFingerprint?: string;
+  usesSavedKey?: boolean;
+  verificationModel?: string;
 }
 
 export interface QuestionVerificationResult {
@@ -450,89 +456,22 @@ export class HybridAIService implements IAIService {
 
     const modelToTest = (specificModel?.trim() || this.getModel()).trim();
 
-    // Map tên hiển thị chuẩn
-    const MODEL_DISPLAY_NAMES: Record<string, string> = {
-      'gemini-3.8-flash': 'Gemini 3.8 Flash',
-      'gemini-3.1-pro-preview': 'Gemini 3.1 Pro',
-      'gemini-3.1-flash-lite': 'Gemini 3.1 Flash Lite',
-      'gemini-flash-latest': 'Gemini Flash Latest'
-    };
-    const displayName = MODEL_DISPLAY_NAMES[modelToTest] || modelToTest;
-
+    const identity = { keyFingerprint: await apiKeyFingerprint(activeKey), usesSavedKey: activeKey === this.getApiKey(), verificationModel: VERIFICATION_MODEL };
     try {
-      const ai = new GoogleGenAI({ apiKey: activeKey });
-      // GỌI TRỰC TIẾP generateContent VỚI REQUEST CỰC NGẮN (ping), TUYỆT ĐỐI KHÔNG FAILOVER SANG MODEL KHÁC
-      await ai.models.generateContent({
-        model: modelToTest,
-        contents: [{ text: 'ping' }]
-      });
-
-      return {
-        success: true,
-        message: `✓ ${displayName} hoạt động`,
-        modelUsed: modelToTest
-      };
-    } catch (error: any) {
-      console.warn(`[AI Connection Test] Lỗi kiểm tra model ${modelToTest}:`, error);
-      const status = error?.status || error?.code || 0;
-      const errStr = String(error?.message || error);
-
-      // 1. Quota / Rate limit (429, RESOURCE_EXHAUSTED)
-      const isQuota = status === 429 ||
-        errStr.includes('429') ||
-        errStr.includes('RESOURCE_EXHAUSTED') ||
-        errStr.includes('Quota exceeded') ||
-        errStr.includes('exceeded your current quota') ||
-        errStr.includes('limit: 0') ||
-        errStr.includes('rate limit');
-
-      if (isQuota) {
-        return {
-          success: false,
-          message: 'Model hiện đã vượt hạn mức API.',
-          modelUsed: modelToTest,
-          errorType: 'quota'
-        };
-      }
-
-      // 2. API Key không hợp lệ (400, API_KEY_INVALID)
-      const isKeyInvalid = (status === 400 && errStr.includes('API_KEY_INVALID')) ||
-        errStr.includes('API key not valid') ||
-        errStr.includes('API_KEY_INVALID');
-
-      if (isKeyInvalid) {
-        return {
-          success: false,
-          message: 'API Key không hợp lệ. Vui lòng kiểm tra lại mã khóa từ Google AI Studio.',
-          modelUsed: modelToTest,
-          errorType: 'invalid_key'
-        };
-      }
-
-      // 3. Model không được hỗ trợ bởi API key này (404, 403, NOT_FOUND, PERMISSION_DENIED)
-      const isUnsupported = status === 404 || status === 403 ||
-        errStr.includes('NOT_FOUND') ||
-        errStr.includes('not found') ||
-        errStr.includes('no longer available') ||
-        errStr.includes('PERMISSION_DENIED') ||
-        errStr.includes('is not supported');
-
-      if (isUnsupported) {
-        return {
-          success: false,
-          message: `Model "${displayName}" (${modelToTest}) không được hỗ trợ bởi API Key này hoặc không có quyền truy cập.`,
-          modelUsed: modelToTest,
-          errorType: 'unsupported'
-        };
-      }
-
-      // 4. Lỗi khác
-      return {
-        success: false,
-        message: `Lỗi kiểm tra model ${displayName}: ${error?.message || errStr}`,
-        modelUsed: modelToTest,
-        errorType: 'general'
-      };
+      checkGeminiCooldown(activeKey);
+      const ai = new GoogleGenAI({ apiKey: activeKey, httpOptions: { retryOptions: { attempts: 1 } } });
+      // Test the same JSON response mode required by verification, once only.
+      const response = await ai.models.generateContent({ model: modelToTest,
+        contents: [{ text: 'Return JSON only: {"ok":true}' }],
+        config: { responseMimeType: 'application/json', temperature: 0.1 } });
+      const parsed = JSON.parse((response.text || '').replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim());
+      if (parsed?.ok !== true) throw new Error('Unexpected probe response');
+      return { success: true, modelUsed: modelToTest, ...identity,
+        message: `Model ${modelToTest} nhận key và trả JSON hợp lệ. Đây là kiểm tra kết nối, chưa xác nhận Billing Tier hay chất lượng thẩm định đề.` };
+    } catch (error: unknown) {
+      const safe = safeGeminiError(error, modelToTest, activeKey);
+      return { success: false, message: safe.message, modelUsed: modelToTest,
+        errorType: safe.diagnostic.kind, diagnostic: safe.diagnostic, ...identity };
     }
   }
 

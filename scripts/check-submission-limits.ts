@@ -5,6 +5,8 @@ import { webcrypto } from 'node:crypto';
 import { createSubmissionLimitService, getMaxSubmissions, SubmissionLimitError, type SubmissionLimitRepository } from '../src/services/submissionLimitService';
 import { GradingService } from '../src/services/gradingService';
 import { isEssayQuestion, getEssayGradingReference, normalizeQuestion, calculateQuestionsTotalPoints, toPointUnits } from '../src/utils/questionUtils';
+import { FileParserService } from '../src/services/fileParserService';
+import { formatExamSaveFailure } from '../src/utils/examSaveDiagnostics';
 import { ExamGeneratorService } from '../src/services/examGeneratorService';
 import { normalizeAssignmentDoc, sanitizeForFirestore } from '../src/services/firestoreService';
 import type { Assignment, Submission } from '../src/types';
@@ -157,7 +159,7 @@ Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
   setItem: (key: string, value: string) => draft.set(key, value),
   removeItem: (key: string) => draft.delete(key)
 } });
-function examUI(service: any, assignment = exam(1), options: { failLocal?: boolean; failAI?: boolean; staleDraft?: boolean; onCheck?: (count: number) => void } = {}) {
+function examUI(service: any, assignment = exam(1), options: { failLocal?: boolean; failAI?: boolean; staleDraft?: boolean; onCheck?: (count: number) => void; answers?: Record<string, string> } = {}) {
   const key = 'draft-fixture'; draft.set(key, 'saved student answers');
   const state: any = { lock: { current: false }, busy: false, error: '', stages: [], aiCalls: 0, cloudCalls: 0, local: [], vault: [], finish: [], success: 0, checks: [] };
   const deps = {
@@ -168,7 +170,7 @@ function examUI(service: any, assignment = exam(1), options: { failLocal?: boole
     submissionLimitService: { check: async (a: Assignment, p: any) => { state.checks.push(a); const result = await service.check(a, p); options.onCheck?.(state.checks.length); return result; }, commit: service.commit }, SubmissionLimitError,
     document: { fullscreenElement: null }, console: { warn: () => {} },
     studentSolutions: { essay: 'x=5-2=3' }, essayImagesByQuestion: { essay: ['data:image/png;base64,original'] },
-    answers: { mc: 'A' }, generalPdfImages: [], startedAt: '2026-10-13T00:00:00Z', tabSwitchCount: 0, violationEvents: [], isPdfMode: false,
+    answers: options.answers || { mc: 'A' }, generalPdfImages: [], startedAt: '2026-10-13T00:00:00Z', tabSwitchCount: 0, violationEvents: [], isPdfMode: false,
     isEssayQuestion, getEssayGradingReference, GradingService,
     stepGradingService: { async analyzeStepByStep(request: any) {
       state.aiCalls++; state.request = request;
@@ -216,6 +218,22 @@ const acceptedBefore = clone([...normal.records.values()]);
 const later = examUI(normal.service); await later.submit();
 assert.equal(later.state.aiCalls, 0); assert.deepEqual([...normal.records.values()], acceptedBefore);
 console.log('PASS: successful submit preserves original essay images, queues unverified TN/TL, and double-click saves only once without calling AI');
+
+// Exercise all 20 original questions through the actual online submit handler,
+// quota transaction and unverified-objective guard, with no live writes.
+const twentySource = fs.readFileSync(new URL('./fixtures/toan6-20-cau.tex', import.meta.url), 'utf8');
+const twentyQuestions = FileParserService.convertToQuestions(FileParserService.parseRawText(twentySource, '20.tex', 'text').items);
+const twentyExam = { ...exam(1), id: 'new-twenty', assignmentCode: 'NEW-TWENTY', questions: twentyQuestions };
+const twentyRepo = fixture(twentyExam);
+const twentyUI = examUI(twentyRepo.service, twentyExam, { answers: Object.fromEntries(twentyQuestions.map(q => [q.id, q.correctAnswer])) });
+await twentyUI.submit();
+assert.equal(twentyRepo.state.writes, 1);
+assert.equal(twentyUI.state.finish.length, 1);
+assert.equal(twentyUI.state.finish[0].answers.length, 20);
+assert.equal(twentyUI.state.finish[0].ungradedCount, 20);
+assert.equal(twentyUI.state.finish[0].wrongCount, 0);
+assert.equal(twentyUI.state.aiCalls, 0);
+console.log('PASS: actual student submit accepts the new 20-question exam once; all unverified keys remain pending, with zero false wrong marks or Gemini calls');
 
 const saveFails = fixture(exam(1)); saveFails.state.failTransaction = true;
 const retry = examUI(saveFails.service); await retry.submit();
@@ -283,6 +301,7 @@ async function saveTeacherLimit(editingAssignment?: Assignment, selected = initi
     durationMinutes: 45, deadline: '', allowViewResult: true, resultReviewMode: 'full',
     examMode: 'text', questions: assignment.questions, targetTotalPoints: 2, classes: [], BILLING_ENABLED: false, user: undefined,
     isEssayQuestion, normalizeQuestion, calculateQuestionsTotalPoints, toPointUnits,
+    saveLock: { current: false }, pendingIdentity: { current: null }, setSaveNotice: () => {}, formatExamSaveFailure,
     setIsSaving: () => {}, alert: () => {}, console: { warn: () => {}, error: () => {} },
     FirestoreService: { saveExam: async (item: Assignment) => { saved.push(clone(item)); } },
     StorageService: { generateAssignmentCode: () => 'NEW-EXAM', saveAssignment: (item: Assignment) => local.push(clone(item)) },
@@ -308,6 +327,7 @@ assert.equal((await saveTeacherLimit(exam(3))).maxSubmissions, 3);
     examMode: 'text', questions: exam(1).questions, targetTotalPoints: 2,
     classes: [], BILLING_ENABLED: false, user: undefined,
     isEssayQuestion, normalizeQuestion, calculateQuestionsTotalPoints, toPointUnits,
+    saveLock: { current: false }, pendingIdentity: { current: null }, setSaveNotice: () => {}, formatExamSaveFailure,
     setIsSaving: () => {}, alert: (message: string) => alerts.push(message),
     console: { warn: () => {}, error: () => {} },
     FirestoreService: { saveExam: async (item: Assignment) => { cloud.push(clone(item)); throw Error('Firestore offline'); } },

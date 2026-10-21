@@ -147,18 +147,18 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
       if (questionsToVerify.some(hasVerificationReference) && !aiService.hasApiKey()) {
         alert('Chưa có Gemini API Key. Hãy nhập API Key trước khi thẩm định.'); return;
       }
-      setManualDecisionMap(previous => {
-        const next = { ...previous };
-        for (const question of questionsToVerify) delete next[question.id];
-        return next;
-      });
       setProgress({ current: 0, total: questionsToVerify.length });
       const results = await aiService.verifyExamQuestions({ questions: questionsToVerify, grade, topic, force: forceAll,
         onProgress: (current, total) => setProgress({ current, total }) });
+      setManualDecisionMap(previous => {
+        const next = { ...previous };
+        for (const question of results.map(result => ({ id: result.questionId }))) delete next[question.id];
+        return next;
+      });
       setVerificationMap(previous => ({ ...previous, ...Object.fromEntries(results.map(result => [result.questionId, result])) }));
       if (results.some(result => result.needsReview || !result.matchesCurrentAnswer || result.confidence === 'needs_review')) setFilterMode('needs_review');
     } catch (error: any) {
-      console.error('Lỗi khi AI thẩm định đề:', error);
+      console.warn('Thẩm định chưa hoàn tất; kết quả cũ được giữ.');
       alert(error?.message || 'Không thể thẩm định lúc này. Hãy kiểm tra mạng hoặc API Key.');
     } finally { setIsSolving(false); verificationOperationLock.current = false; }
   };
