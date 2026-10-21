@@ -3,6 +3,7 @@ import type { Question } from '../types';
 import type { QuestionVerificationResult } from './aiService';
 import { isEssayQuestion, getEssayGradingReference } from '../utils/questionUtils';
 import { fingerprintAIInput, readAIResult, writeAIResult, loadAIImage, isAIQuotaError } from '../utils/aiResultCache';
+import { VERIFICATION_MODEL, checkGeminiCooldown, safeGeminiError } from './geminiDiagnostics';
 import { hasVerificationReference } from '../utils/verificationUtils';
 
 export interface VerificationParams {
@@ -13,7 +14,7 @@ export interface VerificationParams {
   force?: boolean;
 }
 
-const MODEL = 'gemini-3.8-flash';
+const MODEL = VERIFICATION_MODEL;
 const ENGINE = 'verification-v4-independent-batches';
 const inFlight = new Map<string, Promise<QuestionVerificationResult[]>>();
 
@@ -96,7 +97,7 @@ export async function verifyWithReuse(params: VerificationParams, apiKey: string
   const { questions, grade = '7', topic = 'Toán THCS', force = false, onProgress } = params;
   if (!questions.length) return [];
   const fingerprints = await Promise.all(questions.map(q => verificationFingerprint(q, grade, topic)));
-  const runKey = await fingerprintAIInput({ fingerprints, ids: questions.map(q => q.id), force });
+  const runKey = await fingerprintAIInput({ fingerprints, ids: questions.map(q => q.id), force, credential: apiKey ? await fingerprintAIInput({ apiKey }) : null });
   if (runKey && inFlight.has(runKey)) {
     const results = await inFlight.get(runKey)!;
     onProgress?.(questions.length, questions.length);
@@ -125,20 +126,15 @@ export async function verifyWithReuse(params: VerificationParams, apiKey: string
       else pending.push(q);
     }
     if (!pending.length) return questions.map(q => output.get(q.id)!);
-    const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+    const ai = apiKey ? new GoogleGenAI({ apiKey, httpOptions: { retryOptions: { attempts: 1 } } }) : null;
     const callAI = async (parts: any[]): Promise<any[]> => {
       if (!ai) throw new Error('Chưa cấu hình Gemini API Key. Kết quả chưa có cần AI để thẩm định.');
       try {
+        checkGeminiCooldown(apiKey!);
         const response = await ai.models.generateContent({ model: MODEL, contents: parts, config: { responseMimeType: 'application/json', temperature: 0.1 } });
         return parseList(response.text || '');
       } catch (error: any) {
-        if (isAIQuotaError(error)) {
-          const quota: any = new Error('AI hết hạn mức (429 RESOURCE_EXHAUSTED). Đã giữ kết quả trước đó; dừng gọi tiếp.');
-          quota.isQuota = true;
-          quota.status = 429;
-          throw quota;
-        }
-        throw error;
+        throw safeGeminiError(error, MODEL, apiKey!);
       }
     };
 
@@ -224,7 +220,7 @@ ${suspects.map(q => describe(q, false)).join('\n\n')}
 Trả DUY NHẤT JSON Array, đúng questionId từng câu: [{"questionId":"mã","pass2Answer":"kết luận/đáp án","confidence":"high","reason":"cách kiểm tra ngắn"}].`;
         let pass2: any[] = [];
         try { pass2 = await callAI(partsFor(prompt, suspects)); }
-        catch (error) { if (isAIQuotaError(error)) throw error; }
+        catch (error) { throw error; }
         for (const q of suspects) {
           const first = pass1.get(q.id);
           const second = uniqueItem(pass2, q.id);

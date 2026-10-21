@@ -2,6 +2,7 @@ import React from 'react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { formatQuestionSubItems, sanitizeMathString } from '../utils/questionUtils';
+import { wrapBareLatex } from '../utils/bareLatex';
 
 interface MathDisplayProps {
   text?: string | null;
@@ -32,7 +33,7 @@ export const MathDisplay: React.FC<MathDisplayProps> = ({
   if (!rawText || typeof rawText !== 'string') return null;
 
   // Làm sạch các control characters do escape JSON gây ra trước
-  const sanitizedText = sanitizeMathString(rawText);
+  const sanitizedText = wrapBareLatex(sanitizeMathString(rawText));
 
   if (inline) {
     return (
@@ -170,7 +171,7 @@ function renderKaTeX(formula: string, isBlock: boolean): string {
       throwOnError: false,
       output: 'html',
       strict: false,
-      trust: true
+      trust: false
     });
   } catch {
     return `<span class="font-mono text-indigo-600">${escapeHtml(formula)}</span>`;
@@ -182,11 +183,17 @@ function renderKaTeX(formula: string, isBlock: boolean): string {
  */
 function renderInlineContent(text: string): React.ReactNode {
   // Regex to split standard LaTeX inline math and bold markers
-  const inlineRegex = /(\$(?!\$).*?\$|\\\(.*?\\\)|(?:\*\*.*?\*\*))/g;
+  const inlineRegex = /(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\$(?!\$).*?\$|\\\([\s\S]*?\\\)|(?:\*\*.*?\*\*))/g;
   const parts = text.split(inlineRegex);
 
   return parts.map((part, index) => {
     if (!part) return null;
+
+    // Inline layout still supports a complete multiline block (e.g. cases).
+    if ((part.startsWith('$$') && part.endsWith('$$')) || (part.startsWith('\\[') && part.endsWith('\\]'))) {
+      return <span key={index} className="inline-block align-middle text-inherit"
+        dangerouslySetInnerHTML={{ __html: renderKaTeX(part.slice(2, -2), false) }} />;
+    }
 
     // Inline math $...$
     if (part.startsWith('$') && part.endsWith('$') && part.length >= 2) {

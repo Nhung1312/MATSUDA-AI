@@ -67,6 +67,8 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run lint
       - run: npm run build
+      - run: npm run check:imports
+      - run: npm run check:urgent-readiness
       - run: npm run check:media-import
       - run: npm run check:pdf-reconciliation
       - run: npm run check:submission-review

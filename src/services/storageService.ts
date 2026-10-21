@@ -514,7 +514,7 @@ export class StorageService {
     localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(safe));
   }
 
-  static saveAssignment(assignment: Assignment): void {
+  static saveAssignment(assignment: Assignment, options: { syncCloud?: boolean } = {}): void {
     this.unmarkAssignmentAsDeleted(assignment.id, assignment.assignmentCode);
     const assignments = this.getAssignments();
     const index = assignments.findIndex(a => a.id === assignment.id);
@@ -526,7 +526,7 @@ export class StorageService {
     localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(assignments));
 
     // Tự động đẩy đề thi lên Cloud Firestore nếu người dùng đã đăng nhập
-    if (auth.currentUser) {
+    if (options.syncCloud !== false && auth.currentUser) {
       FirestoreService.saveExam(assignment, auth.currentUser ? {
         uid: auth.currentUser.uid,
         email: auth.currentUser.email || '',
