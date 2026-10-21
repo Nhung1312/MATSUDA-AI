@@ -13,7 +13,7 @@ import {
   orderBy,
   serverTimestamp 
 } from '../firebase';
-import { getDocFromServer } from 'firebase/firestore';
+import { getDocFromServer, deleteField, updateDoc } from 'firebase/firestore';
 import { assertTeacherCanDeleteSubmission, isSubmissionDeletionEnabled } from './submissionDeletionService';
 import { Assignment, Submission, ClassRoom, ExamTemplate, Contest, ContestSubmission } from '../types';
 import { compactSubmissionImages } from '../utils/submissionImageUtils';
@@ -706,11 +706,26 @@ export class FirestoreService {
         ...data,
         updatedAt: new Date().toISOString()
       };
+      // NEVER persist paid Gemini API secrets in the teacher profile.
+      // Existing teachers collection rules permit broad reads; keep secrets
+      // only on the teacher's local device until a server-side vault exists.
+      delete payload.geminiApiKey;
       await setDoc(teacherDocRef, sanitizeForFirestore(payload), { merge: true });
       console.log(`[Firestore] Đã lưu thông tin giáo viên ${teacherId} lên Cloud Firestore.`);
     } catch (error) {
       console.warn('[Firestore Error] Không thể lưu thông tin giáo viên:', error);
     }
+  }
+
+  /**
+   * Remove a historically synced API key from a teacher document.
+   * Run after sign-in; this never touches classes, exams, scores or other data.
+   */
+  static async removeLegacyTeacherGeminiApiKey(teacherId: string): Promise<void> {
+    if (!teacherId) return;
+    await updateDoc(doc(db, TEACHERS_COLLECTION, teacherId), {
+      geminiApiKey: deleteField()
+    });
   }
 
   /**
@@ -732,8 +747,10 @@ export class FirestoreService {
       const snap = await getDoc(teacherDocRef);
       if (snap.exists()) {
         const data = snap.data() || {};
+        const publicProfile = { ...data };
+        delete publicProfile.geminiApiKey;
         return {
-          ...data,
+          ...publicProfile,
           classes: Array.isArray(data.classes) ? data.classes : [],
           deletedAssignmentKeys: Array.isArray(data.deletedAssignmentKeys) ? data.deletedAssignmentKeys : [],
           cloudInitialized: Boolean(data.cloudInitialized)
