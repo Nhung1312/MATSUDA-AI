@@ -129,14 +129,18 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
   };
 
   // Default action checks only pending/changed questions; forcing a new call is explicit.
-  const handleStartVerification = async (forceAll = false) => {
+  const handleStartVerification = async (
+    forceAll = false, scope: 'all' | 'objective' | 'essay' = 'all'
+  ) => {
     if (isChecking || verificationOperationLock.current) return;
     verificationOperationLock.current = true;
     setIsSolving(true);
     try {
       const checks = await Promise.all(questions.map(async q => {
         const stale = !!q.verificationFingerprint && q.verificationFingerprint !== await verificationFingerprint(q, grade, topic);
-        return { q, needed: forceAll || stale || !hasVerificationReference(q) || q.verificationStatus !== 'verified' || q.needsReview === true };
+        const matchesScope = scope === 'all' || (scope === 'essay' ? isEssayQuestion(q) : !isEssayQuestion(q));
+        return { q, needed: matchesScope && (forceAll || stale || !hasVerificationReference(q) ||
+          q.verificationStatus !== 'verified' || q.needsReview === true) };
       }));
       const questionsToVerify = checks.filter(check => check.needed).map(check => check.q);
       if (!questionsToVerify.length) { alert('Tất cả câu hỏi đã được duyệt, không cần gọi AI lại.'); return; }
@@ -379,7 +383,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
                 AI Thẩm Định Đề Thi & Đối Soát Độc Lập
               </h2>
               <p className="text-xs text-indigo-100 mt-0.5">
-                Bài thi: <strong>{examTitle}</strong> • Khối {grade} • {questions.length} câu hỏi • Bảo toàn tuyệt đối đề gốc và đáp án
+                Bài thi: <strong>{examTitle}</strong> • Khối {grade} • {questions.length} câu hỏi • Tách thẩm định trắc nghiệm/tự luận; không cản học sinh nộp bài
               </p>
             </div>
 
@@ -480,22 +484,25 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
         {/* THANH CÔNG CỤ ĐIỀU KHIỂN */}
         <div className="p-3 sm:p-4 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-2 shrink-0">
           <div className="flex flex-wrap items-center gap-2">
+            {/* Verify independently by question family: one bad essay never consumes
+                objective-question quota or delays objective approval. */}
             <button
-              onClick={() => void handleStartVerification(false)}
-              disabled={verificationBusy || (!questions.some(shouldVerifyQuestion))}
-              className="px-4 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+              type="button"
+              onClick={() => void handleStartVerification(false, 'objective')}
+              disabled={verificationBusy || !questions.some(q => !isEssayQuestion(q) && shouldVerifyQuestion(q))}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md flex items-center gap-2 disabled:opacity-50"
             >
-              {isSolving ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Đang thẩm định ({progress.current}/{progress.total})...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4 text-amber-300" />
-                  <span>{questions.some(shouldVerifyQuestion) ? `Thẩm định câu chưa đạt (${questions.filter(shouldVerifyQuestion).length})` : 'Tất cả đã được thẩm định'}</span>
-                </>
-              )}
+              <Sparkles className="w-4 h-4" />
+              <span>Thẩm định trắc nghiệm ({questions.filter(q => !isEssayQuestion(q) && shouldVerifyQuestion(q)).length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleStartVerification(false, 'essay')}
+              disabled={verificationBusy || !questions.some(q => isEssayQuestion(q) && shouldVerifyQuestion(q))}
+              className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md flex items-center gap-2 disabled:opacity-50"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Thẩm định tự luận ({questions.filter(q => isEssayQuestion(q) && shouldVerifyQuestion(q)).length})</span>
             </button>
 
             {questions.every(isQuestionVerifiedCurrent) && (
