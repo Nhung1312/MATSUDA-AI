@@ -157,7 +157,7 @@ Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
   setItem: (key: string, value: string) => draft.set(key, value),
   removeItem: (key: string) => draft.delete(key)
 } });
-function examUI(service: any, assignment = exam(1), options: { failLocal?: boolean; failAI?: boolean; staleDraft?: boolean; onAI?: () => void } = {}) {
+function examUI(service: any, assignment = exam(1), options: { failLocal?: boolean; failAI?: boolean; staleDraft?: boolean; onCheck?: (count: number) => void } = {}) {
   const key = 'draft-fixture'; draft.set(key, 'saved student answers');
   const state: any = { lock: { current: false }, busy: false, error: '', stages: [], aiCalls: 0, cloudCalls: 0, local: [], vault: [], finish: [], success: 0, checks: [] };
   const deps = {
@@ -165,14 +165,14 @@ function examUI(service: any, assignment = exam(1), options: { failLocal?: boole
     ...participant, isSubmittingRef: state.lock, isSubmittingWithAI: false, draftStorageKey: key,
     setShowSubmitModal: () => {}, setIsSubmittingWithAI: (value: boolean) => { state.busy = value; },
     setSubmissionStage: (stage: string) => state.stages.push(stage), setSubmissionError: (message: string) => { state.error = message; },
-    submissionLimitService: { check: async (a: Assignment, p: any) => { state.checks.push(a); return service.check(a, p); }, commit: service.commit }, SubmissionLimitError,
+    submissionLimitService: { check: async (a: Assignment, p: any) => { state.checks.push(a); const result = await service.check(a, p); options.onCheck?.(state.checks.length); return result; }, commit: service.commit }, SubmissionLimitError,
     document: { fullscreenElement: null }, console: { warn: () => {} },
     studentSolutions: { essay: 'x=5-2=3' }, essayImagesByQuestion: { essay: ['data:image/png;base64,original'] },
     answers: { mc: 'A' }, generalPdfImages: [], startedAt: '2026-10-13T00:00:00Z', tabSwitchCount: 0, violationEvents: [], isPdfMode: false,
     isEssayQuestion, getEssayGradingReference, GradingService,
     stepGradingService: { async analyzeStepByStep(request: any) {
       state.aiCalls++; state.request = request;
-      options.onAI?.();
+      // No Gemini invocation should occur during student submission.
       if (options.failAI) throw Error('AI unavailable');
       return { score: .8, feedback: 'Cần bổ sung kết luận', analysis: [], analysisSource: 'ai', needsTeacherReview: true };
     } },
@@ -199,21 +199,23 @@ const normal = fixture(exam(1));
 const success = examUI(normal.service, exam(1), { staleDraft: true });
 const firstClick = success.submit();
 await success.submit(); await firstClick;
-assert.equal(success.state.aiCalls, 1); assert.equal(normal.state.writes, 1); assert.equal(success.state.finish.length, 1);
+assert.equal(success.state.aiCalls, 0); assert.equal(normal.state.writes, 1); assert.equal(success.state.finish.length, 1);
 assert.equal(success.state.checks[0].maxSubmissions, 1, 'Quota comes from the joined assignment, not the stale shuffled draft');
 assert.equal(success.state.cloudCalls, 0, 'No unguarded saveResult follows the atomic save');
 assert.equal(success.state.local[0].options.syncCloud, false);
 assert.equal(success.state.local[0].submission.id, success.state.finish[0].id);
 assert.deepEqual(success.state.stages, ['checking', 'grading', 'saving']);
-assert.equal(success.state.finish[0].totalScore, 1.8);
+assert.equal(success.state.finish[0].totalScore, 0, 'Unverified objective and essay responses are pending, not scored as wrong');
 assert.equal(success.state.finish[0].answers[1].needsTeacherReview, true);
-assert.equal(success.state.request.correctAnswer, 'x=3'); assert.ok(success.state.request.rubric.includes('1 điểm'));
-assert.deepEqual(success.state.request.essayImages, ['data:image/png;base64,original']);
+assert.equal(success.state.finish[0].answers[0].needsTeacherReview, true, 'Unverified key remains pending');
+assert.deepEqual(success.state.finish[0].answers[1].essayImages, ['data:image/png;base64,original']);
+assert.equal(success.state.finish[0].wrongCount, 0, 'Pending answers cannot count as wrong');
+assert.equal(success.state.vault.length, 0, 'Pending responses must not enter Mistake Vault');
 assert.equal(draft.has(success.key), false);
 const acceptedBefore = clone([...normal.records.values()]);
 const later = examUI(normal.service); await later.submit();
 assert.equal(later.state.aiCalls, 0); assert.deepEqual([...normal.records.values()], acceptedBefore);
-console.log('PASS: actual successful handler keeps original rubric/images, step grading and teacher review; double click grades/saves once and repeat submission uses zero AI calls');
+console.log('PASS: successful submit preserves original essay images, queues unverified TN/TL, and double-click saves only once without calling AI');
 
 const saveFails = fixture(exam(1)); saveFails.state.failTransaction = true;
 const retry = examUI(saveFails.service); await retry.submit();
@@ -224,21 +226,22 @@ assert.equal(retry.state.finish.length, 1); assert.equal(saveFails.records.size,
 const localFails = examUI(fixture(exam(1)).service, exam(1), { failLocal: true }); await localFails.submit();
 assert.equal(localFails.state.finish.length, 1, 'Confirmed cloud acceptance must remain successful when local storage is full');
 const aiFails = examUI(fixture(exam(1)).service, exam(1), { failAI: true }); await aiFails.submit();
-assert.equal(aiFails.state.finish.length, 1); assert.equal(aiFails.state.finish[0].gradingStatus, 'pending_teacher_grading');
-assert.equal(aiFails.state.finish[0].answers[1].aiGraded, false);
+assert.equal(aiFails.state.finish.length, 1); assert.equal(aiFails.state.finish[0].gradingStatus, 'needs_review');
+assert.equal(aiFails.state.aiCalls, 0, 'Teacher-side AI availability cannot affect student submission');
+assert.equal(aiFails.state.finish[0].answers[1].aiGraded, undefined);
 assert.equal(aiFails.state.finish[0].answers[1].studentSolutionText, 'x=5-2=3');
 const oldUI = examUI(unlimited.service, exam()); await oldUI.submit();
 assert.equal(oldUI.state.cloudCalls, 1); assert.deepEqual(oldUI.state.local[0].options, { syncCloud: false });
 assert.equal(oldUI.state.finish.length, 1); assert.equal(draft.has(oldUI.key), false);
-console.log('PASS: failed transactions retain drafts and allow retry; cloud success tolerates local quota; unavailable essay AI still queues teacher review; unlimited workflow remains intact');
+console.log('PASS: failed transactions retain drafts; cloud success tolerates local quota; student submission queues essay review without needing AI');
 
 const updatedDuringGrading = fixture(exam(0), [old]);
-const changedDuringSubmit = examUI(updatedDuringGrading.service, exam(), { onAI: () => updatedDuringGrading.setExam(exam(1)) });
+const changedDuringSubmit = examUI(updatedDuringGrading.service, exam(), { onCheck: (count) => { if (count === 1) updatedDuringGrading.setExam(exam(1)); } });
 await changedDuringSubmit.submit();
 assert.equal(changedDuringSubmit.state.finish.length, 0); assert.match(changedDuringSubmit.state.error, /1\/1/);
 assert.equal(draft.has(changedDuringSubmit.key), true); assert.equal(updatedDuringGrading.state.writes, 0);
 assert.deepEqual(updatedDuringGrading.records.get(old.id), old);
-console.log('PASS: enabling a limit during grading is checked before saving and never overwrites historical teacher grades');
+console.log('PASS: enabling a limit after the initial submission check is rechecked before saving; old teacher scores remain protected');
 
 function joinUI(service: any, cached = exam()) {
   const state: any = { lock: { current: false }, error: '', starts: [], busy: false, current: cached };
