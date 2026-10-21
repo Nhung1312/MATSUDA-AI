@@ -52,7 +52,7 @@ try {
   assert.equal(pending.wrongCount, 0);
   assert.equal(pending.correctCount + pending.wrongCount + pending.unansweredCount + pending.ungradedCount!, 2);
   assert.equal(getSubmissionSummary(pendingExam, pending).pendingCount, 2);
-  const acceptedExam: any = { ...assignment, questions: [{ ...q, verificationStatus: 'verified' }] };
+  const acceptedExam: any = { ...assignment, totalPoints: 1, questions: [{ ...q, verificationStatus: 'verified' }] };
   const accepted = GradingService.gradeSubmission({ ...params, assignment: acceptedExam });
   assert.equal(accepted.gradingStatus, 'graded');
   assert.equal(accepted.totalScore, 1); // valid B answer earns 1/1, without AI.
@@ -70,7 +70,6 @@ try {
   assert.equal(aiCalls, 0, 'Student submit must not call AI.');
   console.log('PASS: verified objective graded; unverified/bad keys and essay photos pending without counting wrong');
   
-{
   const initial = GradingService.gradeSubmission({ assignment: { ...assignment, questions: [shuffled] },
     studentAnswers: { mc: 'B' }, studentName: 'Học sinh thử', classId: 'c', className: '6A',
     startedAt: '2026-10-14T00:00:00Z', submittedAt: '2026-10-14T00:01:00Z', isShuffled: true });
