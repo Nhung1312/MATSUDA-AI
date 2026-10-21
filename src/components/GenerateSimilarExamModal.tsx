@@ -71,21 +71,16 @@ export const GenerateSimilarExamModal: React.FC<GenerateSimilarExamModalProps> =
 
       const newAsg = await ExamGeneratorService.generateVariantAssignment(assignment, options);
       
-      // Lưu vào Local Storage an toàn
-      StorageService.saveAssignment(newAsg);
-      
-      // Lưu vào Firestore nếu có kết nối
-      try {
-        await FirestoreService.saveExam(newAsg);
-      } catch {
-        // Fallback local persistence is already handled
-      }
+      // Students can only join a code after it is saved on Firestore.
+      await FirestoreService.saveExam(newAsg);
+      try { StorageService.saveAssignment(newAsg); }
+      catch (error) { console.warn('Đề đã lưu lên Firebase nhưng bản sao trên máy không lưu được:', error); }
 
       setCreatedAssignment(newAsg);
       onSuccess(newAsg);
     } catch (error) {
       console.error('Lỗi tạo đề tương tự:', error);
-      alert('Có lỗi xảy ra khi tạo đề. Vui lòng thử lại.');
+      alert('Chưa tạo được mã đề trên Firebase. Không gửi link cho học sinh; hãy kiểm tra mạng và thử lại.');
     } finally {
       setIsGenerating(false);
     }
