@@ -101,6 +101,32 @@ try {
   assert.equal(generalImage.wrongCount, 0);
   assert.equal(aiCalls, 0, 'Student submit must not call AI.');
   console.log('PASS: verified objective graded; unverified/bad keys and essay photos pending without counting wrong');
+
+  // Teacher's "Chấm AI" must not override pending objective keys before
+  // independent verification; once verified it may evaluate the same snapshot.
+  const beforePending = JSON.stringify(pending);
+  const regradePendingObjective = GradingService.gradeSubmission({ ...params,
+    assignment: { ...assignment, questions: [q] } });
+  const pendingSaved = JSON.stringify(regradePendingObjective);
+  const reviewedPending = await GradingService.gradeSingleSubmissionWithAI({
+    assignment: { ...assignment, questions: [q] }, submission: regradePendingObjective
+  });
+  assert.equal(reviewedPending.submission.answers[0].needsTeacherReview, true);
+  assert.equal(reviewedPending.submission.answers[0].pointsEarned, 0);
+  assert.equal(reviewedPending.submission.wrongCount, 0);
+  assert.equal(JSON.stringify(regradePendingObjective), pendingSaved);
+  assert.equal(JSON.stringify(pending), beforePending);
+  const verifiedSource: any = { ...assignment, questions: [{ ...q, verificationStatus: 'verified' }] };
+  const afterTeacherVerified = await GradingService.gradeSingleSubmissionWithAI({
+    assignment: verifiedSource, submission: reviewedPending.submission
+  });
+  assert.equal(afterTeacherVerified.submission.answers[0].pointsEarned, 1);
+  assert.equal(afterTeacherVerified.submission.answers[0].needsTeacherReview, false);
+  assert.equal(afterTeacherVerified.submission.answers[0].selectionReviewIssue, undefined);
+  assert.equal(afterTeacherVerified.submission.correctCount, 1);
+  assert.equal(aiCalls, 0, 'Objective verification must not call Gemini on regrading');
+  console.log('PASS: teacher AI regrade keeps unverified objective answer pending and releases hold only after source verification');
+
   
   const initial = GradingService.gradeSubmission({ assignment: { ...assignment, questions: [shuffled] },
     studentAnswers: { mc: 'B' }, studentName: 'Học sinh thử', classId: 'c', className: '6A',
