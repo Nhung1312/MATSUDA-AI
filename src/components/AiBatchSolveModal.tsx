@@ -212,12 +212,8 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
         };
 
         // Lưu kết quả ngay sau mỗi đề thi (Requirement F)
-        StorageService.saveAssignment(updatedAssignment);
-        try {
-          await FirestoreService.saveExam(updatedAssignment);
-        } catch (fErr) {
-          console.warn('Lỗi lưu Firestore đề:', fErr);
-        }
+        await FirestoreService.saveExam(updatedAssignment);
+        StorageService.saveAssignment(updatedAssignment, { syncCloud: false });
 
         // Đánh dấu hoàn tất đề
         localItems[i] = {

@@ -86,7 +86,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
         if (q.teacherVerified && q.verificationStatus === 'verified' && !q.needsReview && !staleIds.has(q.id) && hasVerificationReference(q)) initialDecisionMap[q.id] = 'keep';
 
         if (q.pass1Answer || q.sanityCheckNote || q.confidence || q.aiProposedAnswer || q.verificationStatus) {
-          const isSuspect = !hasVerificationReference(q) || staleIds.has(q.id) || q.verificationStatus === 'needs_review' || q.needsReview === true || q.confidence === 'needs_review';
+          const isSuspect = !hasVerificationReference(q) || staleIds.has(q.id) || q.verificationStatus !== 'verified' || q.needsReview === true || q.confidence === 'needs_review';
           initialVerificationMap[q.id] = {
             questionId: q.id,
             inputFingerprint: q.verificationFingerprint,
@@ -123,6 +123,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
       return;
     }
     aiService.setApiKey(tempApiKey.trim());
+    if (aiService.getApiKey() !== tempApiKey.trim()) { alert('Chưa lưu được key trên máy. Bộ nhớ máy có thể đã đầy; key cũ chưa được thay.'); return; }
     setHasApiKey(true);
     setTempApiKey('');
     alert('Đã lưu Gemini API Key thành công! Giờ Thầy/Cô có thể bấm "Bắt đầu AI Thẩm định đề thi".');
@@ -158,7 +159,12 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
       setVerificationMap(previous => ({ ...previous, ...Object.fromEntries(results.map(result => [result.questionId, result])) }));
       if (results.some(result => result.needsReview || !result.matchesCurrentAnswer || result.confidence === 'needs_review')) setFilterMode('needs_review');
     } catch (error: any) {
-      console.warn('Thẩm định chưa hoàn tất; kết quả cũ được giữ.');
+      const completed: QuestionVerificationResult[] = Array.isArray(error?.partialResults) ? error.partialResults : [];
+      if (completed.length) {
+        setVerificationMap(previous => ({ ...previous, ...Object.fromEntries(completed.map(result => [result.questionId, result])) }));
+        setManualDecisionMap(previous => { const next = { ...previous }; for (const result of completed) delete next[result.questionId]; return next; });
+      }
+      console.warn('Thẩm định chưa hoàn tất; giữ các câu đã xong và kết quả cũ.');
       alert(error?.message || 'Không thể thẩm định lúc này. Hãy kiểm tra mạng hoặc API Key.');
     } finally { setIsSolving(false); verificationOperationLock.current = false; }
   };
@@ -264,7 +270,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
     if (v) {
       return v.needsReview || !v.matchesCurrentAnswer || v.confidence === 'needs_review';
     }
-    return !hasVerificationReference(q) || staleQuestionIds.has(q.id) || q.verificationStatus === 'needs_review' || q.needsReview === true;
+    return !hasVerificationReference(q) || staleQuestionIds.has(q.id) || q.verificationStatus !== 'verified' || q.needsReview === true;
   };
 
   // Xác nhận và lưu kết quả thẩm định (Requirement G)

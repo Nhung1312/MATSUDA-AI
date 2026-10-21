@@ -114,6 +114,20 @@ const mc={...q,id:'mc',order:1,type:'multiple_choice',correctAnswer:'A',options:
 const paste=harness([mc,{...q,order:2}]);paste.call('handleApplyQuickPaste');assert.equal(paste.state.choices[q.id],'x=1');
 console.log('PASS: explicit force reaches the optimizer, rapid clicks are blocked, fresh analysis clears old manual decisions, blank references cannot be approved, quick-paste does not replace essay answers');
 
+// Imported questions may already carry status='unverified'. Merely opening
+// the dialog (or a failed AI request) must never synthesize a successful check.
+const importedUnverified = { ...mc, verificationStatus: 'unverified', needsReview: false };
+const notChecked = harness([importedUnverified]);
+notChecked.call('initialize'); await until(() => notChecked.state.checking === false);
+assert.equal(notChecked.state.map[mc.id].needsReview, true);
+assert.equal(notChecked.state.map[mc.id].matchesCurrentAnswer, false);
+notChecked.setProvider(async () => { throw new Error('Synthetic failed verification'); });
+await notChecked.call('handleStartVerification');
+await notChecked.call('handleConfirmApply');
+assert.equal(notChecked.state.saved[0].verificationStatus, 'needs_review');
+assert.notEqual(notChecked.state.saved[0].teacherVerified, true);
+console.log('PASS: imported unverified status cannot become verified just by opening/saving the dialog or after AI failure');
+
 const scoped = harness([mc, q]);
 scoped.setProvider(async (p:any) => p.questions.map((item:any) => good(item.id)));
 await scoped.call('handleStartVerification', false, 'objective');
