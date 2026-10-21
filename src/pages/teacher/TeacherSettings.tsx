@@ -119,10 +119,6 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
       if (!currentKey && auth.currentUser) {
         try {
           const profile = await FirestoreService.getTeacherProfile(auth.currentUser.uid);
-          if (profile?.geminiApiKey) {
-            currentKey = profile.geminiApiKey;
-            hybridAi.setApiKey(currentKey);
-          }
           if (profile?.geminiModel) {
             currentModel = profile.geminiModel;
             hybridAi.setModel(currentModel);
@@ -136,6 +132,10 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
         }
       }
 
+      if (auth.currentUser) {
+        FirestoreService.removeLegacyTeacherGeminiApiKey(auth.currentUser.uid)
+          .catch(() => console.warn('Cần kiểm tra và xóa API Key cũ trên Firestore nếu có.'));
+      }
       setApiKeyInput(currentKey);
       setSelectedModel(currentModel);
       setAutoGradeEnabled(autoGrade);
@@ -149,17 +149,14 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
     hybridAi.setModel(selectedModel);
     hybridAi.setAutoGradeEnabled(autoGradeEnabled);
 
-    // Đồng bộ lên Cloud Firestore nếu giáo viên đã đăng nhập
+    // Never sync a paid API secret to the teacher profile.
     if (auth.currentUser) {
-      try {
-        await FirestoreService.saveTeacherProfile(auth.currentUser.uid, {
-          geminiApiKey: apiKeyInput,
-          geminiModel: selectedModel,
-          autoGradeEnabled
-        });
-      } catch (err) {
-        console.warn('Lỗi đồng bộ API key lên Firestore:', err);
-      }
+      await FirestoreService.removeLegacyTeacherGeminiApiKey(auth.currentUser.uid)
+        .catch(() => console.warn('Chưa dọn được API Key cũ trên Firestore; cần kiểm tra hồ sơ giáo viên.'));
+      await FirestoreService.saveTeacherProfile(auth.currentUser.uid, {
+        geminiModel: selectedModel,
+        autoGradeEnabled
+      });
     }
 
     setSavedKeySuccess(true);
@@ -173,9 +170,8 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
       setApiKeyInput('');
       setTestResult(null);
       if (auth.currentUser) {
-        FirestoreService.saveTeacherProfile(auth.currentUser.uid, {
-          geminiApiKey: ''
-        }).catch(() => {});
+        FirestoreService.removeLegacyTeacherGeminiApiKey(auth.currentUser.uid)
+          .catch(() => console.warn('Chưa dọn được API Key cũ trên Firestore.'));
       }
       setSavedKeySuccess(true);
       setTimeout(() => setSavedKeySuccess(false), 3000);
@@ -487,7 +483,7 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
                 <h2 className="font-bold text-base text-slate-900">Cấu hình Trợ lý Gemini AI</h2>
                 {hasConfiguredKey ? (
                   <span className="inline-flex items-center gap-1 text-[11px] font-extrabold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full">
-                    <CheckCircle2 className="w-3 h-3" /> Đã kết nối API
+                    <CheckCircle2 className="w-3 h-3" /> Đã lưu Key (chưa kiểm tra)
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 text-[11px] font-extrabold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">
@@ -571,10 +567,14 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
                   <span>{testingConnection ? 'Đang kiểm tra...' : 'Kiểm tra API & Model'}</span>
                 </button>
               </div>
+              <p className="mt-1.5 text-[11px] text-amber-800">
+                Thẩm định đề Dual-Pass dùng Gemini 3.8 Flash dù chọn model khác.
+                Kiểm tra kết nối không xác minh Billing Tier của Google AI Studio.
+              </p>
             </div>
 
             <div className="flex flex-col justify-end">
-              <label className="flex items-center space-x-2.5 p-2 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100/80 transition-colors">
+              <label className="flex items-center space-x-2.5 p-2 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100/80">
                 <input
                   type="checkbox"
                   checked={autoGradeEnabled}
