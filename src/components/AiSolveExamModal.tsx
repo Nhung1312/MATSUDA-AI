@@ -789,7 +789,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
                             <div className="p-2 rounded-xl bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
                               <span className="text-[10px] text-slate-500 block uppercase font-bold">AI Lượt 2 (Độc lập/Thử ngược)</span>
                               <span className="text-sm font-black text-purple-700 dark:text-purple-300">
-                                {vInfo.pass2Answer ? vInfo.pass2Answer : '(Không gọi - Lượt 1 đã khớp)'}
+                                {vInfo.pass2Answer || (vInfo.matchesCurrentAnswer && !vInfo.needsReview ? '(Không cần gọi — lượt 1 đã khớp nguồn)' : '(Chưa có kết quả lượt 2 hợp lệ)')}
                               </span>
                             </div>
                           </div>
