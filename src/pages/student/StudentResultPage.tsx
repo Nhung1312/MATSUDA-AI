@@ -384,6 +384,11 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   // Calculate score rating banner
   const isAwaitingReview = submission.isProvisional || submission.needsTeacherReview || submission.gradingStatus === 'needs_review' || displaySummary.pendingCount > 0;
   const hasPendingTeacherGrading = (submission.hasEssayQuestions && submission.gradingStatus === 'pending_teacher_grading') || isAwaitingReview;
+  const hasPendingObjective = submission.answers.some(ans => {
+    const q = submission.shuffledQuestions?.find(item => item.id === ans.questionId)
+      || assignment.questions.find(item => item.id === ans.questionId);
+    return q && !isEssayQuestion(q) && isSubmissionAnswerPending(assignment, submission, ans);
+  });
   const score = submission.totalScore;
   const scoreMax = submission.maxScore && submission.maxScore > 0 ? submission.maxScore : 10;
   const normalizedScore = scoreMax > 0 ? score * 10 / scoreMax : 0;
@@ -480,7 +485,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 <div className="flex items-baseline space-x-1.5 pt-1">
                   <span className="text-xs font-bold text-slate-500">Tạm tính</span>
                   <span className="text-3xl sm:text-4xl font-black text-amber-700 dark:text-amber-300">
-                    {submission.mcqScore !== undefined ? submission.mcqScore : score}
+                    {hasPendingObjective ? '—' : (submission.mcqScore !== undefined ? submission.mcqScore : score)}
                   </span>
                   <span className="text-sm font-bold text-slate-400">/ {scoreMax}</span>
                 </div>
@@ -805,7 +810,8 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 const question = questionPool.find(q => q.id === ans.questionId) || assignment.questions.find(q => q.id === ans.questionId);
                 if (!question) return null;
 
-                const isCorrect = ans.isCorrect;
+                const isAwaitingAnsReview = isSubmissionAnswerPending(assignment, submission, ans);
+                const isCorrect = ans.isCorrect && !isAwaitingAnsReview;
                 const hasAiExp = !!aiExplanations[question.id];
                 const isLoadingAi = !!loadingAi[question.id];
                 const isExpanded = expandedCards[question.id] ?? !isCorrect; // câu sai mở, câu đúng thu gọn
@@ -813,8 +819,6 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 const currentAiGrading = aiGradingFeedback[question.id] || (ans.aiGraded ? { score: ans.aiScore || 0, feedback: ans.aiFeedback || '' } : null);
                 const isLoadingGrading = !!loadingAiGrading[question.id];
                 const images = isEssayQuestion(question) ? getSubmissionAnswerImages(submission, ans) : ans.essayImages || [];
-
-                const isAwaitingAnsReview = isSubmissionAnswerPending(assignment, submission, ans);
 
                 return (
                   <div
@@ -908,13 +912,13 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                           const effectiveCorrectAnswer = ans.correctAnswer || (ans.isCorrect ? ans.selectedAnswer : '');
                           const isStudentChoice = ans.selectedAnswer === opt.id || 
                             (!ans.selectedAnswer && ans.selectedOptionText && opt.text && ans.selectedOptionText.trim() === opt.text.trim());
-                          const isCorrectChoice = ans.isCorrect
+                          const isCorrectChoice = !isAwaitingAnsReview && (ans.isCorrect
                             ? isStudentChoice
                             : (effectiveCorrectAnswer
                                 ? (effectiveCorrectAnswer === opt.id || (opt.text && effectiveCorrectAnswer.trim() === opt.text.trim()))
                                 : ((Boolean((opt as any).originalId) && (opt as any).originalId === question.correctAnswer) ||
                                    question.correctAnswer === opt.id ||
-                                   (question.correctAnswer && opt.text && question.correctAnswer.trim() === opt.text.trim())));
+                                   (question.correctAnswer && opt.text && question.correctAnswer.trim() === opt.text.trim()))));
 
                           let optContainerClass = 'border-slate-200 bg-slate-50/70 text-slate-700';
                           let badgeClass = 'bg-slate-200 text-slate-700';
@@ -922,7 +926,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                           if (isCorrectChoice) {
                             optContainerClass = 'border-emerald-500 bg-emerald-50 text-emerald-950 font-bold ring-2 ring-emerald-400/40';
                             badgeClass = 'bg-emerald-600 text-white';
-                          } else if (isStudentChoice && !isCorrect) {
+                          } else if (isStudentChoice && !isCorrect && !isAwaitingAnsReview) {
                             optContainerClass = 'border-rose-500 bg-rose-50 text-rose-950 font-bold ring-2 ring-rose-400/30';
                             badgeClass = 'bg-rose-600 text-white';
                           }
@@ -948,10 +952,10 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                                   className={`ml-2 text-[10px] uppercase font-black px-2 py-0.5 rounded-md shrink-0 flex items-center gap-1 ${
                                     isCorrect
                                       ? 'bg-emerald-700 text-white'
-                                      : 'bg-rose-600 text-white'
+                                       : isAwaitingAnsReview ? 'bg-slate-600 text-white' : 'bg-rose-600 text-white'
                                   }`}
                                 >
-                                  {isCorrect ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />} Bạn chọn
+                                  {isAwaitingAnsReview ? null : isCorrect ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />} Bạn chọn
                                 </span>
                               )}
 
@@ -1060,7 +1064,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                     )}
 
                     {/* Step-by-Step Mathematical Explanation */}
-                    {isExpanded && (
+                    {isExpanded && (!isAwaitingAnsReview || isTeacherPreview) && (
                       <div className="space-y-3 pt-2">
                         {question.explanation && (
                           <div className="p-4 bg-indigo-50/80 border border-indigo-200/80 rounded-2xl text-xs sm:text-sm text-indigo-950 shadow-xs">

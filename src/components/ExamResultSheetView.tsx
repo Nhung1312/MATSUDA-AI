@@ -281,7 +281,7 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
               {hasPendingReview ? 'Điểm tạm tính' : 'Điểm'}
             </div>
             <div className={`text-4xl font-black mt-1 ${hasPendingReview ? 'text-amber-700' : 'text-indigo-700'}`}>
-              {scoreToDisplay.toFixed(1)}
+              {hasPendingReview ? '—' : scoreToDisplay.toFixed(1)}
               <span className="text-base text-slate-400"> / {submission.maxScore || 10}</span>
             </div>
           </div>

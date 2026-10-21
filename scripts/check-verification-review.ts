@@ -113,6 +113,17 @@ await missing.call('handleConfirmApply');assert.equal(missing.state.saved[0].ver
 const mc={...q,id:'mc',order:1,type:'multiple_choice',correctAnswer:'A',options:[{id:'A',text:'1'},{id:'B',text:'2'}]};
 const paste=harness([mc,{...q,order:2}]);paste.call('handleApplyQuickPaste');assert.equal(paste.state.choices[q.id],'x=1');
 console.log('PASS: explicit force reaches the optimizer, rapid clicks are blocked, fresh analysis clears old manual decisions, blank references cannot be approved, quick-paste does not replace essay answers');
+
+const scoped = harness([mc, q]);
+scoped.setProvider(async (p:any) => p.questions.map((item:any) => good(item.id)));
+await scoped.call('handleStartVerification', false, 'objective');
+assert.deepEqual(scoped.state.calls.map((p:any) => p.questions.map((item:any) => item.id)), [['mc']],
+  'Objective verification must not invoke AI on essays');
+await scoped.call('handleStartVerification', false, 'essay');
+assert.deepEqual(scoped.state.calls.map((p:any) => p.questions.map((item:any) => item.id)), [['mc'], [q.id]],
+  'Essay verification must be independently selectable');
+console.log('PASS: objective and essay verification use isolated AI requests');
+
 let calls=0;
 (globalThis as any).__examOfflineFetch=async()=>{calls++;throw Error('No provider call allowed for a missing source');};
 const missingResult=await aiService.verifyExamQuestions({questions:[blank,{...blank,id:'no-ref-2'}]});
