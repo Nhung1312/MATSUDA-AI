@@ -82,7 +82,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
 
       questions.forEach((q) => {
         const isEssay = isEssayQuestion(q) || q.type === 'short_answer';
-        initialMap[q.id] = isEssay ? (q.correctAnswer || '') : (q.correctAnswer || 'A').toUpperCase();
+        initialMap[q.id] = isEssay ? (q.correctAnswer || '') : (q.correctAnswer || '').toUpperCase();
         if (q.teacherVerified && q.verificationStatus === 'verified' && !q.needsReview && !staleIds.has(q.id) && hasVerificationReference(q)) initialDecisionMap[q.id] = 'keep';
 
         if (q.pass1Answer || q.sanityCheckNote || q.confidence || q.aiProposedAnswer || q.verificationStatus) {
@@ -91,8 +91,8 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
             questionId: q.id,
             inputFingerprint: q.verificationFingerprint,
             order: q.order,
-            currentAnswer: q.correctAnswer || (isEssay ? '' : 'A'),
-            proposedAnswer: q.aiProposedAnswer || q.pass1Answer || q.correctAnswer || 'A',
+            currentAnswer: q.correctAnswer || '',
+            proposedAnswer: q.aiProposedAnswer || q.pass1Answer || q.correctAnswer || '',
             matchesCurrentAnswer: !isSuspect,
             confidence: (q.confidence as any) || (isSuspect ? 'needs_review' : 'high'),
             reason: staleIds.has(q.id) ? 'Nội dung đã thay đổi; cần thẩm định hoặc giáo viên duyệt lại.' : q.aiReason || q.sanityCheckNote || (isSuspect ? 'Phát hiện nghi vấn cần giáo viên xem lại' : 'Trùng khớp đáp án hiện tại'),
@@ -189,7 +189,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
     if (verificationBusy || verificationOperationLock.current) return;
     if (!hasVerificationReference(q)) { alert('Câu chưa có đáp án hoặc hướng dẫn chấm. Hãy bổ sung trước khi xác nhận.'); return; }
     const isEssay = isEssayQuestion(q) || q.type === 'short_answer';
-    const orig = q.correctAnswer || (isEssay ? '' : 'A');
+    const orig = q.correctAnswer || '';
     setUserSelectedMap(prev => ({ ...prev, [q.id]: orig }));
     setManualDecisionMap(prev => ({ ...prev, [q.id]: 'keep' }));
   };
@@ -278,7 +278,7 @@ export const AiSolveExamModal: React.FC<AiSolveExamModalProps> = ({
         const isEssay = isEssayQuestion(q) || q.type === 'short_answer';
         const chosenAnswer = isEssay
           ? (userSelectedMap[q.id] !== undefined ? userSelectedMap[q.id] : (q.correctAnswer || ''))
-          : (userSelectedMap[q.id] || q.correctAnswer || 'A');
+          : (userSelectedMap[q.id] ?? q.correctAnswer ?? '');
         const vInfo = verificationMap[q.id];
         const decision = manualDecisionMap[q.id];
 
