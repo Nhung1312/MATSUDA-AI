@@ -5,6 +5,7 @@ import { StorageService } from '../src/services/storageService';
 import { FirestoreService } from '../src/services/firestoreService';
 import { stepGradingService } from '../src/services/stepGradingService';
 import { getMultipleChoiceSelectionIssue, getSubmissionSummary, confirmMultipleChoiceSelection, refreshSubmissionTotals } from '../src/utils/submissionReviewUtils';
+import { getObjectiveGradingHoldReason } from '../src/utils/objectiveGradingGuard';
 import type { Assignment, Submission } from '../src/types';
 
 assert.ok(String(globalThis.fetch).includes('__examOfflineFetch'), 'Mandatory offline network guard missing');
@@ -24,6 +25,52 @@ const assignment: any = { id: 'review-fixture', title: 'Toán', grade: '6', topi
     { id: 'blank', order: 3, question: 'Tính 2+2', type: 'essay', points: 1, options: [], correctAnswer: '4' }] };
 
 try {
+  // NEW ONLINE attempts: submission is accepted without any Gemini request,
+  // but uncertain objective keys must not be marked wrong.
+  const objective = { ...q, verificationStatus: 'verified', needsReview: false };
+  assert.equal(getObjectiveGradingHoldReason(objective as any), null);
+  assert.match(getObjectiveGradingHoldReason(q as any)!, /chưa được thẩm định/);
+  assert.match(getObjectiveGradingHoldReason({ ...objective, needsReview: true } as any)!, /chưa được thẩm định/);
+  assert.match(getObjectiveGradingHoldReason({ ...objective, correctAnswer: '' } as any)!, /còn trống/);
+  assert.match(getObjectiveGradingHoldReason({ ...objective, correctAnswer: 'Z' } as any)!, /không khớp/);
+  assert.match(getObjectiveGradingHoldReason({ ...objective,
+    options: [{ id: 'A', text: '2' }, { id: 'B', text: '2' }] } as any)!, /trùng nhau/);
+  const startedAt = '2026-10-21T00:00:00Z', submittedAt = '2026-10-21T00:01:00Z';
+  const params = { studentName: 'Học sinh kiểm thử', classId: '6a', className: '6A',
+    startedAt, submittedAt, studentAnswers: { mc: 'B' },
+    requireVerifiedObjectiveKeys: true };
+  const pendingExam: any = { ...assignment, questions: [q, assignment.questions[1]] };
+  const pending = GradingService.gradeSubmission({ ...params, assignment: pendingExam,
+    studentSolutions: { essay: 'x=3' } });
+  assert.equal(pending.gradingStatus, 'needs_review');
+  assert.equal(pending.answers[0].selectedAnswer, 'B');
+  assert.equal(pending.answers[0].pointsEarned, 0);
+  assert.equal(pending.answers[0].isCorrect, false);
+  assert.equal(pending.answers[0].needsTeacherReview, true);
+  assert.equal(pending.answers[1].needsTeacherReview, true);
+  assert.equal(pending.ungradedCount, 2);
+  assert.equal(pending.wrongCount, 0);
+  assert.equal(pending.correctCount + pending.wrongCount + pending.unansweredCount + pending.ungradedCount!, 2);
+  assert.equal(getSubmissionSummary(pendingExam, pending).pendingCount, 2);
+  const acceptedExam: any = { ...assignment, questions: [{ ...q, verificationStatus: 'verified' }] };
+  const accepted = GradingService.gradeSubmission({ ...params, assignment: acceptedExam });
+  assert.equal(accepted.gradingStatus, 'graded');
+  assert.equal(accepted.totalScore, 1); // valid B answer earns 1/1, without AI.
+  assert.equal(accepted.correctCount, 1);
+  assert.equal(accepted.ungradedCount, 0);
+  const invalidKey = GradingService.gradeSubmission({ ...params,
+    assignment: { ...assignment, questions: [{ ...q, verificationStatus: 'verified', correctAnswer: 'Z' }] } });
+  assert.equal(invalidKey.answers[0].needsTeacherReview, true);
+  assert.equal(invalidKey.wrongCount, 0);
+  const generalImage = GradingService.gradeSubmission({ ...params,
+    assignment: { ...assignment, questions: [assignment.questions[1]] },
+    studentAnswers: {}, generalEssayImages: ['data:image/png;base64,AA=='] });
+  assert.equal(generalImage.ungradedCount, 1);
+  assert.equal(generalImage.wrongCount, 0);
+  assert.equal(aiCalls, 0, 'Student submit must not call AI.');
+  console.log('PASS: verified objective graded; unverified/bad keys and essay photos pending without counting wrong');
+  
+{
   const initial = GradingService.gradeSubmission({ assignment: { ...assignment, questions: [shuffled] },
     studentAnswers: { mc: 'B' }, studentName: 'Học sinh thử', classId: 'c', className: '6A',
     startedAt: '2026-10-14T00:00:00Z', submittedAt: '2026-10-14T00:01:00Z', isShuffled: true });
