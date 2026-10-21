@@ -6,10 +6,9 @@ import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
 import { submissionLimitService, SubmissionLimitError } from '../../services/submissionLimitService';
 import { aiService, HybridAIService } from '../../services/aiService';
-import { stepGradingService } from '../../services/stepGradingService';
 import { useTheme } from '../../context/ThemeContext';
 import { shuffleAssignmentQuestionsAndOptions, formatViolationTime } from '../../utils/antiCheatUtils';
-import { placeEssayQuestionsLast, getEssayGradingReference } from '../../utils/questionUtils';
+import { placeEssayQuestionsLast } from '../../utils/questionUtils';
 import { isEssayQuestion, getQuestionTypeLabel } from '../../utils/questionUtils';
 import { ImageLightboxModal } from '../../components/ImageLightboxModal';
 import { soundEffects } from '../../utils/soundEffects';
@@ -748,38 +747,14 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
       setSubmissionStage('grading');
       const submittedAt = new Date().toISOString();
-      const aiFeedbacks: Record<string, { score?: number; feedback?: string; graded?: boolean }> = {};
-
-      // Keep the existing step-by-step essay grading and teacher review behavior.
-      const essayQuestions = currentAssignment.questions.filter((q) => isEssayQuestion(q));
-      for (const eq of essayQuestions) {
-        const solutionText = studentSolutions[eq.id] || '';
-        const images = essayImagesByQuestion[eq.id] || [];
-        if (solutionText || images.length > 0) {
-          try {
-            const stepRes = await stepGradingService.analyzeStepByStep({
-              questionId: eq.id, questionText: eq.question,
-              grade: String(currentAssignment.grade), topic: currentAssignment.topic,
-              maxPoints: eq.points, ...getEssayGradingReference(eq),
-              studentSolutionText: solutionText, essayImages: images
-            });
-            aiFeedbacks[eq.id] = {
-              score: stepRes.score, feedback: stepRes.feedback, graded: true,
-              stepAnalysis: stepRes.analysis, firstErrorStep: stepRes.firstErrorStep,
-              firstErrorType: stepRes.firstErrorType, firstErrorExplanation: stepRes.firstErrorExplanation,
-              needsTeacherReview: stepRes.needsTeacherReview, stepGradingResponse: stepRes
-            } as any;
-          } catch (e) {
-            console.warn('AI step evaluation on submit warning:', e);
-            aiFeedbacks[eq.id] = { graded: false, feedback: 'Bài tự luận đã được ghi nhận đầy đủ và đang chờ chấm điểm.' };
-          }
-        }
-      }
+      // Save first, grade later. Gemini latency/429/504 must NEVER block a student
+      // from submitting. Teachers can run AI analysis and approve scores afterwards.
 
       let submission = GradingService.gradeSubmission({
         assignment: currentAssignment, studentAnswers: answers, studentSolutions, essayImagesByQuestion,
         generalEssayImages: generalPdfImages, studentName, classId, className, startedAt, submittedAt,
-        tabSwitchCount, violationEvents, isShuffled: !isPdfMode, aiFeedbacks
+        tabSwitchCount, violationEvents, isShuffled: !isPdfMode,
+        requireVerifiedObjectiveKeys: true
       });
       setSubmissionStage('saving');
       // Catch a limit enabled by the teacher while an unlimited exam was being graded.
@@ -790,14 +765,18 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
         try { StorageService.saveSubmission(submission, { syncCloud: false }); }
         catch (error) { console.warn('Bài đã lưu trên cloud; không lưu được bản sao trên máy:', error); }
       } else {
-        // Retain the existing local/offline workflow for unlimited assignments.
-        try { await FirestoreService.saveResult(submission); }
-        catch (error) { console.warn('Lỗi lưu kết quả lên Firestore:', error); }
-        StorageService.saveSubmission(submission, { syncCloud: false });
+        // Do not show "submitted" unless the cloud has accepted this attempt.
+        // On failure the autosaved draft stays intact so the student can retry.
+        await FirestoreService.saveResult(submission);
+        try { StorageService.saveSubmission(submission, { syncCloud: false }); }
+        catch (error) { console.warn('Cloud đã lưu bài; chưa lưu được bản sao trên máy:', error); }
       }
 
-      try { useMistakeVaultStore.getState().addMistakesFromSubmission(submission, currentAssignment); }
-      catch (error) { console.warn('Lỗi tự động lưu vào Sổ tay câu sai:', error); }
+      // Do not mark provisional objective/essay answers as mistakes.
+      if (!submission.needsTeacherReview && !submission.isProvisional) {
+        try { useMistakeVaultStore.getState().addMistakesFromSubmission(submission, currentAssignment); }
+        catch (error) { console.warn('Lỗi tự động lưu vào Sổ tay câu sai:', error); }
+      }
       // Remove the draft only after the submission has been accepted.
       try { localStorage.removeItem(draftStorageKey); } catch { /* Optional local cleanup. */ }
       soundEffects.playSuccess();
@@ -878,7 +857,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
             <div className="w-14 h-14 rounded-2xl bg-indigo-600/30 text-indigo-400 flex items-center justify-center mx-auto border border-indigo-500/40 animate-pulse">
               <Sparkles className="w-8 h-8" />
             </div>
-            <h3 className="text-lg font-black">{submissionStage === 'checking' ? 'Đang kiểm tra lượt nộp...' : submissionStage === 'saving' ? 'Đang lưu bài nộp...' : 'Đang chấm bài...'}</h3>
+            <h3 className="text-lg font-black">{submissionStage === 'checking' ? 'Đang kiểm tra lượt nộp...' : submissionStage === 'saving' ? 'Đang lưu bài nộp...' : 'Đang ghi nhận bài làm...'}</h3>
             <div className="flex items-center justify-center space-x-2 text-indigo-400 text-xs font-bold pt-1">
               <Loader2 className="w-4 h-4 animate-spin" />
               <span>Vui lòng chờ</span>
