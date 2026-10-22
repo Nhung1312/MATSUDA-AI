@@ -768,7 +768,8 @@ export class FirestoreService {
       await setDoc(teacherDocRef, sanitizeForFirestore(payload), { merge: true });
       console.log(`[Firestore] Đã đồng bộ ${safeClasses.length} lớp học của giáo viên ${teacherId} lên Cloud.`);
     } catch (error) {
-      console.warn('[Firestore Error] Lỗi đồng bộ lớp học lên Firestore:', error);
+      console.error('[Firestore Error] Lỗi đồng bộ lớp học lên Firestore:', error);
+      throw error; // Do not report an unsuccessful Cloud save as successful.
     }
   }
 }

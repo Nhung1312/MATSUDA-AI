@@ -3,6 +3,7 @@ import { ClassRoom, Student, GradeLevel, Assignment, Submission } from '../../ty
 import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
 import { useAuth } from '../../context/AuthContext';
+import { auth } from '../../firebase';
 import { 
   Users, 
   Plus, 
@@ -40,12 +41,32 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
   const [showImportExcelModal, setShowImportExcelModal] = useState(false);
   const [showAddStudentModal, setShowAddStudentModal] = useState(false);
 
-  // Đồng bộ danh sách lớp lên Cloud Firestore của tài khoản Giáo viên
-  const syncToCloud = (updatedClasses: ClassRoom[]) => {
-    if (user?.uid) {
-      FirestoreService.saveTeacherClasses(user.uid, updatedClasses).catch(err => {
-        console.warn('Lỗi đồng bộ lớp học lên Firestore:', err);
-      });
+  const [savingClasses, setSavingClasses] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  // Signed-in teachers save the complete class roster to Cloud first.
+  // Browser storage is only a cache and must not block adding students.
+  const persistClasses = async (updatedClasses: ClassRoom[]): Promise<boolean> => {
+    if (savingClasses) return false;
+    setSavingClasses(true);
+    setSaveError('');
+    try {
+      if (user?.uid && auth.currentUser?.uid === user.uid) {
+        await FirestoreService.saveTeacherClasses(user.uid, updatedClasses);
+      } else if (user?.uid && user.uid !== 'teacher_preview_user') {
+        throw new Error('Firebase Authentication session is not active.');
+      } else {
+        // Keep local-only preview mode, but report quota errors truthfully.
+        StorageService.setClasses(updatedClasses);
+      }
+      onRefresh();
+      return true;
+    } catch (error) {
+      console.error('Saving student roster failed:', error);
+      setSaveError('Chưa lưu được lên Firebase. Danh sách hiện có không bị xóa. Kiểm tra mạng/quyền truy cập rồi thử lại.');
+      return false;
+    } finally {
+      setSavingClasses(false);
     }
   };
   
@@ -80,7 +101,7 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
     )
   );
 
-  const handleCreateClass = (e: React.FormEvent) => {
+  const handleCreateClass = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClassName.trim()) return;
     const duplicated = safeClasses.some(cls => normalizeKey(cls.name) === normalizeKey(newClassName) && normalizeKey(cls.academicYear) === normalizeKey(newAcademicYear));
@@ -99,24 +120,20 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
       createdAt: new Date().toISOString()
     };
 
-    StorageService.saveClass(newClass);
-    syncToCloud(StorageService.getClasses());
-    onRefresh();
+    if (!(await persistClasses([newClass, ...safeClasses]))) return;
     setSelectedClassId(newClass.id);
     setNewClassName('');
     setShowAddClassModal(false);
   };
 
-  const handleDeleteClass = (classId: string, className: string) => {
+  const handleDeleteClass = async (classId: string, className: string) => {
     const cls = safeClasses.find(c => c.id === classId);
     const linkedAssignments = safeAssignments.filter(a => a.classId === classId || a.classId === className || a.className === className);
     const assignmentKeys = new Set(linkedAssignments.flatMap(a => [a.id, a.assignmentCode].filter(Boolean)));
     const linkedSubmissions = safeSubmissions.filter(sub => sub.classId === classId || sub.className === className || assignmentKeys.has(sub.assignmentId));
     const warning = `Bạn có chắc muốn xóa lớp ${className}?\n\n• ${cls?.students?.length || 0} học sinh\n• ${linkedAssignments.length} bài đã giao liên quan\n• ${linkedSubmissions.length} bài nộp liên quan\n\nChỉ hồ sơ lớp và danh sách học sinh bị xóa; bài đã giao và bài nộp không bị xóa tự động.`;
     if (window.confirm(warning)) {
-      StorageService.deleteClass(classId);
-      syncToCloud(StorageService.getClasses());
-      onRefresh();
+      if (!(await persistClasses(safeClasses.filter(c => c.id !== classId)))) return;
       if (selectedClassId === classId) {
         const remaining = classes.filter(c => c.id !== classId);
         setSelectedClassId(remaining[0]?.id || '');
@@ -124,7 +141,7 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
     }
   };
 
-  const handleAddSingleStudent = (e: React.FormEvent) => {
+  const handleAddSingleStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentClass || !studentName.trim()) return;
     const students = currentClass.students || [];
@@ -149,24 +166,20 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
       students: [...(currentClass.students || []), newStudent]
     };
 
-    StorageService.saveClass(updatedClass);
-    syncToCloud(StorageService.getClasses());
-    onRefresh();
+    if (!(await persistClasses(safeClasses.map(c => c.id === updatedClass.id ? updatedClass : c)))) return;
     setStudentName('');
     setStudentCode('');
     setShowAddStudentModal(false);
   };
 
-  const handleDeleteStudent = (studentId: string) => {
+  const handleDeleteStudent = async (studentId: string) => {
     if (!currentClass) return;
     const updatedStudents = (currentClass.students || []).filter(s => s.id !== studentId);
     const updatedClass: ClassRoom = {
       ...currentClass,
       students: updatedStudents
     };
-    StorageService.saveClass(updatedClass);
-    syncToCloud(StorageService.getClasses());
-    onRefresh();
+    await persistClasses(safeClasses.map(c => c.id === updatedClass.id ? updatedClass : c));
   };
 
   const importPreview = useMemo(() => {
@@ -214,11 +227,10 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
     return { valid, skipped };
   }, [currentClass, excelPasteText]);
 
-  const handleImportExcel = () => {
+  const handleImportExcel = async () => {
     if (!currentClass || importPreview.valid.length === 0) return;
-    StorageService.saveClass({ ...currentClass, students: [...(currentClass.students || []), ...importPreview.valid] });
-    syncToCloud(StorageService.getClasses());
-    onRefresh();
+    const updatedClass = { ...currentClass, students: [...(currentClass.students || []), ...importPreview.valid] };
+    if (!(await persistClasses(safeClasses.map(c => c.id === updatedClass.id ? updatedClass : c)))) return;
     setExcelPasteText('');
     setShowImportExcelModal(false);
   };
@@ -230,6 +242,7 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
+      {saveError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-800">{saveError}</div>}
       {/* Header & Action */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -703,7 +716,7 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
                 </div>
               </div>
 
-              {studentFormError && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl">{studentFormError}</div>}
+              {(studentFormError || saveError) && <div role="alert" className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl">{studentFormError || saveError}</div>}
               <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
@@ -716,7 +729,7 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
                   type="submit"
                   className="px-5 py-2 text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm"
                 >
-                  Thêm học sinh
+                  {savingClasses ? 'Đang lưu Firebase...' : 'Thêm học sinh'}
                 </button>
               </div>
             </form>
@@ -776,10 +789,10 @@ export const TeacherClasses: React.FC<TeacherClassesProps> = ({ classes = [], as
               <button
                 type="button"
                 onClick={handleImportExcel}
-                disabled={!excelPasteText.trim() || importPreview.valid.length === 0}
+                disabled={savingClasses || !excelPasteText.trim() || importPreview.valid.length === 0}
                 className="px-5 py-2 text-sm font-bold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl shadow-sm"
               >
-                Nhập {importPreview.valid.length} học sinh
+                {savingClasses ? 'Đang lưu Firebase...' : `Nhập ${importPreview.valid.length} học sinh`}
               </button>
             </div>
           </div>
