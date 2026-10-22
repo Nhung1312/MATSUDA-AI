@@ -67,12 +67,13 @@ function Wrapper({loaded}:{loaded:boolean}){
     window.addEventListener('submissions-confirmed',listener);
     return()=>window.removeEventListener('submissions-confirmed',listener);
   },[]);
-  React.useEffect(()=>{if(loaded)void versionResult(latest).then(s=>setSubmissions([s]));},[loaded]);
+  React.useEffect(()=>{if(loaded)env.initialLoad=versionResult(latest).then(s=>setSubmissions([s]));},[loaded]);
   return React.createElement(TeacherResults,{assignments:loaded?[exam]:[],classes:[],submissions,
     initialAssignmentId:'ALIAS-A',initialSubmissionId:'s',initialPendingOnly:true,onOpenShare:()=>{}});
 }
 await act(async()=>{renderer=create(React.createElement(Wrapper,{loaded:false}));});
 await act(async()=>{renderer!.update(React.createElement(Wrapper,{loaded:true}));await new Promise<void>(resolve=>setImmediate(resolve));});
+await act(async()=>{await env.initialLoad;});
 assert.ok(renderer!.root.findAllByType('select').some(node=>node.props.value==='a'),'Alias resolves after the Cloud list arrives');
 for(const i of [0,1])assert.ok(renderer!.root.findAllByType('img').some(n=>n.props.src==='data:image/png;base64,ORIGINAL_'+i));
 assert.ok(JSON.stringify(renderer!.toJSON()).includes('Original step comment 0'));
@@ -80,14 +81,14 @@ assert.ok(JSON.stringify(renderer!.toJSON()).includes('Original student solution
 let scoreInputs=renderer!.root.findAll(n=>n.type==='input'&&n.props.type==='number');
 assert.equal(scoreInputs.length,2);
 await act(async()=>{scoreInputs[0].props.onChange({target:{value:'0.75'}});});
-await act(async()=>{buttons('Lưu')[0].props.onClick();await new Promise<void>(resolve=>setImmediate(resolve));});
+await act(async()=>{await buttons('Lưu')[0].props.onClick();await new Promise<void>(resolve=>setImmediate(resolve));});
 assert.equal(latest.answers[0].teacherScore,.75);assert.equal(env.saveCalls,1);
 await act(async()=>{buttons('✕')[0].props.onClick();});
 await act(async()=>{buttons('Xem bài')[0].props.onClick();});
 scoreInputs=renderer!.root.findAll(n=>n.type==='input'&&n.props.type==='number');
 assert.equal(scoreInputs[0].props.value,.75);
 await act(async()=>{scoreInputs[1].props.onChange({target:{value:'0.5'}});});
-await act(async()=>{buttons('Lưu').at(-1)!.props.onClick();await new Promise<void>(resolve=>setImmediate(resolve));});
+await act(async()=>{await buttons('Lưu').at(-1)!.props.onClick();await new Promise<void>(resolve=>setImmediate(resolve));});
 assert.equal(latest.answers[0].teacherScore,.75);assert.equal(latest.answers[1].teacherScore,.5);
 assert.deepEqual(latest.shuffledQuestions,original.shuffledQuestions);
 assert.deepEqual(latest.answers[0].essayImages,original.answers[0].essayImages);
@@ -97,7 +98,7 @@ const questionTwo=()=>renderer!.root.find(node=>node.props.id==='teacher-review-
 const saveQuestionTwo=()=>questionTwo().findAll(node=>node.type==='button'&&['Lưu','Đã lưu'].includes(label(node)))[0].props.onClick();
 env.deferNext=true;
 await act(async()=>{questionTwo().findAll(node=>node.type==='input'&&node.props.type==='number')[0].props.onChange({target:{value:'0.6'}});});
-await act(async()=>{saveQuestionTwo();await new Promise<void>(resolve=>setImmediate(resolve));});
+await act(async()=>{await saveQuestionTwo();await new Promise<void>(resolve=>setImmediate(resolve));});
 assert.ok(JSON.stringify(renderer!.toJSON()).includes('Fixture awaiting acknowledgement'));
 const late=await prepareResultWrite(latest,env.pending,{intent:'teacher',operationId:'late-op'});
 latest=late.record;
