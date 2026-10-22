@@ -14,6 +14,7 @@ import {
   serverTimestamp 
 } from '../firebase';
 import { Assignment, Submission, ClassRoom, ExamTemplate, Contest, ContestSubmission } from '../types';
+import { getDocFromServer, getDocsFromServer } from 'firebase/firestore';
 
 export const EXAMS_COLLECTION = 'exams';
 export const RESULTS_COLLECTION = 'results';
@@ -204,7 +205,7 @@ export class FirestoreService {
         collection(db, EXAMS_COLLECTION),
         where('teacherId', '==', teacherId)
       );
-      const querySnapshot = await getDocs(q);
+      const querySnapshot = strict ? await getDocsFromServer(q) : await getDocs(q);
       const map = new Map<string, Assignment>();
       querySnapshot.forEach((docSnap) => {
         map.set(docSnap.id, normalizeAssignmentDoc(docSnap.data(), docSnap.id));
@@ -217,7 +218,7 @@ export class FirestoreService {
             collection(db, EXAMS_COLLECTION),
             where('teacherEmail', '==', teacherEmail)
           );
-          const emailSnap = await getDocs(qEmail);
+          const emailSnap = strict ? await getDocsFromServer(qEmail) : await getDocs(qEmail);
           emailSnap.forEach((docSnap) => {
             if (!map.has(docSnap.id)) {
               map.set(docSnap.id, normalizeAssignmentDoc(docSnap.data(), docSnap.id));
@@ -225,6 +226,7 @@ export class FirestoreService {
           });
         } catch (emailErr) {
           console.warn('[Firestore] Query teacherEmail fallback non-fatal:', emailErr);
+          if (strict) throw emailErr;
         }
       }
 
@@ -266,7 +268,7 @@ export class FirestoreService {
   static async getAllResults(strict = false): Promise<Submission[]> {
     try {
       const q = query(collection(db, RESULTS_COLLECTION));
-      const querySnapshot = await getDocs(q);
+      const querySnapshot = strict ? await getDocsFromServer(q) : await getDocs(q);
       const results: Submission[] = [];
       querySnapshot.forEach((docSnap) => {
         results.push({
@@ -703,7 +705,7 @@ export class FirestoreService {
     if (!teacherId) return null;
     try {
       const teacherDocRef = doc(db, TEACHERS_COLLECTION, teacherId);
-      const snap = await getDoc(teacherDocRef);
+      const snap = strict ? await getDocFromServer(teacherDocRef) : await getDoc(teacherDocRef);
       if (snap.exists()) {
         const data = snap.data() || {};
         return {

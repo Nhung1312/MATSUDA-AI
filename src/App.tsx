@@ -458,17 +458,34 @@ function AppContent() {
             path="/teacher/*"
             element={
               <PrivateRoute>
-                <TeacherLayout
-                  classes={Array.isArray(classes) ? classes : []}
-                  assignments={Array.isArray(assignments) ? assignments : []}
-                  submissions={Array.isArray(submissions) ? submissions : []}
-                  onRefreshData={refreshAllData}
-                  onOpenShare={(asg) => setShareAssignment(asg)}
-                  onTestAssignment={handleTestAssignmentFromTeacher}
-                  onPreviewSubmission={handlePreviewSubmissionFromTeacher}
-                  onResetData={handleResetData}
-                  onClearDemoData={handleClearDemoData}
-                />
+                {verifiedUid && (syncState === 'loading' || syncState === 'idle') ? (
+                  <div className="mx-auto max-w-xl p-8 text-center text-slate-700" role="status">
+                    <div className="text-lg font-bold">Đang đồng bộ tài khoản giáo viên...</div>
+                    <p className="mt-3 text-sm">Chỉ hiển thị số liệu sau khi Firebase xác nhận. Chưa có kết quả tải không có nghĩa dữ liệu đã mất.</p>
+                  </div>
+                ) : verifiedUid && syncState === 'error' ? (
+                  <div className="mx-auto max-w-xl p-8 text-center text-slate-700" role="alert">
+                    <div className="text-lg font-bold text-amber-800">Không tải được dữ liệu mới từ Firebase</div>
+                    <p className="mt-3 text-sm">Không hiển thị số 0 giả khi mạng hoặc Firebase gặp lỗi. Dữ liệu trên Cloud chưa bị thay đổi.</p>
+                    <button
+                      type="button"
+                      className="mt-5 rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white"
+                      onClick={() => void refreshAllData()}
+                    >Tải lại dữ liệu Cloud</button>
+                  </div>
+                ) : (
+                  <TeacherLayout
+                    classes={Array.isArray(classes) ? classes : []}
+                    assignments={Array.isArray(assignments) ? assignments : []}
+                    submissions={Array.isArray(submissions) ? submissions : []}
+                    onRefreshData={refreshAllData}
+                    onOpenShare={(asg) => setShareAssignment(asg)}
+                    onTestAssignment={handleTestAssignmentFromTeacher}
+                    onPreviewSubmission={handlePreviewSubmissionFromTeacher}
+                    onResetData={handleResetData}
+                    onClearDemoData={handleClearDemoData}
+                  />
+                )}
               </PrivateRoute>
             }
           />
