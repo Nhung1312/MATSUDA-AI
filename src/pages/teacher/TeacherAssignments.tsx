@@ -273,12 +273,9 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">Quản lý bài tập & Đề thi</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Tạo mã bài tập, quản lý ngân hàng câu hỏi, lọc theo lớp học và chủ đề Đại số / Hình học.
-          </p>
+          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white">Quản lý bài tập & Đề thi</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -306,8 +303,8 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
       </div>
 
       {/* Advanced Filters & Search Bar */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-center">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 sm:p-4 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2 sm:gap-3 items-center">
           {/* Search Box */}
           <div className="relative lg:col-span-4">
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -691,7 +688,7 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
             return (
               <div
                 key={asg.id}
-                className={`bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 border shadow-xs hover:shadow-md transition-all flex flex-col justify-between ${
+                className={`bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border shadow-xs hover:shadow-md transition-all flex flex-col justify-between ${
                   isSelected
                     ? 'border-violet-500 dark:border-violet-500 ring-2 ring-violet-400/40 bg-violet-50/20 dark:bg-violet-950/20'
                     : 'border-slate-200 dark:border-slate-800'
@@ -719,13 +716,13 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
                         {isSelected ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : null}
                       </button>
 
-                      <span className="bg-indigo-100 dark:bg-indigo-950/80 text-indigo-800 dark:text-indigo-300 text-xs font-bold px-2.5 py-0.5 rounded-full">
+                      <span className="bg-indigo-100 dark:bg-indigo-950/80 text-indigo-800 dark:text-indigo-300 text-xs font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap">
                         Lớp {asg.grade}
                       </span>
-                      <span className="bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 text-xs font-bold px-2.5 py-0.5 rounded-full">
+                      <span className="bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 text-xs font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap">
                         {asg.className ? `Lớp ${asg.className}` : 'Tất cả học sinh'}
                       </span>
-                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${
                         isGeometry 
                           ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300'
                           : isStatistics
@@ -737,21 +734,21 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
 
                       {/* Huy hiệu trạng thái thẩm định */}
                       {(!asg.verificationStatus || asg.verificationStatus === 'unverified') && (
-                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 flex items-center gap-1 shadow-2xs" title="Đề chưa thẩm định. Thầy/Cô hãy bấm AI Thẩm định để đối soát">
+                        <span className="px-2.5 py-0.5 rounded-full whitespace-nowrap text-[11px] font-black bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800 flex items-center gap-1 shadow-2xs" title="Đề chưa thẩm định. Thầy/Cô hãy bấm AI Thẩm định để đối soát">
                           <AlertTriangle className="w-3 h-3 text-amber-600" />
                           <span>Chưa thẩm định</span>
                         </span>
                       )}
 
                       {asg.verificationStatus === 'needs_review' && (
-                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-rose-100 dark:bg-rose-950 text-rose-900 dark:text-rose-200 border border-rose-300 dark:border-rose-800 flex items-center gap-1 shadow-2xs" title="Đề có câu nghi vấn cần giáo viên xem lại">
+                        <span className="px-2.5 py-0.5 rounded-full whitespace-nowrap text-[11px] font-black bg-rose-100 dark:bg-rose-950 text-rose-900 dark:text-rose-200 border border-rose-300 dark:border-rose-800 flex items-center gap-1 shadow-2xs" title="Đề có câu nghi vấn cần giáo viên xem lại">
                           <AlertCircle className="w-3 h-3 text-rose-600 animate-pulse" />
                           <span>Cần xem lại</span>
                         </span>
                       )}
 
                       {asg.verificationStatus === 'verified' && (
-                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-100 dark:bg-emerald-950 text-emerald-900 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1 shadow-2xs" title="Đề đã được AI thẩm định và giáo viên xác nhận">
+                        <span className="px-2.5 py-0.5 rounded-full whitespace-nowrap text-[11px] font-black bg-emerald-100 dark:bg-emerald-950 text-emerald-900 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1 shadow-2xs" title="Đề đã được AI thẩm định và giáo viên xác nhận">
                           <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                           <span>Đã thẩm định</span>
                         </span>
@@ -759,7 +756,7 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
 
                       {/* MỚI: Huy hiệu nếu đề chưa có bảng đáp án chuẩn */}
                       {isUnsolved && (
-                        <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-800 flex items-center gap-1 shadow-2xs">
+                        <span className="px-2 py-0.5 rounded-full whitespace-nowrap text-[11px] font-black bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-800 flex items-center gap-1 shadow-2xs">
                           <Sparkles className="w-3 h-3 text-rose-600" />
                           <span>Chưa có đáp án</span>
                         </span>
@@ -806,18 +803,20 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
                     </div>
                   </div>
 
-                  <h3 className="font-bold text-lg text-slate-900 dark:text-white line-clamp-1 mt-1">{asg.title}</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">{asg.topic}</p>
+                  <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white line-clamp-2 break-words mt-1" title={asg.title}>{asg.title}</h3>
+                  {asg.topic && asg.topic.trim() !== 'Đại số & Hình học THCS' && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1" title={asg.topic}>{asg.topic}</p>
+                  )}
 
                   {/* Code chip */}
-                  <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800/80 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                  <div className="mt-3 p-3 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 block">Mã bài tập</span>
-                      <span className="font-mono font-extrabold text-indigo-900 dark:text-indigo-300 text-base">
+                      <span className="font-mono font-extrabold text-indigo-900 dark:text-indigo-300 text-sm sm:text-base break-all">
                         {asg.assignmentCode}
                       </span>
                     </div>
-                    <div className="flex items-center space-x-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <button
                         onClick={() => handleCopyCode(asg.assignmentCode)}
                         className="inline-flex items-center space-x-1 px-2.5 py-1 bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-200 hover:bg-indigo-50 dark:hover:bg-slate-600 border border-indigo-200 dark:border-slate-600 rounded-lg text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
