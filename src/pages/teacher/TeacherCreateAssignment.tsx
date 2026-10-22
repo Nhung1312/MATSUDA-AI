@@ -210,6 +210,18 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
 
   // --- BỘ CÔNG CỤ PHÂN BỔ ĐIỂM THÔNG MINH (1-CLICK) & TỔNG ĐIỂM MỤC TIÊU ---
   const [showPointDistributeModal, setShowPointDistributeModal] = useState(false);
+  const [fullScreenQuestionId, setFullScreenQuestionId] = useState<string | null>(null);
+  const [mcqGroupPoints, setMcqGroupPoints] = useState('0.25');
+  const [essayGroupPoints, setEssayGroupPoints] = useState('1.5');
+
+  useEffect(() => {
+    if (!fullScreenQuestionId) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFullScreenQuestionId(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [fullScreenQuestionId]);
   const [targetTotalPoints, setTargetTotalPoints] = useState<number>(() => {
     if (editingAssignment?.totalPoints && editingAssignment.totalPoints > 0) {
       return editingAssignment.totalPoints;
@@ -432,15 +444,26 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
   const scrollToQuestion = (questionId: string) => {
     setQuestionFilter('all');
     setHighlightedQuestionId(questionId);
-    setTimeout(() => {
-      const el = document.getElementById(`question-card-${questionId}`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }, 100);
-    setTimeout(() => {
-      setHighlightedQuestionId(null);
-    }, 3500);
+    setFullScreenQuestionId(questionId);
+  };
+
+  const applyGroupPoints = (group: 'mcq' | 'essay') => {
+    const raw = group === 'mcq' ? mcqGroupPoints : essayGroupPoints;
+    const amount = parseDecimalPoint(raw, NaN);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert('Điểm cần là số dương (tối đa 4 chữ số thập phân). Ví dụ 0,25; 0,5; 1,25.');
+      return;
+    }
+    const belongs = (q: Question) => group === 'essay'
+      ? isEssayQuestion(q)
+      : q.type === 'multiple_choice' && !isEssayQuestion(q);
+    const count = questions.filter(belongs).length;
+    if (!count) { alert('Không có câu hỏi thuộc nhóm đã chọn.'); return; }
+    const updated = questions.map(q => belongs(q) ? { ...q, points: amount } : q);
+    setQuestions(invalidateEditedVerification(updated, questions));
+    setImportSuccessAlert(
+      `Đã cập nhật ${count} câu ${group === 'mcq' ? 'trắc nghiệm' : 'tự luận'}: ${formatDecimalPoint(amount)}đ/câu. Tổng mới ${formatDecimalPoint(calculateQuestionsTotalPoints(updated))}/${formatDecimalPoint(targetTotalPoints)}đ. Bấm Lưu & tạo mã để lưu đề.`
+    );
   };
 
   // --- LOGIC XỬ LÝ TEXT MODE ---
@@ -1267,6 +1290,47 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
               </div>
             </div>
 
+            {/* Independent bulk scores: other types and the target total stay unchanged. */}
+            <div className="rounded-2xl border border-indigo-200 bg-white p-4 space-y-3">
+              <h3 className="text-base font-extrabold text-slate-900">Gán điểm hàng loạt theo dạng câu</h3>
+              <p className="text-xs text-slate-600">Chọn điểm/câu và bấm Áp dụng. Có thể chỉnh điểm riêng cho từng câu tự luận bên dưới.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {([
+                  { kind: 'mcq' as const, label: 'Trắc nghiệm A–D', value: mcqGroupPoints, setValue: setMcqGroupPoints, count: questions.filter(q => q.type === 'multiple_choice' && !isEssayQuestion(q)).length, presets: ['0.25','0.5','1'] },
+                  { kind: 'essay' as const, label: 'Tự luận', value: essayGroupPoints, setValue: setEssayGroupPoints, count: essayQuestionsCount, presets: ['0.5','1','1.5','2'] }
+                ]).map(group => (
+                  <div key={group.kind} className="rounded-xl bg-slate-50 p-3 space-y-2">
+                    <div className="flex justify-between text-sm font-bold text-slate-800">
+                      <span>{group.label}</span><span>{group.count} câu</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {group.presets.map(preset => (
+                        <button type="button" key={preset} onClick={() => group.setValue(preset)}
+                          className={group.value === preset
+                            ? 'rounded-lg bg-indigo-600 text-white px-3 py-2 text-sm font-bold'
+                            : 'rounded-lg border bg-white px-3 py-2 text-sm font-bold text-slate-800'}>
+                          {preset.replace('.', ',')}đ
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label htmlFor={'group-' + group.kind} className="text-xs font-bold">Điểm/câu</label>
+                      <input id={'group-' + group.kind} type="text" inputMode="decimal"
+                        value={group.value} onChange={e => group.setValue(e.target.value)}
+                        className="w-24 rounded-lg border px-2 py-2 text-base font-bold" />
+                      <button type="button" onClick={() => applyGroupPoints(group.kind)}
+                        disabled={group.count === 0}
+                        className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-40">Áp dụng</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="text-sm font-bold text-slate-700">Tổng: {formatDecimalPoint(actualTotalPoints)}/{formatDecimalPoint(targetTotalPoints)} điểm
+                {Math.abs(actualTotalPoints - targetTotalPoints) > 0.000001 && (
+                  <span className="ml-2 text-amber-800">⚠ Chưa khớp. Chỉnh từng câu hoặc dùng Phân phối điểm trước khi lưu.</span>
+                )}
+              </div>
+            </div>
             {/* Questions List */}
             <div className="space-y-4">
               {questions.filter((q) => {
@@ -1304,14 +1368,36 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
                       <div
                         key={q.id}
                         id={`question-card-${q.id}`}
-                        className={`bg-white rounded-3xl p-6 shadow-sm border transition-all duration-300 space-y-4 ${
-                          isHighlighted
-                            ? 'ring-4 ring-amber-400 border-amber-400 bg-amber-50/20'
-                            : isMissingImg
-                            ? 'border-amber-300 shadow-amber-50/50'
-                            : 'border-slate-200'
-                        }`}
+                        className={fullScreenQuestionId === q.id
+                          ? 'fixed inset-2 sm:inset-5 z-[90] max-h-[96vh] overflow-y-auto bg-white rounded-3xl p-4 sm:p-8 shadow-2xl border-2 border-indigo-300 space-y-5'
+                          : isMissingImg
+                            ? 'bg-white rounded-3xl p-6 shadow-sm border border-amber-300 space-y-4'
+                            : 'bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-4'}
                       >
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-indigo-50 p-3">
+                          <span className="text-sm font-extrabold text-indigo-900">
+                            {fullScreenQuestionId === q.id ? 'Cửa sổ chỉnh sửa riêng • Câu ' + (qIdx + 1) : 'Câu ' + (qIdx + 1)}
+                          </span>
+                          <div className="flex flex-wrap gap-2">
+                            {fullScreenQuestionId === q.id ? (
+                              <>
+                                <button type="button" disabled={qIdx === 0}
+                                  onClick={() => setFullScreenQuestionId(questions[qIdx - 1].id)}
+                                  className="rounded-lg border bg-white px-3 py-2 text-sm font-bold disabled:opacity-40">← Câu trước</button>
+                                <button type="button" disabled={qIdx === questions.length - 1}
+                                  onClick={() => setFullScreenQuestionId(questions[qIdx + 1].id)}
+                                  className="rounded-lg border bg-white px-3 py-2 text-sm font-bold disabled:opacity-40">Câu sau →</button>
+                                <button type="button" onClick={() => setFullScreenQuestionId(null)}
+                                  className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white">✓ Xong câu</button>
+                              </>
+                            ) : (
+                              <button type="button" onClick={() => scrollToQuestion(q.id)}
+                                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white">
+                                <span>⛶ Mở toàn màn hình</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
                         {/* Question Header */}
                         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -1419,7 +1505,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
                       </span>
                     </div>
                     <textarea
-                      rows={2}
+                      rows={6}
                       value={q.question}
                       onChange={(e) => handleUpdateQuestion(qIdx, { question: e.target.value })}
                       onPaste={async (e) => {
@@ -1443,7 +1529,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
                         }
                       }}
                       placeholder={isEssayQuestion(q) ? "Nhập đề bài tự luận Toán (ví dụ: a) Rút gọn biểu thức A; b) Tìm x để A > 0...)" : "Nhập đề bài Toán..."}
-                      className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-sm font-medium focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                      className="w-full p-4 bg-slate-50 border border-slate-300 rounded-xl text-base leading-relaxed font-medium focus:bg-white focus:ring-2 focus:ring-indigo-500"
                       required
                     />
 
@@ -1526,7 +1612,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
                         <span>Tiêu chí chấm điểm / Thang điểm chi tiết (Rubric để AI chấm):</span>
                       </label>
                       <textarea
-                        rows={2}
+                        rows={5}
                         value={q.rubric || ''}
                         onChange={(e) => handleUpdateQuestion(qIdx, { rubric: e.target.value })}
                         placeholder="Ví dụ: - Rút gọn đúng mẫu số: +0.5đ; - Biến đổi đúng tử: +0.5đ; - Kết luận: +0.5đ"
