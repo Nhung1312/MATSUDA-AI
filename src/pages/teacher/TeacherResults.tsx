@@ -54,6 +54,9 @@ interface TeacherResultsProps {
   classes: ClassRoom[];
   submissions: Submission[];
   initialAssignmentId?: string;
+  initialSubmissionId?: string;
+  initialPendingOnly?: boolean;
+  onRefreshData?: () => void;
   onOpenShare: (assignment: Assignment) => void;
   onNavigate?: (tab: string, params?: any) => void;
 }
@@ -63,6 +66,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   classes = [],
   submissions = [],
   initialAssignmentId,
+  initialSubmissionId,
+  initialPendingOnly = false,
+  onRefreshData,
   onOpenShare,
   onNavigate
 }) => {
@@ -73,12 +79,18 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   const [selectedAsgId, setSelectedAsgId] = useState<string>(
     initialAssignmentId || safeAssignments[0]?.id || ''
   );
-  const [activeTab, setActiveTab] = useState<'leaderboard' | 'competency' | 'analysis' | 'submissions' | 'unsubmitted'>('leaderboard');
+  const [activeTab, setActiveTab] = useState<'leaderboard' | 'competency' | 'analysis' | 'submissions' | 'unsubmitted'>(
+    initialPendingOnly ? 'submissions' : 'leaderboard'
+  );
   const [sortBy, setSortBy] = useState<'name' | 'score' | 'time' | 'submittedAt'>('score');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [searchStudent, setSearchStudent] = useState('');
-  const [submissionReviewFilter, setSubmissionReviewFilter] = useState<'all' | 'pending' | 'final'>('all');
-  const [selectedSubmissionDetail, setSelectedSubmissionDetail] = useState<Submission | null>(null);
+  const [submissionReviewFilter, setSubmissionReviewFilter] = useState<'all' | 'pending' | 'final'>(
+    initialPendingOnly ? 'pending' : 'all'
+  );
+  const [selectedSubmissionDetail, setSelectedSubmissionDetail] = useState<Submission | null>(
+    initialSubmissionId ? safeSubmissions.find(s => s.id === initialSubmissionId) || null : null
+  );
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showSimilarExamModal, setShowSimilarExamModal] = useState(false);
 
@@ -717,6 +729,16 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
 
         {/* Assignment Picker & Quick Action */}
         <div className="flex flex-wrap items-center gap-2">
+          {onRefreshData && (
+            <button
+              type="button"
+              onClick={() => onRefreshData()}
+              className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5 text-xs font-bold text-indigo-800 hover:bg-indigo-100"
+              title="Đọc lại bài nộp mới từ Firebase"
+            >
+              ↻ Đồng bộ kết quả
+            </button>
+          )}
           <div className="flex items-center space-x-2">
             <label className="text-xs font-bold text-slate-600 shrink-0">Chọn bài tập:</label>
             <select
