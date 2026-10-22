@@ -1,3 +1,4 @@
+import { saveContestSubmissionConfirmed } from '../../../services/submissionSaveService';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
@@ -71,6 +72,7 @@ export const ContestExamPage: React.FC = () => {
   const [showScratchpad, setShowScratchpad] = useState(false);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const pendingContestSubmission = useRef<import('../../../types').ContestSubmission | null>(null);
   const isSubmittingRef = useRef<boolean>(false);
   const effectiveEndMsRef = useRef<number>(0);
   const [lastSavedTime, setLastSavedTime] = useState<string>('');
@@ -371,7 +373,7 @@ export const ContestExamPage: React.FC = () => {
 
     try {
       const submittedAt = new Date().toISOString();
-      const submission = GradingService.gradeContestSubmission({
+      const submission = pendingContestSubmission.current || GradingService.gradeContestSubmission({
         contest: { ...c, questions: qList },
         studentAnswers: ans,
         studentSolutions: sol,
@@ -386,11 +388,15 @@ export const ContestExamPage: React.FC = () => {
       });
 
       // Lưu Local & Firestore
-      StorageService.saveContestSubmission(submission);
-      await FirestoreService.saveContestSubmission(submission);
+      const saved = await saveContestSubmissionConfirmed(submission, { intent: 'student' });
+      if (!saved.cloudSaved) {
+        pendingContestSubmission.current = saved.pendingSubmission || submission;
+        throw new Error(saved.error || 'Firebase chưa xác nhận bài thi. Nộp lại dùng đúng ID cũ.');
+      }
+      pendingContestSubmission.current = null;
 
       // Xóa draft
-      localStorage.removeItem(draftKey);
+      try { localStorage.removeItem(draftKey); } catch {}
 
       navigate(`/contest/${c.code}/result/${submission.id}`);
     } catch (e) {
@@ -409,7 +415,7 @@ export const ContestExamPage: React.FC = () => {
 
     try {
       const submittedAt = new Date().toISOString();
-      const submission = GradingService.gradeContestSubmission({
+      const submission = pendingContestSubmission.current || GradingService.gradeContestSubmission({
         contest: { ...contest, questions: examQuestions },
         studentAnswers: answers,
         studentSolutions: solutions,
@@ -423,10 +429,14 @@ export const ContestExamPage: React.FC = () => {
         isShuffled: contest.shuffleQuestions || contest.shuffleOptions
       });
 
-      StorageService.saveContestSubmission(submission);
-      await FirestoreService.saveContestSubmission(submission);
+      const saved = await saveContestSubmissionConfirmed(submission, { intent: 'student' });
+      if (!saved.cloudSaved) {
+        pendingContestSubmission.current = saved.pendingSubmission || submission;
+        throw new Error(saved.error || 'Firebase chưa xác nhận bài thi. Nộp lại dùng đúng ID cũ.');
+      }
+      pendingContestSubmission.current = null;
 
-      localStorage.removeItem(draftKey);
+      try { localStorage.removeItem(draftKey); } catch {}
       navigate(`/contest/${contest.code}/result/${submission.id}`);
     } catch (e) {
       isSubmittingRef.current = false;

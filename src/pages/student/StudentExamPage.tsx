@@ -1,3 +1,4 @@
+import { saveSubmissionConfirmed } from '../../services/submissionSaveService';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Assignment, Submission, ViolationEvent, Question } from '../../types';
 import { MathDisplay } from '../../components/MathDisplay';
@@ -761,32 +762,25 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
   };
 
   const saveToCloudAndFinish = async (submission: Submission): Promise<boolean> => {
-    try {
-      await FirestoreService.saveResult(submission);
-    } catch (error) {
-      // Local backup is optional. A browser quota error must not mask Cloud failure.
-      try { StorageService.saveSubmission(submission, { syncCloud: false }); }
-      catch (cacheError) { console.warn('Không thể lưu bản dự phòng trên máy:', cacheError); }
-      console.warn('Lưu bài nộp lên Firebase chưa thành công:', error);
+    const saved = await saveSubmissionConfirmed(submission, { intent: 'student' });
+    if (!saved.cloudSaved) {
+      pendingCloudSubmissionRef.current = saved.pendingSubmission || submission;
       setIsSubmittingWithAI(false);
       isSubmittingRef.current = false;
-      alert('CHƯA NỘP THÀNH CÔNG: Firebase chưa xác nhận đã nhận bài. Đáp án vẫn ở trang này. Kiểm tra mạng rồi bấm Nộp bài một lần nữa để gửi lại chính bài cũ, không chấm AI lần nữa. Đừng đóng trang.');
+      alert('CHƯA NỘP THÀNH CÔNG: ' + (saved.error || 'Firebase chưa xác nhận đã nhận bài.')
+        + ' Bấm Nộp bài lần nữa để gửi lại đúng bài cũ, không chấm AI lại.'
+        + (saved.localSaved ? ' Bản gửi được giữ trên máy.' : ' Giữ trang này vì chưa lưu được bản dự phòng.'));
       return false;
     }
-
-    // Cloud confirmed; an optional local cache failure is not a failed submission.
-    try { StorageService.saveSubmission(submission, { syncCloud: false }); }
-    catch (cacheError) { console.warn('Bộ nhớ trình duyệt đầy; bài vẫn đã lưu trên Firebase:', cacheError); }
+    const confirmed = saved.submission || submission;
     try { localStorage.removeItem(draftStorageKey); } catch {}
     pendingCloudSubmissionRef.current = null;
-
-    try { useMistakeVaultStore.getState().addMistakesFromSubmission(submission, currentAssignment); }
+    try { useMistakeVaultStore.getState().addMistakesFromSubmission(confirmed, currentAssignment); }
     catch (error) { console.warn('Không lưu được sổ tay câu sai:', error); }
-
     soundEffects.playSuccess();
     setIsSubmittingWithAI(false);
     isSubmittingRef.current = false;
-    onFinishExam(submission);
+    onFinishExam(confirmed);
     return true;
   };
 

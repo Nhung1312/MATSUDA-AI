@@ -1,3 +1,4 @@
+import { saveContestSubmissionConfirmed } from '../../../services/submissionSaveService';
 import React, { useState, useEffect } from 'react';
 import { 
   Contest, 
@@ -364,16 +365,11 @@ export const TeacherContestResults: React.FC<TeacherContestResultsProps> = ({
           isEssayGraded: !submissionNeedsReview
         };
 
-        StorageService.saveContestSubmission(updatedSub);
-        await FirestoreService.updateContestSubmission(updatedSub.id, {
-          answers: updatedAnswers,
-          essayScore: newEssayScore,
-          mcqScore: newMcqScore,
-          totalScore: newTotalScore,
-          isEssayGraded: !submissionNeedsReview
-        });
+        const saved = await saveContestSubmissionConfirmed(updatedSub, { intent: 'teacher' });
+        if (!saved.cloudSaved) throw new Error(saved.error || 'Chưa xác nhận lưu điểm cuộc thi.');
+        const confirmed = saved.submission || updatedSub;
 
-        updatedSubmissionsList = updatedSubmissionsList.map(s => s.id === updatedSub.id ? updatedSub : s);
+        updatedSubmissionsList = updatedSubmissionsList.map(s => s.id === updatedSub.id ? confirmed : s);
         successCount++;
       }
 
@@ -462,17 +458,12 @@ export const TeacherContestResults: React.FC<TeacherContestResultsProps> = ({
       };
 
       // 3. Cập nhật Local & Firestore
-      StorageService.saveContestSubmission(updatedSub);
-      await FirestoreService.updateContestSubmission(updatedSub.id, {
-        answers: updatedAnswers,
-        essayScore: newEssayScore,
-        mcqScore: newMcqScore,
-        totalScore: newTotalScore,
-        isEssayGraded: allEssayDone
-      });
+      const saved = await saveContestSubmissionConfirmed(updatedSub, { intent: 'teacher' });
+      if (!saved.cloudSaved) throw new Error(saved.error || 'Chưa xác nhận lưu điểm cuộc thi.');
+      const confirmed = saved.submission || updatedSub;
 
-      setGradingSubmission(updatedSub);
-      setSubmissions(prev => rankContestSubmissions(prev.map(s => s.id === updatedSub.id ? updatedSub : s)));
+      setGradingSubmission(confirmed);
+      setSubmissions(prev => rankContestSubmissions(prev.map(s => s.id === updatedSub.id ? confirmed : s)));
       alert('Đã cập nhật điểm tự luận thành công!');
     } catch (e) {
       alert('Lỗi lưu điểm tự luận: ' + String(e));

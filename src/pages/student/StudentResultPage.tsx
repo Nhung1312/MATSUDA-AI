@@ -1,3 +1,4 @@
+import { saveSubmissionConfirmed } from '../../services/submissionSaveService';
 import React, { useState, useEffect } from 'react';
 import { Submission, Assignment, Question } from '../../types';
 import { GradingService } from '../../services/gradingService';
@@ -58,6 +59,14 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   isDemoPreview = false,
   isTeacherPreview = false
 }) => {
+  const [pendingResultSave, setPendingResultSave] = useState<Submission | null>(null);
+  const retryResultSave = async () => {
+    if (!pendingResultSave) return;
+    const saved = await saveSubmissionConfirmed(pendingResultSave, { intent: 'student' });
+    if (saved.cloudSaved && saved.submission) { setSubmission(saved.submission); setPendingResultSave(null); }
+    setAiActionMessage({ type: saved.cloudSaved ? 'success' : 'error', text: saved.cloudSaved
+      ? 'Firebase đã xác nhận kết quả.' : (saved.error || 'Chưa lưu được kết quả.') });
+  };
   const [submission, setSubmission] = useState<Submission>(initialSubmission);
   const effectiveReviewMode: 'score_only' | 'wrong_only' | 'full' =
     isTeacherPreview || isDemoPreview
@@ -77,7 +86,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   const [loadingAi, setLoadingAi] = useState<Record<string, boolean>>({});
   const [aiGradingFeedback, setAiGradingFeedback] = useState<Record<string, { score: number; feedback: string }>>({});
   const [loadingAiGrading, setLoadingAiGrading] = useState<Record<string, boolean>>({});
-  const [aiActionMessage, setAiActionMessage] = useState<{ type: 'warning' | 'error'; text: string } | null>(null);
+  const [aiActionMessage, setAiActionMessage] = useState<{ type: 'warning' | 'error' | 'success'; text: string } | null>(null);
 
   // Lightbox modal state
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
@@ -126,6 +135,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   }, [submission.id]);
 
   const handleAnalyzeStepByStep = async (question: Question, studentSolutionText?: string, images?: string[]) => {
+    if (pendingResultSave) { setAiActionMessage({ type: 'error', text: 'Cần thử lưu lại bản phân tích đang chờ trước khi phân tích câu khác.' }); return; }
     setLoadingStepGrading(prev => ({ ...prev, [question.id]: true }));
     try {
       const res = await stepGradingService.analyzeStepByStep({
@@ -222,8 +232,12 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
       setSubmission(updatedSub);
       if (!isDemoPreview && !isTeacherPreview) {
-        StorageService.saveSubmission(updatedSub);
-        FirestoreService.saveResult(updatedSub).catch(() => {});
+        const saved = await saveSubmissionConfirmed(updatedSub, { intent: 'student' });
+        if (saved.cloudSaved && saved.submission) setSubmission(saved.submission);
+        else {
+          setPendingResultSave(saved.pendingSubmission || updatedSub);
+          setAiActionMessage({ type: 'error', text: saved.error || 'Firebase chưa xác nhận kết quả. Có thể thử lưu lại, không cần chấm AI lại.' });
+        }
         if (updatedSub.wrongCount > 0) {
           useMistakeVaultStore.getState().addMistakesFromSubmission(updatedSub, assignment);
         }
@@ -410,6 +424,10 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-16">
       <div className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-8 space-y-4 sm:space-y-6">
+        {pendingResultSave && <div role="alert" className="bg-amber-50 border border-amber-300 p-3 rounded-xl text-sm">
+          Kết quả phân tích chưa được Firebase xác nhận.
+          <button type="button" className="ml-2 underline font-bold" onClick={() => void retryResultSave()}>Thử lưu lại</button>
+        </div>}
         
         {isTeacherPreview && !isDemoPreview && (
           <div className="print:hidden bg-sky-50 border border-sky-200 rounded-2xl px-4 py-2.5 text-left flex items-center gap-2">

@@ -4,7 +4,9 @@ import { GradingService } from '../../services/gradingService';
 import { aiService } from '../../services/aiService';
 import { stepGradingService } from '../../services/stepGradingService';
 import { downloadSubmissionExport } from '../../services/submissionExportService';
-import { saveSubmissionConfirmed, type SubmissionSaveResult } from '../../services/submissionSaveService';
+import { saveSubmissionConfirmed, listPendingResultSaves, type SubmissionSaveResult } from '../../services/submissionSaveService';
+import { FirestoreService } from '../../services/firestoreService';
+import type { PendingResult } from '../../services/pendingResultStore';
 import { StorageService } from '../../services/storageService';
 import { MathDisplay } from '../../components/MathDisplay';
 import { StepGradingBreakdown } from '../../components/StepGradingBreakdown';
@@ -132,6 +134,31 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   const pendingCloudSave = useRef<Submission | null>(null);
   const [savingSubmission, setSavingSubmission] = useState(false);
   const [reviewSaveNotice, setReviewSaveNotice] = useState<{ submissionId: string; text: string; warning: boolean } | null>(null);
+  const [recoverableSaves, setRecoverableSaves] = useState<PendingResult[]>([]);
+  const openedInitial = useRef('');
+  useEffect(() => {
+    const key = [initialAssignmentId, initialSubmissionId, initialPendingOnly].join(':');
+    if (openedInitial.current === key) return;
+    const target = safeSubmissions.find(s => s.id === initialSubmissionId);
+    if (initialSubmissionId && !target) return;
+    const normalize = (id: string) => id.replace(/\s+/g, '').toUpperCase();
+    const assignmentKey = target?.assignmentId || initialAssignmentId;
+    const exam = safeAssignments.find(a => [a.id, a.assignmentCode || ''].some(id => normalize(id) === normalize(assignmentKey || '')));
+    if (assignmentKey && !exam) return;
+    if (exam) setSelectedAsgId(exam.id);
+    if (target) setSelectedSubmissionDetail(target);
+    if (initialPendingOnly) { setActiveTab('submissions'); setSubmissionReviewFilter('pending'); }
+    openedInitial.current = key;
+  }, [initialAssignmentId, initialSubmissionId, initialPendingOnly, safeAssignments, safeSubmissions]);
+  useEffect(() => {
+    let live = true;
+    const loadPending = () => { void listPendingResultSaves().then(records => {
+      if (live) setRecoverableSaves(records.filter(r => r.kind === 'result'));
+    }).catch(() => {}); };
+    loadPending();
+    window.addEventListener('submissions-confirmed', loadPending);
+    return () => { live = false; window.removeEventListener('submissions-confirmed', loadPending); };
+  }, []);
   const reviewBusy = savingSubmission || gradingSingleInProgress || Object.values(gradingAiInProgress).some(Boolean);
 
   const currentAssignment = safeAssignments.find(a => a.id === selectedAsgId) || safeAssignments[0];
@@ -319,20 +346,46 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   };
 
   const showSubmissionSaveResult = (submission: Submission, result: SubmissionSaveResult) => {
-    pendingCloudSave.current = result.cloudSaved ? null : submission;
-    setReviewSaveNotice({ submissionId: submission.id, warning: !result.cloudSaved || !result.localSaved,
+    pendingCloudSave.current = result.cloudSaved ? null : (result.pendingSubmission || submission);
+    if (result.cloudSaved && result.submission) setSelectedSubmissionDetail(result.submission);
+    setReviewSaveNotice({ submissionId: submission.id, warning: !result.cloudSaved,
       text: result.cloudSaved
-        ? (result.localSaved ? 'Đã lưu trên máy và đồng bộ lên cloud.' : 'Đã lưu lên cloud; chưa lưu được bản trên máy.')
-        : result.localSaved
-          ? 'Đã lưu trên máy, chưa xác nhận lưu lên cloud. Bấm Lưu lại để đồng bộ; không cần chấm AI lại.'
-          : 'Chưa lưu được kết quả trên máy hoặc cloud. Giữ cửa sổ này và bấm Lưu lại.' });
+        ? 'Đã đọc lại và xác nhận kết quả trên Firebase.'
+        : (result.error || 'Firebase chưa xác nhận lưu. Bấm Lưu lại; không cần chấm AI lại.')
+          + (result.localSaved ? ' Bản gửi đã được giữ trên máy.' : ' Chưa có bản dự phòng trên máy; giữ cửa sổ này.') });
   };
 
   const persistReviewSubmission = async (submission: Submission) => {
-    setReviewSaveNotice({ submissionId: submission.id, warning: false, text: 'Đang lưu kết quả và xác nhận đồng bộ cloud...' });
-    const result = await saveSubmissionConfirmed(submission);
+    // An unconfirmed earlier edit must be resolved before making a new attempt.
+    if (pendingCloudSave.current && pendingCloudSave.current !== submission) {
+      const result: SubmissionSaveResult = { localSaved: false, cloudSaved: false,
+        pendingSubmission: pendingCloudSave.current, error: 'Còn bản chưa xác nhận. Bấm Lưu lại hoặc tải bản Firebase trước khi duyệt tiếp.' };
+      setReviewSaveNotice({ submissionId: submission.id, warning: true, text: result.error! });
+      return result;
+    }
+    setReviewSaveNotice({ submissionId: submission.id, warning: false, text: 'Đang lưu kết quả và đọc lại từ Firebase...' });
+    const result = await saveSubmissionConfirmed(submission, { intent: 'teacher' });
     showSubmissionSaveResult(submission, result);
+    void listPendingResultSaves().then(records => setRecoverableSaves(records.filter(r => r.kind === 'result'))).catch(() => {});
     return result;
+  };
+
+  const reloadSelectedFromCloud = async () => {
+    if (!selectedSubmissionDetail || reviewOperationLock.current) return;
+    reviewOperationLock.current = true;
+    setSavingSubmission(true);
+    try {
+      const latest = await FirestoreService.getResultById(selectedSubmissionDetail.id) as Submission | null;
+      if (!latest) throw new Error('Không đọc được bài từ Firebase. Bản đang mở được giữ nguyên.');
+      pendingCloudSave.current = null; // IndexedDB still retains the earlier attempt for reconciliation.
+      editedTeacherInputs.current.clear();
+      setTeacherScoreInput({});
+      setTeacherFeedbackInput({});
+      setSelectedSubmissionDetail(latest);
+      setReviewSaveNotice({ submissionId: latest.id, warning: false, text: 'Đã mở bản mới từ Firebase. Bản gửi cũ vẫn được giữ để đối chiếu; hãy nhập lại câu cần duyệt.' });
+    } catch (error) {
+      setReviewSaveNotice({ submissionId: selectedSubmissionDetail.id, warning: true, text: String(error) });
+    } finally { reviewOperationLock.current = false; setSavingSubmission(false); }
   };
 
   const retrySubmissionSave = async () => {
@@ -346,6 +399,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
 
   // On-demand AI Essay Grading for a single question (Step-by-step)
   const handleAiGradeSingleQuestion = async (ans: StudentAnswer, question: any) => {
+    if (pendingCloudSave.current) { setActionNotice({ type: 'error', text: 'Còn bản chưa xác nhận. Lưu lại hoặc tải bản Firebase để đối chiếu trước khi duyệt tiếp.' }); return; }
     if (!selectedSubmissionDetail || !currentAssignment || reviewOperationLock.current) return;
     reviewOperationLock.current = true;
     const reference = getEssayGradingReference(currentAssignment.questions.find(q => q.id === question.id) || question);
@@ -494,6 +548,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
 
   // Chấm AI toàn bộ bài nộp của 1 học sinh bằng lõi duy nhất GradingService.gradeSingleSubmissionWithAI
   const handleGradeEntireSingleSubmission = async (sub: Submission) => {
+    if (pendingCloudSave.current) { setActionNotice({ type: 'error', text: 'Còn bản chưa xác nhận. Lưu lại hoặc tải bản Firebase để đối chiếu trước khi duyệt tiếp.' }); return; }
     if (!currentAssignment || reviewOperationLock.current) return;
     reviewOperationLock.current = true;
     setGradingSingleInProgress(true);
@@ -520,6 +575,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
 
   // Teacher manual override score and comment
   const handleSaveTeacherManualGrade = async (ans: StudentAnswer, question: any) => {
+    if (pendingCloudSave.current) { setActionNotice({ type: 'error', text: 'Còn bản chưa xác nhận. Lưu lại hoặc tải bản Firebase để đối chiếu trước khi duyệt tiếp.' }); return; }
     if (!selectedSubmissionDetail || !currentAssignment || reviewOperationLock.current) return;
     reviewOperationLock.current = true;
     setSavingSubmission(true);
@@ -619,6 +675,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   };
 
   const finalizeSubmission = async (openNext: boolean) => {
+    if (pendingCloudSave.current) { setActionNotice({ type: 'error', text: 'Cần xác nhận bản đang chờ trước khi chốt điểm.' }); return; }
     if (!selectedSubmissionDetail || reviewOperationLock.current) return;
     const pending = getPendingReviewCount(selectedSubmissionDetail);
     if (pending > 0) return;
@@ -642,7 +699,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
         setSelectedSubmissionDetail(next);
         setSubmissionReviewFilter('pending');
       } else {
-        setSelectedSubmissionDetail(finalized);
+        setSelectedSubmissionDetail(saved.submission || finalized);
       }
     } finally { reviewOperationLock.current = false; setSavingSubmission(false); }
   };
@@ -716,6 +773,23 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200 pb-12">
+      {recoverableSaves.length > 0 && (
+        <div role="status" className="p-3 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 text-sm">
+          Có {recoverableSaves.length} bản gửi chưa xác nhận trên máy. Mở để kiểm tra và thử lưu lại; hệ thống không tự gửi.
+          <div className="flex flex-wrap gap-2 mt-2">{recoverableSaves.map(record => (
+            <button type="button" key={record.operationId} disabled={reviewBusy}
+              className="underline font-bold" onClick={() => {
+                const sub = record.submission as Submission;
+                const exam = safeAssignments.find(a => a.id === sub.assignmentId || a.assignmentCode === sub.assignmentId);
+                if (!exam) return;
+                setSelectedAsgId(exam.id);
+                setSelectedSubmissionDetail(sub);
+                pendingCloudSave.current = sub;
+                setReviewSaveNotice({ submissionId: sub.id, warning: true, text: 'Bản gửi chưa xác nhận. Lưu lại dùng đúng ID cũ; tải bản Firebase để đối chiếu nếu có xung đột.' });
+              }}>{record.submission.studentName} — {new Date(record.savedAt).toLocaleString('vi-VN')}</button>
+          ))}</div>
+        </div>
+      )}
       {/* Header & Assignment Selector */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
@@ -1910,6 +1984,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
             {reviewSaveNotice?.submissionId === selectedSubmissionDetail.id && (
               <div role="status" className={`mb-3 p-3 rounded-xl text-sm ${reviewSaveNotice.warning ? 'bg-amber-50 text-amber-900 border border-amber-200' : 'bg-emerald-50 text-emerald-900 border border-emerald-200'}`}>
                 {reviewSaveNotice.text}
+                {reviewSaveNotice.warning && (
+                  <button type="button" disabled={reviewBusy} onClick={reloadSelectedFromCloud} className="ml-2 underline font-bold disabled:opacity-50">Tải bản Firebase để đối chiếu</button>
+                )}
                 {reviewSaveNotice.warning && pendingCloudSave.current?.id === selectedSubmissionDetail.id && (
                   <button type="button" disabled={reviewBusy} onClick={retrySubmissionSave} className="ml-2 underline font-bold disabled:opacity-50">Lưu lại</button>
                 )}
@@ -2043,7 +2120,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                 const isEssay = isEssayQuestion(question);
                 const reference = getEssayGradingReference(currentAssignment.questions.find(q => q.id === question.id) || question);
                 const isCorrect = ans.isCorrect;
-                const images = ans.essayImages || [];
+                const images = ans.essayImages?.length ? ans.essayImages : (selectedSubmissionDetail.submissionSource === 'paper' ? selectedSubmissionDetail.essayImages || [] : []);
                 const isLoadingAI = !!gradingAiInProgress[ans.questionId];
                 const isSaved = !!savedGradeSuccess[ans.questionId];
                 const isPendingReview = isAnswerPendingTeacherReview(selectedSubmissionDetail, ans);
@@ -2490,7 +2567,14 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
           onSubmissionsUpdated={(updatedList, options) => {
             // The grading core has already saved its updated records. Rewriting
             // the entire old list could restore another student's stale score.
-            if (!options?.cloudHandled) updatedList.forEach(s => StorageService.saveSubmission(s));
+            if (!options?.cloudHandled) {
+              const oldIds = new Set(currentSubmissions.map(s => s.id));
+              updatedList.filter(s => !oldIds.has(s.id)).forEach(s => {
+                void saveSubmissionConfirmed(s, { intent: 'teacher' }).then(result => {
+                  if (!result.cloudSaved) setActionNotice({ type: 'error', text: result.error || 'Chưa xác nhận lưu bài giấy.' });
+                });
+              });
+            }
             // Cập nhật state nếu cần
             window.dispatchEvent(new CustomEvent('submissions-updated'));
           }}

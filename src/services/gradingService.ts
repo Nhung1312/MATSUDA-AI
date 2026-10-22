@@ -960,7 +960,7 @@ export class GradingService {
 
     return {
       success: true,
-      submission: updatedSubmission,
+      submission: persistence.submission || updatedSubmission,
       hasErrors: totalErrorsCount > 0,
       needsTeacherReview: overallNeedsReview,
       totalErrors: totalErrorsCount,

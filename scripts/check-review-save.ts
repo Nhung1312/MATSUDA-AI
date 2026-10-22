@@ -36,7 +36,7 @@ const response = (score: number) => ({ success: true, analysisSource: 'ai', anal
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
 let cloudCalls: any[] = [];
 let cloud: (submission: any) => Promise<void> = async () => {};
-FirestoreService.saveResult = async submission => { cloudCalls.push(clone(submission)); await cloud(submission); };
+FirestoreService.saveResult = async submission => { cloudCalls.push(clone(submission)); await cloud(submission); return { ...submission, saveBaseFingerprint: 'offline-confirmed-fixture' }; };
 
 function harness(initial: any, questions: any[]) {
   const state: any = { selected: initial, inputs: {}, feedback: {}, saved: {}, lock: { current: false }, dirty: { current: new Set<string>() }, pending: { current: null }, notice: null, aiCalls: 0, wholeCalls: 0 };

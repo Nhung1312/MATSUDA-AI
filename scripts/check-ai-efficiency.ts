@@ -258,7 +258,7 @@ try {
   const oldCloudSave = FirestoreService.saveResult;
   try {
     StorageService.saveSubmission = () => undefined;
-    FirestoreService.saveResult = async () => undefined;
+    FirestoreService.saveResult = async submission => ({ ...submission, saveRevision: 1, saveBaseFingerprint: 'offline-confirmed-fixture' });
     const essay: Question = { id: 'manual_essay', order: 1, question: request.questionText, type: 'essay', options: [], correctAnswer: 'x = 3', rubric: request.rubric, points: 0.2 };
     const submission = { id: 'offline_submission', studentName: 'HS mẫu', totalScore: 0.1, maxScore: 0.2, answers: [{ questionId: essay.id, selectedAnswer: '', studentSolutionText: 'x = 3', pointsEarned: 0.1, teacherScore: 0.1, teacherReviewed: true, teacherFeedback: 'Điểm giáo viên đã duyệt.', maxPoints: 0.2, isCorrect: false }] } as Submission;
     before = providerCalls;

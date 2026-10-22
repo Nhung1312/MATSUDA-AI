@@ -1,3 +1,4 @@
+import { buildTeacherBackup } from '../../services/teacherBackupService';
 import React, { useState, useEffect } from 'react';
 import { Assignment } from '../../types';
 import { StorageService } from '../../services/storageService';
@@ -48,6 +49,8 @@ interface ImportAnalysisData {
 }
 
 export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, onClearDemoData }) => {
+  const [exportingBackup, setExportingBackup] = useState(false);
+  const [backupNotice, setBackupNotice] = useState('');
   // Gemini API state
   const hybridAi = aiService as HybridAIService;
   const [apiKeyInput, setApiKeyInput] = useState<string>('');
@@ -191,21 +194,25 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
     }
   };
 
-  const handleExportBackup = () => {
-    const data = {
-      classes: StorageService.getClasses(),
-      assignments: StorageService.getAssignments(),
-      submissions: StorageService.getSubmissions(),
-      exportedAt: new Date().toISOString()
-    };
-
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `ToanTHCS_Backup_${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleExportBackup = async () => {
+    if (exportingBackup) return;
+    setExportingBackup(true);
+    setBackupNotice('Đang đọc và đối chiếu dữ liệu thật trên Firebase...');
+    try {
+      const data = await buildTeacherBackup();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Matsuda_Cloud_Records_' + new Date().toISOString().split('T')[0] + '.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      setBackupNotice('Đã đối chiếu ' + data.assignments.length + ' đề và ' + data.submissions.length + ' lượt nộp.'
+        + (data.manifest.attachmentsComplete ? ' Ảnh nhúng nằm trong JSON.' : ' Còn URL ảnh/tệp ngoài chưa được đóng gói; chưa phải bản sao lưu đủ tệp đính kèm.'));
+    } catch (error) {
+      setBackupNotice('CHƯA SAO LƯU ĐẦY ĐỦ: ' + (error instanceof Error ? error.message : String(error))
+        + ' Lỗi quyền/403 không có nghĩa là không có dữ liệu. Dữ liệu gốc không thay đổi.');
+    } finally { setExportingBackup(false); }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -766,20 +773,22 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
           </div>
         </div>
 
+        {backupNotice && <div role="status" className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-900">{backupNotice}</div>}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
             <div>
               <h3 className="font-bold text-sm text-slate-800">Tải tệp sao lưu (Export JSON)</h3>
               <p className="text-xs text-slate-500 mt-1">
-                Lưu toàn bộ danh sách học sinh, bài tập đã tạo và lịch sử nộp bài về máy.
+                Đọc trực tiếp Cloud và đối chiếu ID. Nếu thiếu quyền hoặc thiếu bản ghi, không xuất bản mẫu thay thế.
               </p>
             </div>
             <button
-              onClick={handleExportBackup}
+              onClick={() => void handleExportBackup()}
+              disabled={exportingBackup}
               className="mt-4 inline-flex items-center justify-center space-x-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
             >
               <Download className="w-4 h-4" />
-              <span>Tải bản sao lưu JSON</span>
+              <span>{exportingBackup ? 'Đang đối chiếu...' : 'Tải và đối chiếu bản Cloud'}</span>
             </button>
           </div>
 
