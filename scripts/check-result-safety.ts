@@ -23,6 +23,7 @@ Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
   setItem: (k: string, v: string) => { if (quotaFull) throw new DOMException('Quota full', 'QuotaExceededError'); disk.set(k,v); },
   removeItem: () => { throw new Error('Tests must never delete legacy data'); }
 } });
+await auth.authStateReady();
 Object.defineProperty(auth, 'currentUser', { configurable: true, writable: true, value: { uid: 'teacher-fixture', email: 'teacher@example.test' } });
 Object.defineProperty(globalThis, 'window', { configurable: true, value: new EventTarget() });
 StorageService.initDemoData = () => {};
@@ -109,7 +110,6 @@ const outcomes = await Promise.allSettled([
   isolated.saveResult(edit(tab2,1,.6), { intent: 'teacher', operationId: 'tab2' })
 ]);
 assert.equal(outcomes.filter(r => r.status === 'fulfilled').length, 1);
-assert.equal(outcomes.filter(r => r.status === 'rejected' && r.reason instanceof ResultConflictError).length, 0); // bundled module has its own class identity
 assert.ok(outcomes.some(r => r.status === 'rejected' && r.reason.code === 'RESULT_CONFLICT'));
 const afterRace = await read('two-tabs');
 assert.equal(afterRace.answers[0].teacherScore, .8);

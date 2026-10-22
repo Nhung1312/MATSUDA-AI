@@ -18,13 +18,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --ignore-scripts --no-audit --no-fund
-      - run: npm run lint
-      - run: npm run build
-      - run: npm run check:result-safety
-      - run: npm run check:teacher-navigation
-      - run: npm run check:exam-workflow
-      - run: npm run check:ai-efficiency
-      - run: npm run check:imports
-      - run: npm run test:strikeout
-      - run: npm run test:points
+      - id: install
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run lint
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run build
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run check:result-safety
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run check:review-save
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run check:teacher-navigation
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run check:exam-workflow
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run check:ai-efficiency
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run check:imports
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run test:strikeout
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run test:points

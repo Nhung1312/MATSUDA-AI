@@ -56,7 +56,7 @@ async function saveConfirmed<T extends ResultRecord>(kind: PendingResult['kind']
       return { localSaved, cloudSaved: true, submission: confirmed };
     } catch (error) {
       return { localSaved, cloudSaved: false, pendingSubmission: snapshot,
-        conflict: error instanceof ResultConflictError,
+        conflict: error instanceof ResultConflictError || (error as { code?: string })?.code === 'RESULT_CONFLICT',
         error: error instanceof Error ? error.message : 'Firebase chưa xác nhận lưu kết quả.' };
     }
   });

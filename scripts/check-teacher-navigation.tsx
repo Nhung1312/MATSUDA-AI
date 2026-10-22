@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import React from 'react';
@@ -61,9 +64,11 @@ const compiled=await build({entryPoints:['src/App.tsx'],bundle:true,write:false,
         return {path:name,namespace:'navigation-mock'};
       }
     });
-    b.onLoad({filter:/.*/,namespace:'navigation-mock'},args=>({contents:args.path==='router'?router:modules[args.path],loader:'js'}));
+    b.onLoad({filter:/.*/,namespace:'navigation-mock'},args=>({contents:args.path==='router'?router:modules[args.path],loader:'js',resolveDir:process.cwd()}));
   }}]});
-const {default:App}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
+const moduleFile=resolve(mkdtempSync(resolve('.test-navigation-')), 'app.mjs');
+writeFileSync(moduleFile,compiled.outputFiles[0].text);
+const {default:App}=await import(pathToFileURL(moduleFile).href);
 let renderer:ReactTestRenderer;
 const tick=()=>new Promise<void>(resolve=>setImmediate(resolve));
 await act(async()=>{renderer=create(React.createElement(App));await tick();});

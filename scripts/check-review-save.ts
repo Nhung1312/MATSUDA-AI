@@ -1,3 +1,4 @@
+import 'fake-indexeddb/auto';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
@@ -33,10 +34,10 @@ const clone = (value: any) => JSON.parse(JSON.stringify(value));
 const question = (id: string) => ({ id, question: 'Giải phương trình.', type: 'essay', points: 1, options: [], correctAnswer: '1', rubric: 'Đáp số: 1 điểm' });
 const answer = (id: string) => ({ questionId: id, selectedAnswer: 'x=1', studentSolutionText: 'x=1', isCorrect: false, pointsEarned: 0, maxPoints: 1, needsTeacherReview: true });
 const response = (score: number) => ({ success: true, analysisSource: 'ai', analysis: [{ stepIndex: 1, studentLatex: 'x=1', status: 'correct', confidence: .99, comment: 'Đúng.' }], score, maxScore: 1, isAllCorrect: false, feedback: 'Đề xuất AI.', firstErrorStep: null, firstErrorType: null, firstErrorExplanation: null, needsTeacherReview: false });
-const flush = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
+const flush = async () => { for (let i=0;i<8;i++) await new Promise<void>(resolve => setImmediate(resolve)); };
 let cloudCalls: any[] = [];
 let cloud: (submission: any) => Promise<void> = async () => {};
-FirestoreService.saveResult = async submission => { cloudCalls.push(clone(submission)); await cloud(submission); return { ...submission, saveBaseFingerprint: 'offline-confirmed-fixture' }; };
+FirestoreService.saveResult = async submission => { cloudCalls.push(clone(submission)); await cloud(submission); return { ...submission, saveAttemptId: undefined, saveBaseFingerprint: 'offline-confirmed-fixture' }; };
 
 function harness(initial: any, questions: any[]) {
   const state: any = { selected: initial, inputs: {}, feedback: {}, saved: {}, lock: { current: false }, dirty: { current: new Set<string>() }, pending: { current: null }, notice: null, aiCalls: 0, wholeCalls: 0 };
@@ -54,7 +55,7 @@ function harness(initial: any, questions: any[]) {
     setTeacherScoreInput: (fn: any) => { state.inputs = fn(state.inputs); }, setTeacherFeedbackInput: (fn: any) => { state.feedback = fn(state.feedback); },
     setSavedGradeSuccess: (fn: any) => { state.saved = fn(state.saved); },
     setSavingSubmission: (value: boolean) => { state.saving = value; }, setReviewSaveNotice: (notice: any) => { state.notice = notice; },
-    saveSubmissionConfirmed, setTimeout: () => {}, pendingReviewSubmissions: [], getPendingReviewCount: () => 0,
+    saveSubmissionConfirmed, listPendingResultSaves: async () => [], setRecoverableSaves: () => {}, setTimeout: () => {}, pendingReviewSubmissions: [], getPendingReviewCount: () => 0,
     setSubmissionReviewFilter: () => {}
   });
   const deps = () => {
@@ -149,7 +150,7 @@ try {
     cloud = () => new Promise(() => {});
     const timeoutSave = saveSubmissionConfirmed({ ...manual, id: 'timeout' });
     await flush(); assert.ok(timeoutAction); timeoutAction!();
-    assert.deepEqual(await timeoutSave, { localSaved: true, cloudSaved: false });
+    const timedOut = await timeoutSave; assert.equal(timedOut.localSaved, true); assert.equal(timedOut.cloudSaved, false); assert.ok(timedOut.pendingSubmission);
   } finally { globalThis.setTimeout = oldTimeout; globalThis.clearTimeout = oldClear; }
   console.log('PASS: missing cloud acknowledgement times out with the local copy retained');
 
@@ -193,11 +194,13 @@ try {
   findUpdate(parentSource); assert.ok(updateExpression);
   const parentJs = ts.transpileModule(`const update = ${updateExpression!.getText(parentSource)};`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   let rewrittenRecords = 0;
-  const update = new Function('StorageService', 'window', 'CustomEvent', parentJs + '\nreturn update;')(
-    { saveSubmission: () => { rewrittenRecords++; } }, { dispatchEvent: () => {} }, class {});
+  const update = new Function('StorageService', 'window', 'CustomEvent', 'currentSubmissions', 'saveSubmissionConfirmed', 'setActionNotice', parentJs + '\nreturn update;')(
+    { saveSubmission: () => { rewrittenRecords++; } }, { dispatchEvent: () => {} }, class {},
+    [manual], async () => { rewrittenRecords++; return {cloudSaved:true}; }, () => {});
   update([manual], { cloudHandled: true }); assert.equal(rewrittenRecords, 0);
-  update([manual]); assert.equal(rewrittenRecords, 1);
-  console.log('PASS: parent does not rewrite a stale batch list; new paper submission keeps legacy saving');
+  update([manual]); assert.equal(rewrittenRecords, 0, 'Existing historical records are never re-saved by the list callback');
+  update([{...manual,id:'new-paper'}]); assert.equal(rewrittenRecords, 1);
+  console.log('PASS: parent only saves newly added IDs; never rewrites historical batch records');
 
   const photo = 'https://example.test/shared-grading-photo.png';
   const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC';
