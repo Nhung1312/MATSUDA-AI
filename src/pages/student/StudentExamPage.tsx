@@ -140,19 +140,24 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
   const { isDark, toggleTheme } = useTheme();
   // Keep drafts from different teacher edits separate. Existing students'
   // old drafts are not deleted, but must never replace a newer question set.
-  const baseDraftKey = `toan_thcs_draft_${assignment.id}_${encodeURIComponent(studentName)}`;
-  const revisionInput = JSON.stringify({
-    updatedAt: (assignment as Assignment & { updatedAt?: string }).updatedAt || '',
-    type: assignment.type,
-    questions: assignment.questions,
-    totalPoints: assignment.totalPoints,
-    pdfUrl: assignment.pdfUrl
-  });
-  let revisionHash = 2166136261;
-  for (let index = 0; index < revisionInput.length; index++) {
-    revisionHash = Math.imul(revisionHash ^ revisionInput.charCodeAt(index), 16777619);
-  }
-  const draftStorageKey = `${baseDraftKey}_rev_${(revisionHash >>> 0).toString(36)}`;
+  const { baseDraftKey, draftStorageKey } = useMemo(() => {
+    const baseDraftKey = `toan_thcs_draft_${assignment.id}_${encodeURIComponent(studentName)}`;
+    const revisionInput = JSON.stringify({
+      updatedAt: (assignment as Assignment & { updatedAt?: string }).updatedAt || '',
+      type: assignment.type,
+      questions: assignment.questions,
+      totalPoints: assignment.totalPoints,
+      pdfUrl: assignment.pdfUrl
+    });
+    let revisionHash = 2166136261;
+    for (let index = 0; index < revisionInput.length; index++) {
+      revisionHash = Math.imul(revisionHash ^ revisionInput.charCodeAt(index), 16777619);
+    }
+    return {
+      baseDraftKey,
+      draftStorageKey: `${baseDraftKey}_rev_${(revisionHash >>> 0).toString(36)}`
+    };
+  }, [assignment, studentName]);
 
   // Nhận diện chế độ PDF
   const isPdfMode = (assignment as any).type === 'pdf';
