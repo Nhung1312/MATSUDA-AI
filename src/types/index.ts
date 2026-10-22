@@ -91,7 +91,6 @@ export interface Assignment {
   verificationStatus?: 'verified' | 'unverified' | 'needs_review' | 'pending'; // Trạng thái thẩm định đề thi (unverified = chưa thẩm định, needs_review = cần xem lại, verified = đã thẩm định)
   eligibleForSampleBank?: boolean; // Đủ điều kiện làm dữ liệu mẫu (khi đã verified 100%)
   totalPoints?: number; // Tổng điểm mục tiêu tùy chỉnh của đề thi (mặc định 10.0 hoặc linh hoạt: 5, 10, 15, 20, 100...)
-  maxSubmissions?: number; // 0/undefined: legacy unlimited; new assignments default to 1 online submission.
 }
 
 export interface ViolationEvent {
@@ -106,14 +105,10 @@ export interface StudentAnswer {
   selectedOptionText?: string; // Nội dung văn bản của phương án học sinh đã chọn
   originalSelectedLabel?: string; // Nhãn phương án tương ứng trên đề gốc (trước khi đảo đề)
   correctAnswer?: string; // Đáp án chuẩn theo đề học sinh đang làm (đã map chính xác theo đề xáo trộn)
-  // Source supplied to the saved automatic grading, independent of later exam edits.
-  // Teacher scores/feedback remain authoritative and are not inferred from this reference.
-  gradingReference?: Pick<Question, 'correctAnswer' | 'rubric' | 'explanation' | 'imageUrl' | 'points'>;
-  aiGradingReference?: StudentAnswer['gradingReference']; // New AI analysis alongside a protected teacher grade.
   isCorrect: boolean;
   pointsEarned: number;
   maxPoints: number;
-  essayImages?: string[]; // Ảnh riêng của câu; rỗng thì dùng Submission.essayImages nếu có.
+  essayImages?: string[]; // Ảnh chụp bài làm tự luận / nháp
   studentSolutionText?: string; // Lời giải tự luận học sinh gõ (nếu có)
   aiFeedback?: string; // Nhận xét của AI
   aiScore?: number; // Điểm do AI đề xuất
@@ -133,7 +128,6 @@ export interface StudentAnswer {
   hasCrossedOutDetection?: boolean;
   uncertainCorrectionDetected?: boolean;
   teacherCorrectionNotice?: string;
-  selectionReviewIssue?: string; // Contradictory MC label/text: preserve points until explicit teacher review.
 }
 
 export interface EssayGradingResult {
@@ -192,8 +186,6 @@ export interface Submission {
   violationEvents?: ViolationEvent[];
   isShuffled?: boolean;
   shuffledQuestions?: Question[]; // Snapshot danh sách câu hỏi học sinh nhìn thấy khi làm bài
-  submissionParticipantKey?: string; // Stable identity for limited online attempts, based on entered name/class.
-  attemptNumber?: number;
 }
 
 export interface QuestionAnalysis {

@@ -93,7 +93,6 @@ export const ExamBankView: React.FC<ExamBankViewProps> = ({
       type: selectedTemplate.pdfUrl ? 'pdf' : 'text', 
       questions: selectedTemplate.questions,
       durationMinutes: Number(duration),
-      maxSubmissions: 1,
       deadline: deadline || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
       allowViewResult: true,
       assignmentCode: 'TOAN' + selectedTemplate.grade + '-' + Math.random().toString(36).substring(2, 6).toUpperCase(),

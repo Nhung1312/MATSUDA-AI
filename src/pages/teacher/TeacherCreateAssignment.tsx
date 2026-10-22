@@ -1,10 +1,9 @@
 import { invalidateEditedVerification } from '../../utils/questionUtils';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Assignment, ClassRoom, GradeLevel, Question, QuestionOption } from '../../types';
 import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
-import { formatExamSaveFailure } from '../../utils/examSaveDiagnostics';
 import { useAuth } from '../../context/AuthContext';
 import { aiService } from '../../services/aiService';
 import { FileUploadModal } from '../../components/FileUploadModal';
@@ -121,9 +120,6 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
 }) => {
   const { user } = useAuth();
   const [isSaving, setIsSaving] = useState(false);
-  const saveLock = useRef(false);
-  const pendingIdentity = useRef<{ id: string; code: string } | null>(null);
-  const [saveNotice, setSaveNotice] = useState<{ message: string; cloudSaved: boolean; code?: string } | null>(null);
   const [searchParams] = useSearchParams();
   const paramGrade = searchParams.get('grade');
   const validParamGrade = (paramGrade === '6' || paramGrade === '7' || paramGrade === '8' || paramGrade === '9') ? (paramGrade as GradeLevel) : undefined;
@@ -135,7 +131,6 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
   const [topic, setTopic] = useState(editingAssignment?.topic || 'Đại số & Hình học THCS');
   const [classId, setClassId] = useState<string>(editingAssignment?.classId || classes[0]?.id || 'all');
   const [durationMinutes, setDurationMinutes] = useState<number>(editingAssignment?.durationMinutes ?? 45);
-  const [maxSubmissions, setMaxSubmissions] = useState<number>(editingAssignment ? (editingAssignment.maxSubmissions ?? 0) : 1);
   const [deadline, setDeadline] = useState<string>(() => {
     if (editingAssignment?.deadline) return editingAssignment.deadline;
     const d = new Date();
@@ -215,6 +210,18 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
 
   // --- BỘ CÔNG CỤ PHÂN BỔ ĐIỂM THÔNG MINH (1-CLICK) & TỔNG ĐIỂM MỤC TIÊU ---
   const [showPointDistributeModal, setShowPointDistributeModal] = useState(false);
+  const [fullScreenQuestionId, setFullScreenQuestionId] = useState<string | null>(null);
+  const [mcqGroupPoints, setMcqGroupPoints] = useState('0.25');
+  const [essayGroupPoints, setEssayGroupPoints] = useState('1.5');
+
+  useEffect(() => {
+    if (!fullScreenQuestionId) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFullScreenQuestionId(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [fullScreenQuestionId]);
   const [targetTotalPoints, setTargetTotalPoints] = useState<number>(() => {
     if (editingAssignment?.totalPoints && editingAssignment.totalPoints > 0) {
       return editingAssignment.totalPoints;
@@ -437,15 +444,26 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
   const scrollToQuestion = (questionId: string) => {
     setQuestionFilter('all');
     setHighlightedQuestionId(questionId);
-    setTimeout(() => {
-      const el = document.getElementById(`question-card-${questionId}`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }, 100);
-    setTimeout(() => {
-      setHighlightedQuestionId(null);
-    }, 3500);
+    setFullScreenQuestionId(questionId);
+  };
+
+  const applyGroupPoints = (group: 'mcq' | 'essay') => {
+    const raw = group === 'mcq' ? mcqGroupPoints : essayGroupPoints;
+    const amount = parseDecimalPoint(raw, NaN);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert('Điểm cần là số dương (tối đa 4 chữ số thập phân). Ví dụ 0,25; 0,5; 1,25.');
+      return;
+    }
+    const belongs = (q: Question) => group === 'essay'
+      ? isEssayQuestion(q)
+      : q.type === 'multiple_choice' && !isEssayQuestion(q);
+    const count = questions.filter(belongs).length;
+    if (!count) { alert('Không có câu hỏi thuộc nhóm đã chọn.'); return; }
+    const updated = questions.map(q => belongs(q) ? { ...q, points: amount } : q);
+    setQuestions(invalidateEditedVerification(updated, questions));
+    setImportSuccessAlert(
+      `Đã cập nhật ${count} câu ${group === 'mcq' ? 'trắc nghiệm' : 'tự luận'}: ${formatDecimalPoint(amount)}đ/câu. Tổng mới ${formatDecimalPoint(calculateQuestionsTotalPoints(updated))}/${formatDecimalPoint(targetTotalPoints)}đ. Bấm Lưu & tạo mã để lưu đề.`
+    );
   };
 
   // --- LOGIC XỬ LÝ TEXT MODE ---
@@ -621,7 +639,6 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
   // --- LƯU BÀI TẬP (GỘP CHUNG 2 CHẾ ĐỘ) ---
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (saveLock.current) return;
     if (!title.trim()) {
       alert('Vui lòng nhập tên bài tập.');
       return;
@@ -732,14 +749,13 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
       if (!window.confirm(`Tổng điểm các câu là ${finalTotalPoints}, khác mục tiêu ${targetTotalPoints}.\nNếu lưu, hệ thống sẽ dùng tổng điểm thực tế ${finalTotalPoints} để chấm. Tiếp tục?`)) return;
     }
 
-    saveLock.current = true;
     setIsSaving(true);
-    setSaveNotice(null);
-    let cloudSaved = false;
-    let savedAssignment: Assignment | undefined;
+
     try {
       const targetClass = classes.find(c => c.id === classId);
       const className = targetClass ? targetClass.name : 'Toàn khối';
+
+      let savedAssignment: Assignment;
 
       if (isEditing && editingAssignment) {
         // CẬP NHẬT BÀI TẬP VÀ CÂU HỎI HIỆN CÓ
@@ -753,7 +769,6 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
           questions: finalQuestions,
           totalPoints: finalTotalPoints,
           durationMinutes: Number(durationMinutes) || 0,
-          maxSubmissions,
           deadline,
           allowViewResult,
           resultReviewMode,
@@ -762,10 +777,9 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
         };
       } else {
         // TẠO BÀI TẬP MỚI
-        pendingIdentity.current ||= { id: `asg_${Date.now()}`, code: StorageService.generateAssignmentCode(grade, className) };
-        const assignmentCode = pendingIdentity.current.code;
+        const assignmentCode = StorageService.generateAssignmentCode(grade, className);
         savedAssignment = {
-          id: pendingIdentity.current.id,
+          id: `asg_${Date.now()}`,
           title: title.trim(),
           grade,
           topic: topic.trim(),
@@ -774,7 +788,6 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
           questions: finalQuestions,
           totalPoints: finalTotalPoints,
           durationMinutes: Number(durationMinutes) || 0,
-          maxSubmissions,
           deadline,
           allowViewResult,
           resultReviewMode,
@@ -786,31 +799,29 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
         };
       }
 
-      // PR #50: setDoc must acknowledge before any shareable success.
-      await FirestoreService.saveExam(savedAssignment, user || undefined);
-      cloudSaved = true;
-      let localSaved = true;
-      try { StorageService.saveAssignment(savedAssignment, { syncCloud: false }); }
-      catch { localSaved = false; }
-      const message = localSaved
-        ? (isEditing ? 'Đã lưu cập nhật bài tập lên Cloud thành công!' : 'Đã tạo và lưu đề lên Cloud thành công!')
-        : 'Đề đã lưu thành công trên Cloud. Bộ nhớ máy chưa lưu được bản cache; mã đề vẫn dùng được. Không cần tạo lại đề.';
-      setSaveNotice({ message, cloudSaved: true, code: savedAssignment.assignmentCode });
-      alert(message);
-      try { await onSaveSuccess(savedAssignment); }
-      catch {
-        setSaveNotice({ message: 'Cloud đã lưu đề thành công nhưng chưa mở được màn hình tiếp theo. Dùng mã đề bên dưới; không cần tạo lại.', cloudSaved: true, code: savedAssignment.assignmentCode });
+      // An edited paper is not published until Cloud Firestore confirms it.
+      // Never report success just because the teacher's browser saved a copy:
+      // that left students on the old question set under the same code.
+      try {
+        await FirestoreService.saveExam(savedAssignment, user || undefined);
+      } catch (firestoreErr) {
+        console.error('Firebase chưa lưu được đề mới:', firestoreErr);
+        setIsSaving(false);
+        alert('CHƯA LƯU LÊN FIREBASE! Học sinh vẫn sẽ thấy đề cũ. Nội dung đang chỉnh sửa vẫn còn trên trang này. Hãy kiểm tra kết nối hoặc quyền Firebase và bấm lưu lại; không phát link lúc này.');
+        return;
       }
-    } catch (err) {
-      // A failure after cloud acknowledgement must never be labelled a failed cloud write.
-      const message = cloudSaved
-        ? 'Cloud đã lưu đề thành công. Chưa hoàn tất thao tác trên máy; mã đề vẫn dùng được.'
-        : formatExamSaveFailure(err);
-      setSaveNotice({ message, cloudSaved, code: cloudSaved ? savedAssignment?.assignmentCode : undefined });
-      alert(message);
-    } finally {
+
+      // Local cache is optional once the server has acknowledged the update.
+      try { StorageService.saveAssignment(savedAssignment); }
+      catch (cacheError) { console.warn('Đề đã lưu Cloud; không lưu được cache trên máy:', cacheError); }
+
       setIsSaving(false);
-      saveLock.current = false;
+      alert(isEditing ? 'Firebase đã xác nhận cập nhật đề và câu hỏi thành công!' : 'Firebase đã xác nhận tạo bài tập thành công!');
+      onSaveSuccess(savedAssignment);
+    } catch (err) {
+      console.error('Lỗi khi lưu đề thi:', err);
+      setIsSaving(false);
+      alert('Có lỗi xảy ra khi lưu đề thi. Vui lòng thử lại.');
     }
   };
 
@@ -864,12 +875,6 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
         </div>
       </div>
 
-      {saveNotice && (
-        <div role="status" className={`rounded-xl border p-4 whitespace-pre-line ${saveNotice.cloudSaved ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-rose-300 bg-rose-50 text-rose-900'}`}>
-          <p>{saveNotice.message}</p>
-          {saveNotice.code && <p className="font-bold mt-2">Mã đề đã lưu Cloud: {saveNotice.code}</p>}
-        </div>
-      )}
       <form onSubmit={handleSave} className="space-y-6">
         
         {/* Section 1: General Assignment Info */}
@@ -967,18 +972,6 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
                 onChange={(e) => setDeadline(e.target.value)}
                 className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm"
               />
-            </div>
-
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-bold text-slate-700 mb-1">Số lần nộp tối đa mỗi học sinh</label>
-              <select value={maxSubmissions} onChange={e => setMaxSubmissions(Number(e.target.value))}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm">
-                <option value={1}>1 lần (mặc định cho bài mới)</option>
-                <option value={2}>2 lần</option><option value={3}>3 lần</option>
-                <option value={5}>5 lần</option><option value={10}>10 lần</option>
-                <option value={0}>Không giới hạn</option>
-              </select>
-              <p className="text-[11px] text-slate-500 mt-1">Đếm bài nộp trực tuyến theo họ tên và lớp học sinh đã nhập, kể cả lượt đã nộp trước đó. Bài giấy giáo viên tải lên không tính vào lượt này. Điểm và bài nộp cũ được giữ nguyên.</p>
             </div>
 
             {/* Result review mode */}
@@ -1303,6 +1296,47 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
               </div>
             </div>
 
+            {/* Independent bulk scores: other types and the target total stay unchanged. */}
+            <div className="rounded-2xl border border-indigo-200 bg-white p-4 space-y-3">
+              <h3 className="text-base font-extrabold text-slate-900">Gán điểm hàng loạt theo dạng câu</h3>
+              <p className="text-xs text-slate-600">Chọn điểm/câu và bấm Áp dụng. Có thể chỉnh điểm riêng cho từng câu tự luận bên dưới.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {([
+                  { kind: 'mcq' as const, label: 'Trắc nghiệm A–D', value: mcqGroupPoints, setValue: setMcqGroupPoints, count: questions.filter(q => q.type === 'multiple_choice' && !isEssayQuestion(q)).length, presets: ['0.25','0.5','1'] },
+                  { kind: 'essay' as const, label: 'Tự luận', value: essayGroupPoints, setValue: setEssayGroupPoints, count: essayQuestionsCount, presets: ['0.5','1','1.5','2'] }
+                ]).map(group => (
+                  <div key={group.kind} className="rounded-xl bg-slate-50 p-3 space-y-2">
+                    <div className="flex justify-between text-sm font-bold text-slate-800">
+                      <span>{group.label}</span><span>{group.count} câu</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {group.presets.map(preset => (
+                        <button type="button" key={preset} onClick={() => group.setValue(preset)}
+                          className={group.value === preset
+                            ? 'rounded-lg bg-indigo-600 text-white px-3 py-2 text-sm font-bold'
+                            : 'rounded-lg border bg-white px-3 py-2 text-sm font-bold text-slate-800'}>
+                          {preset.replace('.', ',')}đ
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label htmlFor={'group-' + group.kind} className="text-xs font-bold">Điểm/câu</label>
+                      <input id={'group-' + group.kind} type="text" inputMode="decimal"
+                        value={group.value} onChange={e => group.setValue(e.target.value)}
+                        className="w-24 rounded-lg border px-2 py-2 text-base font-bold" />
+                      <button type="button" onClick={() => applyGroupPoints(group.kind)}
+                        disabled={group.count === 0}
+                        className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-40">Áp dụng</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="text-sm font-bold text-slate-700">Tổng: {formatDecimalPoint(actualTotalPoints)}/{formatDecimalPoint(targetTotalPoints)} điểm
+                {Math.abs(actualTotalPoints - targetTotalPoints) > 0.000001 && (
+                  <span className="ml-2 text-amber-800">⚠ Chưa khớp. Chỉnh từng câu hoặc dùng Phân phối điểm trước khi lưu.</span>
+                )}
+              </div>
+            </div>
             {/* Questions List */}
             <div className="space-y-4">
               {questions.filter((q) => {
@@ -1340,14 +1374,36 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
                       <div
                         key={q.id}
                         id={`question-card-${q.id}`}
-                        className={`bg-white rounded-3xl p-6 shadow-sm border transition-all duration-300 space-y-4 ${
-                          isHighlighted
-                            ? 'ring-4 ring-amber-400 border-amber-400 bg-amber-50/20'
-                            : isMissingImg
-                            ? 'border-amber-300 shadow-amber-50/50'
-                            : 'border-slate-200'
-                        }`}
+                        className={fullScreenQuestionId === q.id
+                          ? 'fixed inset-2 sm:inset-5 z-[90] max-h-[96vh] overflow-y-auto bg-white rounded-3xl p-4 sm:p-8 shadow-2xl border-2 border-indigo-300 space-y-5'
+                          : isMissingImg
+                            ? 'bg-white rounded-3xl p-6 shadow-sm border border-amber-300 space-y-4'
+                            : 'bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-4'}
                       >
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-indigo-50 p-3">
+                          <span className="text-sm font-extrabold text-indigo-900">
+                            {fullScreenQuestionId === q.id ? 'Cửa sổ chỉnh sửa riêng • Câu ' + (qIdx + 1) : 'Câu ' + (qIdx + 1)}
+                          </span>
+                          <div className="flex flex-wrap gap-2">
+                            {fullScreenQuestionId === q.id ? (
+                              <>
+                                <button type="button" disabled={qIdx === 0}
+                                  onClick={() => setFullScreenQuestionId(questions[qIdx - 1].id)}
+                                  className="rounded-lg border bg-white px-3 py-2 text-sm font-bold disabled:opacity-40">← Câu trước</button>
+                                <button type="button" disabled={qIdx === questions.length - 1}
+                                  onClick={() => setFullScreenQuestionId(questions[qIdx + 1].id)}
+                                  className="rounded-lg border bg-white px-3 py-2 text-sm font-bold disabled:opacity-40">Câu sau →</button>
+                                <button type="button" onClick={() => setFullScreenQuestionId(null)}
+                                  className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white">✓ Xong câu</button>
+                              </>
+                            ) : (
+                              <button type="button" onClick={() => scrollToQuestion(q.id)}
+                                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white">
+                                <span>⛶ Mở toàn màn hình</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
                         {/* Question Header */}
                         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -1455,7 +1511,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
                       </span>
                     </div>
                     <textarea
-                      rows={2}
+                      rows={6}
                       value={q.question}
                       onChange={(e) => handleUpdateQuestion(qIdx, { question: e.target.value })}
                       onPaste={async (e) => {
@@ -1479,7 +1535,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
                         }
                       }}
                       placeholder={isEssayQuestion(q) ? "Nhập đề bài tự luận Toán (ví dụ: a) Rút gọn biểu thức A; b) Tìm x để A > 0...)" : "Nhập đề bài Toán..."}
-                      className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-sm font-medium focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                      className="w-full p-4 bg-slate-50 border border-slate-300 rounded-xl text-base leading-relaxed font-medium focus:bg-white focus:ring-2 focus:ring-indigo-500"
                       required
                     />
 
@@ -1562,7 +1618,7 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
                         <span>Tiêu chí chấm điểm / Thang điểm chi tiết (Rubric để AI chấm):</span>
                       </label>
                       <textarea
-                        rows={2}
+                        rows={5}
                         value={q.rubric || ''}
                         onChange={(e) => handleUpdateQuestion(qIdx, { rubric: e.target.value })}
                         placeholder="Ví dụ: - Rút gọn đúng mẫu số: +0.5đ; - Biến đổi đúng tử: +0.5đ; - Kết luận: +0.5đ"

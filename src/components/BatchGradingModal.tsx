@@ -23,7 +23,6 @@ import { GradingService } from '../services/gradingService';
 import { processQuestionImage } from '../utils/imageProcessUtils';
 import { StepGradingBreakdown } from './StepGradingBreakdown';
 import { MathDisplay } from './MathDisplay';
-import { filterBatchGradingItems, selectBatchGradingItems } from '../utils/batchGradingUtils';
 
 export type BatchItemStatus = 'pending' | 'grading' | 'completed' | 'needs_review' | 'failed';
 
@@ -69,9 +68,6 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
 
   // Execution State
   const [isGrading, setIsGrading] = useState<boolean>(false);
-  const [gradingSingleId, setGradingSingleId] = useState<string | null>(null);
-  const gradingOperationLock = useRef(false);
-  const isBusy = isGrading || gradingSingleId !== null;
   const [currentGradingIndex, setCurrentGradingIndex] = useState<number>(-1);
   const [progressText, setProgressText] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'warning' | 'error' } | null>(null);
@@ -85,7 +81,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
   const [newPaperImages, setNewPaperImages] = useState<string[]>([]);
   const [isProcessingPaperImages, setIsProcessingPaperImages] = useState<boolean>(false);
 
-  // Pause applies between submissions; the current submission must finish saving.
+  // Abort Controller Ref for Pause / Stop
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Đồng bộ danh sách bài nộp khi mở modal hoặc danh sách submissions thay đổi
@@ -134,9 +130,11 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
   if (!isOpen) return null;
 
   // Lọc theo Nguồn và Trạng thái
-  const filteredItems = filterBatchGradingItems<BatchItem>(items, filterSource, filterStatus);
-  const gradingTargetCount = selectBatchGradingItems<BatchItem>(items, filterSource, filterStatus, skipAlreadyGraded).length;
-  const failedInFilterCount = selectBatchGradingItems<BatchItem>(items, filterSource, filterStatus, skipAlreadyGraded, true).length;
+  const filteredItems = items.filter((item) => {
+    if (filterSource !== 'all' && item.source !== filterSource) return false;
+    if (filterStatus !== 'all' && item.status !== filterStatus) return false;
+    return true;
+  });
 
   // Số liệu thống kê
   const completedCount = items.filter((i) => i.status === 'completed').length;
@@ -161,137 +159,139 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
    * Bắt đầu chấm bài hàng loạt (hoặc chỉ chấm lại bài lỗi)
    */
   const handleStartBatch = async (onlyFailed: boolean = false) => {
-    if (isGrading || gradingOperationLock.current) return;
+    if (isGrading) return;
 
     // Xác định danh sách học sinh cần chấm
-    // Freeze the eligible IDs under both filters at the start of this run.
-    const targetItems = selectBatchGradingItems<BatchItem>(items, filterSource, filterStatus, skipAlreadyGraded, onlyFailed);
+    const targetItems = items.filter((item) => {
+      if (onlyFailed) {
+        return item.status === 'failed';
+      }
+      if (skipAlreadyGraded) {
+        return item.status === 'pending' || item.status === 'failed';
+      }
+      return true;
+    });
 
     if (targetItems.length === 0) {
       showToast('Không có bài nào cần chấm theo điều kiện đã chọn.', 'warning');
       return;
     }
 
-    gradingOperationLock.current = true;
-    try {
-      setIsGrading(true);
-      abortControllerRef.current = new AbortController();
-      const currentSubsMap = new Map(submissions.map((s) => [s.id, s]));
+    setIsGrading(true);
+    abortControllerRef.current = new AbortController();
+    const currentSubsMap = new Map(submissions.map((s) => [s.id, s]));
 
-      let successCount = 0;
-      let reviewCount = 0;
-      let errorCount = 0;
-      let stoppedEarly = false;
+    let successCount = 0;
+    let reviewCount = 0;
+    let errorCount = 0;
+    let stoppedEarly = false;
 
-      for (let i = 0; i < targetItems.length; i++) {
+    for (let i = 0; i < targetItems.length; i++) {
+      if (abortControllerRef.current.signal.aborted) {
+        showToast('Đã tạm dừng quá trình chấm bài hàng loạt.', 'warning');
+        break;
+      }
+
+      const item = targetItems[i];
+      setCurrentGradingIndex(i + 1);
+      setProgressText(`Đang chấm bài ${i + 1}/${targetItems.length}: ${item.studentName}...`);
+
+      // Cập nhật trạng thái 'grading' cho học sinh này
+      setItems((prev) =>
+        prev.map((it) => (it.id === item.id ? { ...it, status: 'grading', errorMsg: undefined } : it))
+      );
+
+      try {
+        const result = await GradingService.gradeSingleSubmissionWithAI({
+          assignment,
+          submission: item.submission,
+          signal: abortControllerRef.current.signal,
+          onProgress: (msg) => setProgressText(`[${item.studentName}] ${msg}`)
+        });
+
+        // Cập nhật kết quả thành công
+        const newStatus: BatchItemStatus = result.needsTeacherReview ? 'needs_review' : 'completed';
+        if (result.needsTeacherReview) reviewCount++; else successCount++;
+
+        currentSubsMap.set(result.submission.id, result.submission);
+
+        setItems((prev) =>
+          prev.map((it) => {
+            if (it.id === item.id) {
+              return {
+                ...it,
+                status: newStatus,
+                score: result.submission.totalScore,
+                totalErrors: result.totalErrors,
+                firstErrorSummary: result.firstError 
+                  ? `Bước ${result.firstError.step} (${result.firstError.type})` 
+                  : undefined,
+                needsTeacherReview: result.needsTeacherReview,
+                submission: result.submission,
+                errorMsg: undefined,
+                cloudSaveWarning: result.persistence?.cloudSaved === false ? 'Chưa xác nhận lưu lên cloud. Kết quả hiện có cần lưu lại; không cần chấm AI lại.' : undefined
+              };
+            }
+            return it;
+          })
+        );
+        if (result.persistence?.cloudSaved === false) {
+          showToast('Chưa xác nhận lưu kết quả lên cloud. Đã giữ kết quả hiện có và dừng hàng đợi; hãy lưu lại trước khi chấm tiếp.', 'warning');
+          stoppedEarly = true;
+          break;
+        }
+        if (result.quotaExceeded) {
+          stoppedEarly = true;
+          showToast('AI hết hạn mức (429). Đã lưu kết quả hiện có và dừng hàng đợi; các bài còn lại chưa bị chấm lại.', 'warning');
+          break;
+        }
+      } catch (err: any) {
         if (abortControllerRef.current.signal.aborted) {
           break;
         }
 
-        const item = targetItems[i];
-        setCurrentGradingIndex(i + 1);
-        setProgressText(`Đang chấm bài ${i + 1}/${targetItems.length}: ${item.studentName}...`);
+        console.error(`[Batch Grading] Lỗi chấm bài học sinh ${item.studentName}:`, err);
+        errorCount++;
 
-        // Cập nhật trạng thái 'grading' cho học sinh này
+        const errMsg = err?.message || 'Lỗi xử lý khi chấm bài với AI';
         setItems((prev) =>
-          prev.map((it) => (it.id === item.id ? { ...it, status: 'grading', errorMsg: undefined } : it))
-        );
-
-        try {
-          const result = await GradingService.gradeSingleSubmissionWithAI({
-            assignment,
-            submission: item.submission,
-            // Do not interrupt the question loop inside the current student's work.
-            onProgress: (msg) => setProgressText(
-              `${abortControllerRef.current?.signal.aborted ? 'Đang dừng sau bài hiện tại: ' : ''}[${item.studentName}] ${msg}`)
-          });
-
-          // Cập nhật kết quả thành công
-          const newStatus: BatchItemStatus = result.needsTeacherReview ? 'needs_review' : 'completed';
-          if (result.needsTeacherReview) reviewCount++; else successCount++;
-
-          currentSubsMap.set(result.submission.id, result.submission);
-
-          setItems((prev) =>
-            prev.map((it) => {
-              if (it.id === item.id) {
-                return {
+          prev.map((it) =>
+            it.id === item.id
+              ? {
                   ...it,
-                  status: newStatus,
-                  score: result.submission.totalScore,
-                  totalErrors: result.totalErrors,
-                  firstErrorSummary: result.firstError
-                    ? `Bước ${result.firstError.step} (${result.firstError.type})`
-                    : undefined,
-                  needsTeacherReview: result.needsTeacherReview,
-                  submission: result.submission,
-                  errorMsg: undefined,
-                  cloudSaveWarning: result.persistence?.cloudSaved === false ? 'Chưa xác nhận lưu lên cloud. Kết quả hiện có cần lưu lại; không cần chấm AI lại.' : undefined
-                };
-              }
-              return it;
-            })
-          );
-          if (result.persistence?.cloudSaved === false) {
-            showToast('Chưa xác nhận lưu kết quả lên cloud. Đã giữ kết quả hiện có và dừng hàng đợi; hãy lưu lại trước khi chấm tiếp.', 'warning');
-            stoppedEarly = true;
-            break;
-          }
-          if (result.quotaExceeded) {
-            stoppedEarly = true;
-            showToast('AI hết hạn mức (429). Đã lưu kết quả hiện có và dừng hàng đợi; các bài còn lại chưa bị chấm lại.', 'warning');
-            break;
-          }
-        } catch (err: any) {
-          console.error(`[Batch Grading] Lỗi chấm bài học sinh ${item.studentName}:`, err);
-          errorCount++;
+                  status: 'failed',
+                  errorMsg: errMsg
+                }
+              : it
+          )
+        );
 
-          const errMsg = err?.message || 'Lỗi xử lý khi chấm bài với AI';
-          setItems((prev) =>
-            prev.map((it) =>
-              it.id === item.id
-                ? {
-                    ...it,
-                    status: 'failed',
-                    errorMsg: errMsg
-                  }
-                : it
-            )
-          );
-
-          // Giãn cách thêm nếu dính rate limit 429
-          if (errMsg.includes('429') || errMsg.toLowerCase().includes('quota')) {
-            stoppedEarly = true;
-            break;
-          }
-        }
-
-        // Giãn cách 800ms giữa các học sinh (Chuẩn an toàn Matsuda)
-        if (i < targetItems.length - 1 && !abortControllerRef.current.signal.aborted) {
-          await new Promise((r) => setTimeout(r, 800));
+        // Giãn cách thêm nếu dính rate limit 429
+        if (errMsg.includes('429') || errMsg.toLowerCase().includes('quota')) {
+          stoppedEarly = true;
+          break;
         }
       }
 
-      // Cập nhật danh sách bài nộp lên View cha
-      const updatedSubsList = Array.from(currentSubsMap.values());
-      onSubmissionsUpdated(updatedSubsList, { cloudHandled: true });
-
-      if (abortControllerRef.current.signal.aborted && !stoppedEarly) {
-        showToast(
-          `Đã tạm dừng sau bài hiện tại. Đã xử lý ${successCount + reviewCount + errorCount}/${targetItems.length} bài (${errorCount} lỗi); các kết quả chấm xong đã được lưu.`,
-          'warning'
-        );
-      } else if (!stoppedEarly) {
-        showToast(
-          `Hoàn tất đợt chấm theo bộ lọc! Đã xử lý ${successCount + reviewCount + errorCount}/${targetItems.length} bài (${reviewCount} bài cần duyệt, ${errorCount} lỗi).`,
-          errorCount > 0 ? 'warning' : 'success'
-        );
+      // Giãn cách 800ms giữa các học sinh (Chuẩn an toàn Matsuda)
+      if (i < targetItems.length - 1 && !abortControllerRef.current.signal.aborted) {
+        await new Promise((r) => setTimeout(r, 800));
       }
-    } finally {
-      setIsGrading(false);
-      setCurrentGradingIndex(-1);
-      setProgressText('');
-      gradingOperationLock.current = false;
+    }
+
+    setIsGrading(false);
+    setCurrentGradingIndex(-1);
+    setProgressText('');
+
+    // Cập nhật danh sách bài nộp lên View cha
+    const updatedSubsList = Array.from(currentSubsMap.values());
+    onSubmissionsUpdated(updatedSubsList, { cloudHandled: true });
+
+    if (!abortControllerRef.current.signal.aborted && !stoppedEarly) {
+      showToast(
+        `Hoàn tất chấm cả lớp! Đã chấm ${successCount + reviewCount} bài (${reviewCount} bài cần duyệt, ${errorCount} lỗi).`,
+        errorCount > 0 ? 'warning' : 'success'
+      );
     }
   };
 
@@ -309,9 +309,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
    * Chấm lại 1 học sinh đơn lẻ
    */
   const handleGradeSingle = async (item: BatchItem) => {
-    if (isGrading || gradingOperationLock.current) return;
-    gradingOperationLock.current = true;
-    setGradingSingleId(item.id);
+    if (isGrading) return;
     setItems((prev) =>
       prev.map((it) => (it.id === item.id ? { ...it, status: 'grading', errorMsg: undefined } : it))
     );
@@ -356,9 +354,6 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
         )
       );
       showToast(`Không thể chấm bài của ${item.studentName}: ${err?.message}`, 'error');
-    } finally {
-      gradingOperationLock.current = false;
-      setGradingSingleId(null);
     }
   };
 
@@ -390,7 +385,6 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
    * Lưu bài nộp giấy mới vào hàng đợi chấm
    */
   const handleSaveNewPaperSubmission = () => {
-    if (gradingOperationLock.current) return;
     const studentName = newPaperStudentName.trim();
     if (!studentName) {
       showToast('Hãy nhập hoặc chọn tên học sinh.', 'warning');
@@ -404,12 +398,12 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
     const nowIso = new Date().toISOString();
     const newSubmissionId = `sub_paper_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-    // Shared pages are stored once on the submission, not copied into every answer.
+    // Tạo answers rỗng với ảnh đính kèm
     const answers = assignment.questions.map((q) => ({
       questionId: q.id,
       selectedAnswer: '',
       studentSolutionText: '',
-      essayImages: [],
+      essayImages: newPaperImages,
       isCorrect: false,
       pointsEarned: 0,
       maxPoints: q.points || 1.0
@@ -536,7 +530,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
 
           <button
             onClick={onClose}
-            disabled={isBusy}
+            disabled={isGrading}
             className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors disabled:opacity-50 cursor-pointer"
             title="Đóng modal"
           >
@@ -618,11 +612,11 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
             {!isGrading ? (
               <button
                 onClick={() => handleStartBatch(false)}
-                disabled={isBusy || gradingTargetCount === 0}
+                disabled={items.length === 0}
                 className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center space-x-1.5 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Bắt đầu chấm AI ({gradingTargetCount} bài)</span>
+                <span>Bắt đầu chấm AI</span>
               </button>
             ) : (
               <button
@@ -634,20 +628,20 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
               </button>
             )}
 
-            {failedInFilterCount > 0 && !isBusy && (
+            {failedCount > 0 && !isGrading && (
               <button
                 onClick={() => handleStartBatch(true)}
                 className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs rounded-xl flex items-center space-x-1.5 active:scale-95 transition-all cursor-pointer"
                 title="Chỉ chấm lại các bài bị lỗi hoặc mạng ngắt quãng"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>Chấm lại bài lỗi ({failedInFilterCount})</span>
+                <span>Chấm lại bài lỗi ({failedCount})</span>
               </button>
             )}
 
             <button
               onClick={() => setShowAddPaperForm(!showAddPaperForm)}
-              disabled={isBusy}
+              disabled={isGrading}
               className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-xs rounded-xl flex items-center space-x-1.5 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -656,7 +650,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
 
             <button
               onClick={handleExportExcel}
-              disabled={items.length === 0 || isBusy}
+              disabled={items.length === 0 || isGrading}
               className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center space-x-1.5 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
@@ -671,7 +665,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
                 type="checkbox"
                 checked={skipAlreadyGraded}
                 onChange={(e) => setSkipAlreadyGraded(e.target.checked)}
-                disabled={isBusy}
+                disabled={isGrading}
                 className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
               />
               <span>Bỏ qua bài đã có điểm</span>
@@ -681,7 +675,6 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
               <span className="text-slate-400 font-semibold">Nguồn:</span>
               <select
                 value={filterSource}
-                disabled={isBusy}
                 onChange={(e: any) => setFilterSource(e.target.value)}
                 className="bg-white border border-slate-200 rounded-lg px-2 py-1 font-semibold text-slate-700 focus:ring-1 focus:ring-indigo-500"
               >
@@ -695,7 +688,6 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
               <span className="text-slate-400 font-semibold">Lọc:</span>
               <select
                 value={filterStatus}
-                disabled={isBusy}
                 onChange={(e: any) => setFilterStatus(e.target.value)}
                 className="bg-white border border-slate-200 rounded-lg px-2 py-1 font-semibold text-slate-700 focus:ring-1 focus:ring-indigo-500"
               >
@@ -770,14 +762,14 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
                       multiple
                       capture="environment"
                       onChange={handleUploadPaperFiles}
-                      disabled={isProcessingPaperImages || isBusy}
+                      disabled={isProcessingPaperImages}
                       className="hidden"
                     />
                   </label>
 
                   <button
                     onClick={handleSaveNewPaperSubmission}
-                    disabled={isBusy || !newPaperStudentName.trim() || newPaperImages.length === 0 || isProcessingPaperImages}
+                    disabled={!newPaperStudentName.trim() || newPaperImages.length === 0 || isProcessingPaperImages}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl disabled:opacity-50 cursor-pointer shadow-xs"
                   >
                     Lưu vào hàng đợi chấm
@@ -978,7 +970,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
                             {/* Single Re-grade */}
                             <button
                               onClick={() => handleGradeSingle(item)}
-                              disabled={isBusy}
+                              disabled={isGrading}
                               className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
                               title="Chấm lại học sinh này"
                             >
@@ -1004,7 +996,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
           <div className="flex items-center space-x-2">
             <button
               onClick={onClose}
-              disabled={isBusy}
+              disabled={isGrading}
               className="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs rounded-xl transition-colors cursor-pointer disabled:opacity-50"
             >
               Đóng

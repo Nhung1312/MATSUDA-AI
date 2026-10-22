@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Assignment, ClassRoom, Submission } from '../../types';
 import { SHOWCASE_DEMO_ASSIGNMENT, SHOWCASE_DEMO_SUBMISSION } from '../../data/showcaseDemo';
 import { 
@@ -58,12 +58,22 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
       : 0),
     0
   );
+  // Count pending answers, not submissions. Keep the original dashboard metric.
   const pendingTeacherReviews = safeSubmissions.reduce(
     (sum, sub) => sum + (Array.isArray(sub.answers)
       ? sub.answers.filter(a => a.needsTeacherReview && a.teacherScore === undefined).length
       : 0),
     0
   );
+  const [showPendingQueue, setShowPendingQueue] = useState(false);
+  const pendingEntries = safeSubmissions.flatMap(sub => {
+    const count = Array.isArray(sub.answers)
+      ? sub.answers.filter(a => a.needsTeacherReview && a.teacherScore === undefined).length
+      : 0;
+    const assignment = safeAssignments.find(a =>
+      a.id === sub.assignmentId || a.assignmentCode === sub.assignmentId);
+    return count && assignment ? [{ assignment, submission: sub, count }] : [];
+  });
 
   // Đợt 8B: tự chọn dữ liệu demo tốt nhất.
   // Ưu tiên bài đã có Step Analysis/lỗi gốc để người xem thấy ngay giá trị AI.
@@ -161,9 +171,51 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
           <div className="flex items-center gap-3 text-[10px] font-bold text-slate-500">
             <span>AI: {aiAnalyzedAnswers}</span>
             <span>Lỗi gốc: {rootErrorsDetected}</span>
-            <span>Chờ duyệt: {pendingTeacherReviews}</span>
+            <button
+              type="button"
+              onClick={() => setShowPendingQueue(open => !open)}
+              className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 font-black text-amber-900 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-400"
+              aria-expanded={showPendingQueue}
+              title="Mở danh sách bài có câu tự luận chờ giáo viên duyệt"
+            >
+              Chờ duyệt: {pendingTeacherReviews} câu {showPendingQueue ? '▲' : '▼'}
+            </button>
           </div>
         </div>
+        {showPendingQueue && (
+          <div className="mb-3 space-y-2 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+            <p className="text-xs font-bold text-amber-900">
+              {pendingTeacherReviews} câu cần duyệt trong {pendingEntries.length} bài nộp
+            </p>
+            {pendingEntries.length === 0 ? (
+              <p className="text-xs text-amber-800">
+                Chưa ghép được bài chờ duyệt với mã đề hiện có. Hãy chọn Kết quả và đồng bộ bài nộp.
+              </p>
+            ) : (
+              <div className="max-h-64 space-y-1.5 overflow-y-auto">
+                {pendingEntries.map(entry => (
+                  <button
+                    type="button"
+                    key={entry.submission.id}
+                    onClick={() => onNavigate('results', {
+                      assignmentId: entry.assignment.id,
+                      submissionId: entry.submission.id,
+                      pendingOnly: true
+                    })}
+                    className="flex w-full flex-col gap-1 rounded-lg border border-amber-200 bg-white p-2.5 text-left hover:border-amber-400 hover:bg-amber-100 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <span className="text-xs font-bold text-slate-900">
+                      {entry.submission.studentName} — {entry.assignment.title}
+                    </span>
+                    <span className="text-xs font-semibold text-amber-900">
+                      Lớp {entry.submission.className || entry.assignment.className || '?'} • {entry.count} câu cần duyệt →
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
           {[
             ['1','Tách đề'],

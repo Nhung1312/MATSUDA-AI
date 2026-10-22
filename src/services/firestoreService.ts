@@ -1,7 +1,6 @@
 import { 
   db, 
   auth,
-  firebaseConfig,
   collection, 
   doc, 
   getDoc, 
@@ -14,11 +13,8 @@ import {
   orderBy,
   serverTimestamp 
 } from '../firebase';
-import { getDocFromServer, deleteField, updateDoc } from 'firebase/firestore';
-import { assertTeacherCanDeleteSubmission, isSubmissionDeletionEnabled } from './submissionDeletionService';
 import { Assignment, Submission, ClassRoom, ExamTemplate, Contest, ContestSubmission } from '../types';
-import { ExamCloudSaveError, examPayloadBytes } from '../utils/examSaveDiagnostics';
-import { compactSubmissionImages } from '../utils/submissionImageUtils';
+import { getDocFromServer, getDocsFromServer } from 'firebase/firestore';
 
 export const EXAMS_COLLECTION = 'exams';
 export const RESULTS_COLLECTION = 'results';
@@ -76,22 +72,14 @@ export class FirestoreService {
     assignment: Assignment, 
     teacherUser?: { uid: string; email?: string | null; displayName?: string | null }
   ): Promise<void> {
-    const diagnostics = {
-      code: 'unknown', stage: 'prepare' as 'prepare' | 'firestore',
-      projectId: firebaseConfig.projectId,
-      authState: (auth.currentUser ? (auth.currentUser.isAnonymous ? 'anonymous' : 'firebase') : 'none') as 'firebase' | 'anonymous' | 'none',
-      ownerMatches: !auth.currentUser || !teacherUser || teacherUser.uid === auth.currentUser.uid,
-      payloadBytes: 0
-    };
     try {
       const examDocRef = doc(db, EXAMS_COLLECTION, assignment.id);
       const currentAuthUser = auth.currentUser;
-      const effectiveTeacher = currentAuthUser ? {
+      const effectiveTeacher = teacherUser || (currentAuthUser ? {
         uid: currentAuthUser.uid,
         email: currentAuthUser.email || '',
         displayName: currentAuthUser.displayName || 'Giáo viên'
-      } : teacherUser;
-      if (!diagnostics.ownerMatches) throw Object.assign(new Error(), { code: 'owner-mismatch' });
+      } : undefined);
        
       const payload: any = {
         ...assignment,
@@ -108,28 +96,18 @@ export class FirestoreService {
       // Làm sạch toàn bộ các giá trị undefined trước khi setDoc
       const cleanPayload = sanitizeForFirestore(payload);
 
-      diagnostics.payloadBytes = examPayloadBytes(cleanPayload);
-      // A single UTF-8 string over 1 MiB cannot fit in any Firestore document.
-      // Other sizing decisions stay with Firestore; JSON size is diagnostic only.
-      const oversized = (value: any): boolean => typeof value === 'string'
-        ? new TextEncoder().encode(value).length > 1048487
-        : value && typeof value === 'object' && Object.values(value).some(oversized);
-      if (oversized(cleanPayload)) throw Object.assign(new Error(), { code: 'document-too-large' });
-      diagnostics.stage = 'firestore';
       await setDoc(examDocRef, cleanPayload, { merge: true });
       console.log(`[Firestore] Đã lưu đề thi ${assignment.id} (${assignment.assignmentCode}) lên Cloud Firestore thành công.`);
     } catch (error) {
-      const code = String((error as any)?.code || 'unknown');
-      diagnostics.code = /^[a-zA-Z0-9_/-]{1,80}$/.test(code) ? code : 'unknown';
-      console.warn('[Firestore] Lưu đề chưa được xác nhận', diagnostics);
-      throw new ExamCloudSaveError(diagnostics);
+      console.error('[Firestore Error] Không thể lưu đề thi lên Firestore:', error);
+      throw error;
     }
   }
 
   /**
    * 2. Tìm kiếm đề thi theo "Mã đề" (assignmentCode) trên Firestore
    */
-  static async getExamByCode(code: string): Promise<Assignment | null> {
+  static async getExamByCode(code: string, forceServer = false): Promise<Assignment | null> {
     if (!code) return null;
     const cleanCode = code.trim().toUpperCase();
      
@@ -139,14 +117,22 @@ export class FirestoreService {
         where('assignmentCode', '==', cleanCode)
       );
 
-      const querySnapshot = await getDocs(q);
-       
+      const querySnapshot = forceServer ? await getDocsFromServer(q) : await getDocs(q);
       if (!querySnapshot.empty) {
-        return normalizeAssignmentDoc(querySnapshot.docs[0].data(), querySnapshot.docs[0].id);
+        // A code should be unique; if older duplicate docs exist, choose the
+        // most recently updated one instead of an arbitrary Firestore ordering.
+        const matches = [...querySnapshot.docs].sort((left, right) => {
+          const leftData = left.data();
+          const rightData = right.data();
+          return String(rightData.updatedAt || rightData.createdAt || '').localeCompare(
+            String(leftData.updatedAt || leftData.createdAt || '')
+          );
+        });
+        return normalizeAssignmentDoc(matches[0].data(), matches[0].id);
       }
 
       const docRef = doc(db, EXAMS_COLLECTION, cleanCode);
-      const docSnap = await getDoc(docRef);
+      const docSnap = forceServer ? await getDocFromServer(docRef) : await getDoc(docRef);
       if (docSnap.exists()) {
         return normalizeAssignmentDoc(docSnap.data(), docSnap.id);
       }
@@ -154,7 +140,10 @@ export class FirestoreService {
       // Dự phòng tìm kiếm mềm (bỏ dấu gạch ngang hoặc khoảng trắng thừa)
       const codeNoDash = cleanCode.replace(/[^A-Z0-9]/g, '');
       if (codeNoDash) {
-        const allExams = await this.getExams();
+        const allExams = forceServer
+          ? (await getDocsFromServer(collection(db, EXAMS_COLLECTION))).docs.map(snap =>
+              normalizeAssignmentDoc(snap.data(), snap.id))
+          : await this.getExams();
         const found = allExams.find(e => {
           const rawCode = (e.assignmentCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
           const rawId = (e.id || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
@@ -166,6 +155,7 @@ export class FirestoreService {
       return null;
     } catch (error) {
       console.error('[Firestore Error] Lỗi tìm đề theo mã:', error);
+      if (forceServer) throw error;
       return null;
     }
   }
@@ -195,7 +185,7 @@ export class FirestoreService {
       const resultDocRef = doc(db, RESULTS_COLLECTION, submission.id);
        
       const payload = {
-        ...compactSubmissionImages(submission),
+        ...submission,
         createdAt: new Date().toISOString()
       };
 
@@ -210,7 +200,7 @@ export class FirestoreService {
   /**
    * Lấy danh sách đề thi của giáo viên (lọc theo teacherId) hoặc toàn bộ đề trên Firestore
    */
-  static async getExams(teacherId?: string, teacherEmail?: string | null): Promise<Assignment[]> {
+  static async getExams(teacherId?: string, teacherEmail?: string | null, strict = false): Promise<Assignment[]> {
     try {
       if (!teacherId) {
         const q = query(collection(db, EXAMS_COLLECTION));
@@ -227,7 +217,7 @@ export class FirestoreService {
         collection(db, EXAMS_COLLECTION),
         where('teacherId', '==', teacherId)
       );
-      const querySnapshot = await getDocs(q);
+      const querySnapshot = strict ? await getDocsFromServer(q) : await getDocs(q);
       const map = new Map<string, Assignment>();
       querySnapshot.forEach((docSnap) => {
         map.set(docSnap.id, normalizeAssignmentDoc(docSnap.data(), docSnap.id));
@@ -240,7 +230,7 @@ export class FirestoreService {
             collection(db, EXAMS_COLLECTION),
             where('teacherEmail', '==', teacherEmail)
           );
-          const emailSnap = await getDocs(qEmail);
+          const emailSnap = strict ? await getDocsFromServer(qEmail) : await getDocs(qEmail);
           emailSnap.forEach((docSnap) => {
             if (!map.has(docSnap.id)) {
               map.set(docSnap.id, normalizeAssignmentDoc(docSnap.data(), docSnap.id));
@@ -248,12 +238,14 @@ export class FirestoreService {
           });
         } catch (emailErr) {
           console.warn('[Firestore] Query teacherEmail fallback non-fatal:', emailErr);
+          if (strict) throw emailErr;
         }
       }
 
       return Array.from(map.values());
     } catch (error) {
       console.error('[Firestore Error] Lỗi tải danh sách đề thi:', error);
+      if (strict) throw error;
       return [];
     }
   }
@@ -283,39 +275,12 @@ export class FirestoreService {
   }
 
   /**
-   * Delete exactly one accepted submission, only for the authenticated Firebase
-   * owner of its cloud exam. Do not delete from localStorage until cloud confirms.
-   * Firestore security rules independently enforce the same owner requirement.
-   */
-  static async deleteSubmissionAsTeacher(expected: Submission): Promise<void> {
-    if (!isSubmissionDeletionEnabled()) throw new Error('Chức năng xóa đang tạm khóa; xuất ZIP vẫn hoạt động.');
-    const teacherUid = auth.currentUser?.uid;
-    if (!teacherUid) {
-      throw new Error('Cần đăng nhập giáo viên bằng Google/Firebase thực; chế độ xem thử không được xóa.');
-    }
-    const assignmentRef = doc(db, EXAMS_COLLECTION, expected.assignmentId);
-    const assignmentSnap = await getDocFromServer(assignmentRef);
-    if (!assignmentSnap.exists()) throw new Error('Không tìm thấy đề gốc trên Firebase; chưa xóa bài nào.');
-    const resultRef = doc(db, RESULTS_COLLECTION, expected.id);
-    const resultSnap = await getDocFromServer(resultRef);
-    if (!resultSnap.exists()) throw new Error('Lượt nộp đã bị xóa trên cloud; hãy đồng bộ lại danh sách.');
-    assertTeacherCanDeleteSubmission(
-      teacherUid,
-      { id: assignmentSnap.id, ...assignmentSnap.data() },
-      { id: resultSnap.id, ...(resultSnap.data() as Submission) },
-      expected
-    );
-    // Security rules MUST enforce owner via resource.assignmentId and exams.teacherId.
-    await deleteDoc(resultRef);
-  }
-
-  /**
    * Lấy toàn bộ kết quả bài nộp từ Firestore (Dùng cho Giáo viên đồng bộ giữa các máy)
    */
-  static async getAllResults(): Promise<Submission[]> {
+  static async getAllResults(strict = false): Promise<Submission[]> {
     try {
       const q = query(collection(db, RESULTS_COLLECTION));
-      const querySnapshot = await getDocs(q);
+      const querySnapshot = strict ? await getDocsFromServer(q) : await getDocs(q);
       const results: Submission[] = [];
       querySnapshot.forEach((docSnap) => {
         results.push({
@@ -326,6 +291,7 @@ export class FirestoreService {
       return results;
     } catch (error) {
       console.error('[Firestore Error] Lỗi tải tất cả kết quả từ Firestore:', error);
+      if (strict) throw error;
       return [];
     }
   }
@@ -722,14 +688,12 @@ export class FirestoreService {
     if (!teacherId) return;
     try {
       const teacherDocRef = doc(db, TEACHERS_COLLECTION, teacherId);
-      const payload: Record<string, unknown> = {
-        ...data,
+      // A paid Gemini secret must not enter a readable Firestore profile.
+      const { geminiApiKey: _legacySecret, ...publicData } = data;
+      const payload = {
+        ...publicData,
         updatedAt: new Date().toISOString()
       };
-      // NEVER persist paid Gemini API secrets in the teacher profile.
-      // Existing teachers collection rules permit broad reads; keep secrets
-      // only on the teacher's local device until a server-side vault exists.
-      delete payload.geminiApiKey;
       await setDoc(teacherDocRef, sanitizeForFirestore(payload), { merge: true });
       console.log(`[Firestore] Đã lưu thông tin giáo viên ${teacherId} lên Cloud Firestore.`);
     } catch (error) {
@@ -738,25 +702,9 @@ export class FirestoreService {
   }
 
   /**
-   * Remove a historically synced API key from a teacher document.
-   * Run after sign-in; this never touches classes, exams, scores or other data.
-   */
-  static async removeLegacyTeacherGeminiApiKey(teacherId: string): Promise<void> {
-    if (!teacherId) return;
-    if (auth.currentUser?.uid !== teacherId || auth.currentUser.isAnonymous) {
-      throw new Error('Cần đăng nhập Firebase đúng chủ hồ sơ để dọn trường key cũ.');
-    }
-    try {
-      await updateDoc(doc(db, TEACHERS_COLLECTION, teacherId), { geminiApiKey: deleteField() });
-    } catch (error: any) {
-      if (error?.code !== 'not-found') throw new Error('Chưa xác nhận xóa trường key cũ trên Cloud.');
-    }
-  }
-
-  /**
    * Đọc cấu hình và trạng thái của Giáo viên từ Cloud Firestore
    */
-  static async getTeacherProfile(teacherId: string): Promise<{
+  static async getTeacherProfile(teacherId: string, strict = false): Promise<{
     email?: string;
     displayName?: string;
     hasClearedDemoData?: boolean;
@@ -769,13 +717,11 @@ export class FirestoreService {
     if (!teacherId) return null;
     try {
       const teacherDocRef = doc(db, TEACHERS_COLLECTION, teacherId);
-      const snap = await getDoc(teacherDocRef);
+      const snap = strict ? await getDocFromServer(teacherDocRef) : await getDoc(teacherDocRef);
       if (snap.exists()) {
         const data = snap.data() || {};
-        const publicProfile = { ...data };
-        delete publicProfile.geminiApiKey;
         return {
-          ...publicProfile,
+          ...data,
           classes: Array.isArray(data.classes) ? data.classes : [],
           deletedAssignmentKeys: Array.isArray(data.deletedAssignmentKeys) ? data.deletedAssignmentKeys : [],
           cloudInitialized: Boolean(data.cloudInitialized)
@@ -784,6 +730,7 @@ export class FirestoreService {
       return null;
     } catch (error) {
       console.warn('[Firestore Error] Lỗi đọc thông tin giáo viên:', error);
+      if (strict) throw error;
       return null;
     }
   }

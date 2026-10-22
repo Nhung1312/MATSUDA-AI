@@ -1,7 +1,5 @@
 import type { Question } from '../types';
 import { formatQuestionSubItems } from './questionUtils';
-import { resolveGeminiEssayReference } from './mediaImportGuard';
-import { reconcileExtraGeminiPdfSolutions, type PdfQuestionReference } from './reconcileGeminiPdf';
 
 export class ExamImportError extends Error {
   name = 'ExamImportError';
@@ -16,7 +14,7 @@ export function separateQuestionAndSolution(text: string): { question: string; s
 }
 
 /** Validate one AI response locally; no second extraction/API call. */
-export function normalizeMediaExamQuestions(payload: any, pdfReference?: PdfQuestionReference): Question[] {
+export function normalizeMediaExamQuestions(payload: any): Question[] {
   const entries: any[] = Array.isArray(payload) ? payload
     : Array.isArray(payload?.questions) ? payload.questions
     : Array.isArray(payload?.data) ? payload.data : [];
@@ -34,7 +32,7 @@ export function normalizeMediaExamQuestions(payload: any, pdfReference?: PdfQues
     throw new ExamImportError('AI trả về số thứ tự câu hỏi bị trùng, có thể đã đọc phần đáp án thành đề. Hãy kiểm tra lại tài liệu trước khi nhập.');
   }
 
-  let questions: Question[] = sourceQuestions.map((q, idx): Question => {
+  const questions: Question[] = sourceQuestions.map((q, idx): Question => {
     const order = orders[idx];
     const split = separateQuestionAndSolution(String(q.question || ''));
     if (!split.question) {
@@ -50,22 +48,7 @@ export function normalizeMediaExamQuestions(payload: any, pdfReference?: PdfQues
       throw new ExamImportError(`Có nhiều đáp án nguồn cho Câu ${order}; cần đối chiếu trước khi nhập.`);
     }
     const answer = sourceAnswer[0];
-    // Prefer the actual supplied source answer. Empty Gemini fields must not
-    // overwrite a valid answer/solution from another source field.
-    // No maths are solved or invented during extraction.
-    const rawCorrect = isEssay
-      ? resolveGeminiEssayReference({
-          correctAnswer: answer?.correctAnswer || q.correctAnswer,
-          answer: answer?.answer || q.answer,
-          essayAnswer: answer?.essayAnswer || q.essayAnswer,
-          expectedAnswer: answer?.expectedAnswer || q.expectedAnswer,
-          explanation: answer?.explanation || q.explanation,
-          solution: answer?.solution || q.solution,
-          detailedSolution: answer?.detailedSolution || q.detailedSolution,
-          rubric: answer?.rubric || q.rubric,
-          markingGuide: answer?.markingGuide || q.markingGuide
-        })
-      : String(answer?.correctAnswer || q.correctAnswer || '').trim();
+    const rawCorrect = String(answer?.correctAnswer ?? q.correctAnswer ?? '').trim();
     let correctAnswer = rawCorrect;
     if (!isEssay) {
       const originalIndex = q.options.findIndex((opt: any, optIdx: number) =>
@@ -73,8 +56,8 @@ export function normalizeMediaExamQuestions(payload: any, pdfReference?: PdfQues
       correctAnswer = originalIndex >= 0 ? options[originalIndex].id
         : /^[A-D]$/i.test(rawCorrect) && options.some((opt: any) => opt.id === rawCorrect.toUpperCase()) ? rawCorrect.toUpperCase() : '';
     }
-    const explanation = String(answer?.explanation || answer?.solution || answer?.detailedSolution || answer?.question || split.solution || q.explanation || q.solution || '').trim();
-    const rubric = String(answer?.rubric || answer?.markingGuide || q.rubric || q.markingGuide || '').trim();
+    const explanation = String(answer?.explanation || answer?.solution || answer?.question || split.solution || q.explanation || '').trim();
+    const rubric = String(answer?.rubric || q.rubric || '').trim();
     return {
       id: `ai_media_${Date.now()}_${order}_${idx}`,
       order,
@@ -88,14 +71,8 @@ export function normalizeMediaExamQuestions(payload: any, pdfReference?: PdfQues
     };
   }).sort((a, b) => a.order - b.order);
 
-  const reconciliation = pdfReference ? reconcileExtraGeminiPdfSolutions(questions, pdfReference) : null;
-  if (reconciliation?.recoveredCount) questions = reconciliation.questions;
-  const effectiveOrders = questions.map(question => question.order);
-  const counts = reconciliation?.recoveredCount ? { questionCount: pdfReference!.totalFound,
-    multipleChoiceCount: pdfReference!.multipleChoiceCount, essayCount: pdfReference!.essayCount } : payload?.sourceCounts;
-
   // An unlinked source answer is evidence of an extraction mismatch, not a new question.
-  if (sourceAnswers.some(a => !a || !effectiveOrders.includes(Number(a.questionOrder ?? a.order)))) {
+  if (sourceAnswers.some(a => !a || !orders.includes(Number(a.questionOrder ?? a.order)))) {
     throw new ExamImportError('Có đáp án/lời giải chưa ghép được với câu hỏi gốc. Hệ thống đã dừng nhập để tránh sai số câu.');
   }
   for (const [key, count] of [
@@ -103,7 +80,7 @@ export function normalizeMediaExamQuestions(payload: any, pdfReference?: PdfQues
     ['multipleChoiceCount', questions.filter(q => q.type === 'multiple_choice').length],
     ['essayCount', questions.filter(q => q.type === 'essay').length]
   ] as const) {
-    if (counts?.[key] !== undefined && Number(counts[key]) !== count) {
+    if (payload?.sourceCounts?.[key] !== undefined && Number(payload.sourceCounts[key]) !== count) {
       throw new ExamImportError(`AI tách được ${questions.length} câu nhưng số câu trong đề nguồn không khớp. Hãy kiểm tra lại phần đề và đáp án trước khi nhập.`);
     }
   }

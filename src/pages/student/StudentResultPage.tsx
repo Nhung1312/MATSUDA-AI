@@ -36,12 +36,10 @@ import { ExamResultSheetView } from '../../components/ExamResultSheetView';
 import { SocraticTutorModal } from '../../components/SocraticTutorModal';
 import { StepGradingBreakdown } from '../../components/StepGradingBreakdown';
 import { stepGradingService } from '../../services/stepGradingService';
-import { getSubmissionAnswerImages } from '../../utils/submissionImageUtils';
 import { SocraticContext, StudentAnswer, StepGradingResponse, StepErrorType } from '../../types';
 import { useLearningProgressStore } from '../../store/useLearningProgressStore';
 import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
-import { isSubmissionAnswerPending, getSubmissionSummary, refreshSubmissionTotals } from '../../utils/submissionReviewUtils';
 
 interface StudentResultPageProps {
   submission: Submission;
@@ -61,7 +59,6 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   isTeacherPreview = false
 }) => {
   const [submission, setSubmission] = useState<Submission>(initialSubmission);
-  const displaySummary = getSubmissionSummary(assignment, submission);
   const effectiveReviewMode: 'score_only' | 'wrong_only' | 'full' =
     isTeacherPreview || isDemoPreview
       ? 'full'
@@ -211,7 +208,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
       const pendingReviewCount = updatedAnswers.filter(
         a => a.teacherScore === undefined && Boolean(a.needsTeacherReview || a.isProvisional || a.aiGradingError)
       ).length;
-      const updatedSub: Submission = refreshSubmissionTotals(assignment, {
+      const updatedSub: Submission = {
         ...submission,
         answers: updatedAnswers,
         totalScore,
@@ -221,7 +218,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         isProvisional: pendingReviewCount > 0 || submission.isProvisional,
         ungradedCount: Math.max(pendingReviewCount, submission.ungradedCount || 0),
         gradingStatus: pendingReviewCount > 0 ? 'needs_review' : submission.gradingStatus
-      });
+      };
 
       setSubmission(updatedSub);
       if (!isDemoPreview && !isTeacherPreview) {
@@ -303,14 +300,14 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
       firstErrorLatex,
       referenceStepLatex,
       stepAnalysis,
-      essayImages: getSubmissionAnswerImages(submission, ans),
+      essayImages: ans.essayImages,
     });
   };
 
   // Tự động đồng bộ câu sai vào Mistake Vault khi vào trang kết quả
   useEffect(() => {
     if (isDemoPreview || isTeacherPreview) return;
-    if (submission && displaySummary.wrongCount > 0) {
+    if (submission && submission.wrongCount > 0) {
       try {
         useMistakeVaultStore.getState().addMistakesFromSubmission(submission, assignment);
       } catch (e) {
@@ -374,21 +371,16 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
   // Filtered list of answers
   const filteredAnswers = submission.answers.filter(ans => {
-    const isAwaitingAnsReview = isSubmissionAnswerPending(assignment, submission, ans);
+    const isAwaitingAnsReview = ans.needsTeacherReview && ans.teacherScore === undefined;
     if (effectiveReviewMode === 'wrong_only') return !ans.isCorrect && !isAwaitingAnsReview;
-    if (filterType === 'correct') return ans.isCorrect && !isAwaitingAnsReview;
+    if (filterType === 'correct') return ans.isCorrect;
     if (filterType === 'wrong') return !ans.isCorrect && !isAwaitingAnsReview;
     return true;
   });
 
   // Calculate score rating banner
-  const isAwaitingReview = submission.isProvisional || submission.needsTeacherReview || submission.gradingStatus === 'needs_review' || displaySummary.pendingCount > 0;
+  const isAwaitingReview = submission.isProvisional || submission.needsTeacherReview || submission.gradingStatus === 'needs_review' || (submission.answers || []).some(a => a.needsTeacherReview && a.teacherScore === undefined);
   const hasPendingTeacherGrading = (submission.hasEssayQuestions && submission.gradingStatus === 'pending_teacher_grading') || isAwaitingReview;
-  const hasPendingObjective = submission.answers.some(ans => {
-    const q = submission.shuffledQuestions?.find(item => item.id === ans.questionId)
-      || assignment.questions.find(item => item.id === ans.questionId);
-    return q && !isEssayQuestion(q) && isSubmissionAnswerPending(assignment, submission, ans);
-  });
   const score = submission.totalScore;
   const scoreMax = submission.maxScore && submission.maxScore > 0 ? submission.maxScore : 10;
   const normalizedScore = scoreMax > 0 ? score * 10 / scoreMax : 0;
@@ -485,7 +477,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 <div className="flex items-baseline space-x-1.5 pt-1">
                   <span className="text-xs font-bold text-slate-500">Tạm tính</span>
                   <span className="text-3xl sm:text-4xl font-black text-amber-700 dark:text-amber-300">
-                    {hasPendingObjective ? '—' : (submission.mcqScore !== undefined ? submission.mcqScore : score)}
+                    {submission.mcqScore !== undefined ? submission.mcqScore : score}
                   </span>
                   <span className="text-sm font-bold text-slate-400">/ {scoreMax}</span>
                 </div>
@@ -527,7 +519,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 <span>Đúng</span>
               </div>
               <div className="text-2xl font-black text-emerald-900">
-                {displaySummary.correctCount}{' '}
+                {submission.correctCount}{' '}
                 <span className="text-xs font-normal text-emerald-700">/{submission.totalQuestions}</span>
               </div>
             </div>
@@ -538,7 +530,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 <span>Sai</span>
               </div>
               <div className="text-2xl font-black text-rose-900">
-                {displaySummary.wrongCount}{' '}
+                {submission.wrongCount}{' '}
                 <span className="text-xs font-normal text-rose-700">/{submission.totalQuestions}</span>
               </div>
             </div>
@@ -559,7 +551,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 <span>Chính xác</span>
               </div>
               <div className="text-2xl font-black text-indigo-900">
-                {Math.round((displaySummary.correctCount / submission.totalQuestions) * 100)}%
+                {Math.round((submission.correctCount / submission.totalQuestions) * 100)}%
               </div>
             </div>
           </div>
@@ -583,7 +575,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
           </details>
 
           {/* SỔ TAY CÂU SAI BANNER (MISTAKE VAULT) */}
-          {effectiveReviewMode !== 'score_only' && (displaySummary.wrongCount > 0 ? (
+          {effectiveReviewMode !== 'score_only' && (submission.wrongCount > 0 ? (
             <div className="mt-6 max-w-2xl mx-auto bg-gradient-to-r from-rose-500/10 via-pink-500/10 to-indigo-500/10 border-2 border-rose-200 dark:border-rose-900 rounded-3xl p-5 text-left flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-in fade-in duration-300">
               <div className="flex items-start space-x-3.5">
                 <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-rose-600 to-pink-600 text-white flex items-center justify-center font-bold shrink-0 shadow-md">
@@ -593,8 +585,8 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                   <div className="flex items-center space-x-2">
                     <h4 className="font-black text-sm text-slate-900 dark:text-white">
                       {isDemoPreview
-                        ? `${displaySummary.wrongCount} câu cần khắc phục`
-                        : `${displaySummary.wrongCount} câu cần luyện lại`}
+                        ? `${submission.wrongCount} câu cần khắc phục`
+                        : `${submission.wrongCount} câu cần luyện lại`}
                     </h4>
                   </div>
 
@@ -626,7 +618,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
           {/* Quick Actions */}
           <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-center gap-2 sm:gap-3 mt-6 sm:mt-8">
-            {!isDemoPreview && !isTeacherPreview && effectiveReviewMode === 'wrong_only' && displaySummary.wrongCount > 0 && (
+            {!isDemoPreview && !isTeacherPreview && effectiveReviewMode === 'wrong_only' && submission.wrongCount > 0 && (
               <button
                 onClick={() => {
                   setFilterType('wrong');
@@ -638,7 +630,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-5 py-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-sm cursor-pointer"
               >
                 <BookOpen className="w-4 h-4" />
-                <span>Xem câu sai ({displaySummary.wrongCount})</span>
+                <span>Xem câu sai ({submission.wrongCount})</span>
               </button>
             )}
             {!isDemoPreview && !isTeacherPreview && effectiveReviewMode !== 'score_only' && (
@@ -647,7 +639,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-5 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
               >
                 <BookOpen className="w-4 h-4" />
-                <span>Câu cần luyện {displaySummary.wrongCount > 0 ? `(${displaySummary.wrongCount})` : ''}</span>
+                <span>Câu cần luyện {submission.wrongCount > 0 ? `(${submission.wrongCount})` : ''}</span>
               </button>
             )}
             {!isDemoPreview && !isTeacherPreview && (
@@ -784,7 +776,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                             : 'text-slate-600 hover:text-rose-700'
                         }`}
                       >
-                        Sai ({displaySummary.wrongCount})
+                        Sai ({submission.wrongCount})
                       </button>
                       <button
                         onClick={() => setFilterType('correct')}
@@ -794,7 +786,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                             : 'text-slate-600 hover:text-emerald-700'
                         }`}
                       >
-                        Đúng ({displaySummary.correctCount})
+                        Đúng ({submission.correctCount})
                       </button>
                     </div>
   
@@ -810,15 +802,16 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                 const question = questionPool.find(q => q.id === ans.questionId) || assignment.questions.find(q => q.id === ans.questionId);
                 if (!question) return null;
 
-                const isAwaitingAnsReview = isSubmissionAnswerPending(assignment, submission, ans);
-                const isCorrect = ans.isCorrect && !isAwaitingAnsReview;
+                const isCorrect = ans.isCorrect;
                 const hasAiExp = !!aiExplanations[question.id];
                 const isLoadingAi = !!loadingAi[question.id];
                 const isExpanded = expandedCards[question.id] ?? !isCorrect; // câu sai mở, câu đúng thu gọn
 
                 const currentAiGrading = aiGradingFeedback[question.id] || (ans.aiGraded ? { score: ans.aiScore || 0, feedback: ans.aiFeedback || '' } : null);
                 const isLoadingGrading = !!loadingAiGrading[question.id];
-                const images = isEssayQuestion(question) ? getSubmissionAnswerImages(submission, ans) : ans.essayImages || [];
+                const images = ans.essayImages || [];
+
+                const isAwaitingAnsReview = ans.needsTeacherReview && ans.teacherScore === undefined;
 
                 return (
                   <div
@@ -912,13 +905,13 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                           const effectiveCorrectAnswer = ans.correctAnswer || (ans.isCorrect ? ans.selectedAnswer : '');
                           const isStudentChoice = ans.selectedAnswer === opt.id || 
                             (!ans.selectedAnswer && ans.selectedOptionText && opt.text && ans.selectedOptionText.trim() === opt.text.trim());
-                          const isCorrectChoice = !isAwaitingAnsReview && (ans.isCorrect
+                          const isCorrectChoice = ans.isCorrect
                             ? isStudentChoice
                             : (effectiveCorrectAnswer
                                 ? (effectiveCorrectAnswer === opt.id || (opt.text && effectiveCorrectAnswer.trim() === opt.text.trim()))
                                 : ((Boolean((opt as any).originalId) && (opt as any).originalId === question.correctAnswer) ||
                                    question.correctAnswer === opt.id ||
-                                   (question.correctAnswer && opt.text && question.correctAnswer.trim() === opt.text.trim()))));
+                                   (question.correctAnswer && opt.text && question.correctAnswer.trim() === opt.text.trim())));
 
                           let optContainerClass = 'border-slate-200 bg-slate-50/70 text-slate-700';
                           let badgeClass = 'bg-slate-200 text-slate-700';
@@ -926,7 +919,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                           if (isCorrectChoice) {
                             optContainerClass = 'border-emerald-500 bg-emerald-50 text-emerald-950 font-bold ring-2 ring-emerald-400/40';
                             badgeClass = 'bg-emerald-600 text-white';
-                          } else if (isStudentChoice && !isCorrect && !isAwaitingAnsReview) {
+                          } else if (isStudentChoice && !isCorrect) {
                             optContainerClass = 'border-rose-500 bg-rose-50 text-rose-950 font-bold ring-2 ring-rose-400/30';
                             badgeClass = 'bg-rose-600 text-white';
                           }
@@ -952,10 +945,10 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                                   className={`ml-2 text-[10px] uppercase font-black px-2 py-0.5 rounded-md shrink-0 flex items-center gap-1 ${
                                     isCorrect
                                       ? 'bg-emerald-700 text-white'
-                                       : isAwaitingAnsReview ? 'bg-slate-600 text-white' : 'bg-rose-600 text-white'
+                                      : 'bg-rose-600 text-white'
                                   }`}
                                 >
-                                  {isAwaitingAnsReview ? null : isCorrect ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />} Bạn chọn
+                                  {isCorrect ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />} Bạn chọn
                                 </span>
                               )}
 
@@ -1064,7 +1057,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                     )}
 
                     {/* Step-by-Step Mathematical Explanation */}
-                    {isExpanded && (!isAwaitingAnsReview || isTeacherPreview) && (
+                    {isExpanded && (
                       <div className="space-y-3 pt-2">
                         {question.explanation && (
                           <div className="p-4 bg-indigo-50/80 border border-indigo-200/80 rounded-2xl text-xs sm:text-sm text-indigo-950 shadow-xs">

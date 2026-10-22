@@ -85,6 +85,11 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
       return;
     }
     setActiveTab(tab);
+    if (tab === 'results') {
+      // Results may have been submitted in another student browser tab.
+      // Refresh read-only Firebase data on entry; never mutate grading.
+      onRefreshData();
+    }
     // Mỗi lần đổi tab dùng bộ tham số mới; tránh tham số demo/import cũ rò sang lần mở sau.
     setTabParams(params || {});
   };
@@ -335,8 +340,10 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
             classes={safeClasses}
             submissions={safeSubmissions}
             initialAssignmentId={tabParams.assignmentId}
-            onOpenShare={onOpenShare}
+            initialSubmissionId={tabParams.submissionId}
+            initialPendingOnly={tabParams.pendingOnly}
             onRefreshData={onRefreshData}
+            onOpenShare={onOpenShare}
             onNavigate={handleNavigate}
           />
         )}
