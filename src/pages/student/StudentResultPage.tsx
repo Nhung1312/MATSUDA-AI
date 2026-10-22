@@ -60,6 +60,15 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   isDemoPreview = false,
   isTeacherPreview = false
 }) => {
+  const loadLatestResult = async () => {
+    try {
+      const latest = await FirestoreService.getResultById(initialSubmission.id) as Submission | null;
+      if (!latest) throw new Error('Không đọc được kết quả mới từ Firebase.');
+      setSubmission(latest);
+      setPendingResultSave(null);
+      setAiActionMessage({ type: 'success', text: 'Đã mở kết quả mới từ Firebase. Bản phân tích chưa gửi vẫn được giữ riêng để đối chiếu.' });
+    } catch (error) { setAiActionMessage({ type: 'error', text: String(error) }); }
+  };
   const [pendingResultSave, setPendingResultSave] = useState<Submission | null>(null);
   const retryResultSave = async () => {
     if (!pendingResultSave) return;
@@ -432,6 +441,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
         {pendingResultSave && <div role="alert" className="bg-amber-50 border border-amber-300 p-3 rounded-xl text-sm">
           Kết quả phân tích chưa được Firebase xác nhận.
           <button type="button" className="ml-2 underline font-bold" onClick={() => void retryResultSave()}>Thử lưu lại</button>
+          <button type="button" className="ml-2 underline font-bold" onClick={() => void loadLatestResult()}>Tải kết quả mới từ Firebase</button>
         </div>}
         
         {isTeacherPreview && !isDemoPreview && (

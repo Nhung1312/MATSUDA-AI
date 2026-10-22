@@ -22,6 +22,10 @@ let latest:any={id:'s',assignmentId:' alias-a ',assignmentTitle:exam.title,stude
 const original=structuredClone(latest);
 const env:any={records:[],saveCalls:0};
 env.save=async(submission:Submission)=>{
+  if(env.deferNext){
+    env.deferNext=false;env.saveCalls++;env.pending={...submission,saveAttemptId:'late-op'};
+    return {localSaved:true,cloudSaved:false,pendingSubmission:env.pending,error:'Fixture awaiting acknowledgement'};
+  }
   const next=await prepareResultWrite(latest,submission,{intent:'teacher',operationId:crypto.randomUUID()});
   latest=next.record; const confirmed=await versionResult(latest);env.saveCalls++;
   window.dispatchEvent(new CustomEvent('submissions-confirmed',{detail:{kind:'result',scope:'teacher-fixture',submission:confirmed}}));
@@ -89,5 +93,22 @@ assert.deepEqual(latest.shuffledQuestions,original.shuffledQuestions);
 assert.deepEqual(latest.answers[0].essayImages,original.answers[0].essayImages);
 assert.deepEqual(latest.answers[0].stepAnalysis,original.answers[0].stepAnalysis);
 assert.equal(env.saveCalls,2);
+const questionTwo=()=>renderer!.root.find(node=>node.props.id==='teacher-review-q2');
+const saveQuestionTwo=()=>questionTwo().findAll(node=>node.type==='button'&&['Lưu','Đã lưu'].includes(label(node)))[0].props.onClick();
+env.deferNext=true;
+await act(async()=>{questionTwo().findAll(node=>node.type==='input'&&node.props.type==='number')[0].props.onChange({target:{value:'0.6'}});});
+await act(async()=>{saveQuestionTwo();await new Promise<void>(resolve=>setImmediate(resolve));});
+assert.ok(JSON.stringify(renderer!.toJSON()).includes('Fixture awaiting acknowledgement'));
+const late=await prepareResultWrite(latest,env.pending,{intent:'teacher',operationId:'late-op'});
+latest=late.record;
+await act(async()=>{
+  window.dispatchEvent(new CustomEvent('submissions-confirmed',{detail:{kind:'result',scope:'teacher-fixture',submission:await versionResult(latest)}}));
+  await new Promise<void>(resolve=>setImmediate(resolve));
+});
+assert.ok(JSON.stringify(renderer!.toJSON()).includes('Firebase đã xác nhận bản gửi trước đó'));
+await act(async()=>{questionTwo().findAll(node=>node.type==='input'&&node.props.type==='number')[0].props.onChange({target:{value:'0.7'}});});
+await act(async()=>{saveQuestionTwo();await new Promise<void>(resolve=>setImmediate(resolve));});
+assert.equal(latest.answers[0].teacherScore,.75);assert.equal(latest.answers[1].teacherScore,.7);
+assert.equal(env.saveCalls,4,'A late acknowledgement releases the pending edit without another AI call');
 await act(async()=>{renderer!.unmount();});
 console.log('PASS actual TeacherResults: delayed Cloud list/alias opens exact pending ID, old essay image/solution/analysis render, q1-close-reopen-q2 retains q1 without any AI request');

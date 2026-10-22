@@ -155,9 +155,20 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     const loadPending = () => { void listPendingResultSaves().then(records => {
       if (live) setRecoverableSaves(records.filter(r => r.kind === 'result'));
     }).catch(() => {}); };
+    const onConfirmed = (event: Event) => {
+      loadPending();
+      const detail = (event as CustomEvent).detail;
+      const confirmed = detail?.kind === 'result' ? detail.submission as Submission : null;
+      const pending = pendingCloudSave.current;
+      if (!confirmed || !pending || confirmed.id !== pending.id || confirmed.saveOperationId !== pending.saveAttemptId) return;
+      pendingCloudSave.current = null;
+      setSelectedSubmissionDetail(previous => previous?.id === confirmed.id
+        && (previous.saveRevision || 0) <= (confirmed.saveRevision || 0) ? confirmed : previous);
+      setReviewSaveNotice({ submissionId: confirmed.id, warning: false, text: 'Firebase đã xác nhận bản gửi trước đó. Điểm đã được cập nhật.' });
+    };
     loadPending();
-    window.addEventListener('submissions-confirmed', loadPending);
-    return () => { live = false; window.removeEventListener('submissions-confirmed', loadPending); };
+    window.addEventListener('submissions-confirmed', onConfirmed);
+    return () => { live = false; window.removeEventListener('submissions-confirmed', onConfirmed); };
   }, []);
   const reviewBusy = savingSubmission || gradingSingleInProgress || Object.values(gradingAiInProgress).some(Boolean);
 
