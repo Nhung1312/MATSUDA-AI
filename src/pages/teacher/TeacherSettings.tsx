@@ -119,10 +119,7 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
       if (!currentKey && auth.currentUser) {
         try {
           const profile = await FirestoreService.getTeacherProfile(auth.currentUser.uid);
-          if (profile?.geminiApiKey) {
-            currentKey = profile.geminiApiKey;
-            hybridAi.setApiKey(currentKey);
-          }
+          // API key is local-only; do not restore it from a public Cloud profile.
           if (profile?.geminiModel) {
             currentModel = profile.geminiModel;
             hybridAi.setModel(currentModel);
@@ -153,7 +150,6 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
     if (auth.currentUser) {
       try {
         await FirestoreService.saveTeacherProfile(auth.currentUser.uid, {
-          geminiApiKey: apiKeyInput,
           geminiModel: selectedModel,
           autoGradeEnabled
         });
@@ -172,11 +168,7 @@ export const TeacherSettings: React.FC<TeacherSettingsProps> = ({ onResetData, o
       hybridAi.clearApiKey();
       setApiKeyInput('');
       setTestResult(null);
-      if (auth.currentUser) {
-        FirestoreService.saveTeacherProfile(auth.currentUser.uid, {
-          geminiApiKey: ''
-        }).catch(() => {});
-      }
+      // Old Cloud secrets, if any, require a separate authenticated cleanup.
       setSavedKeySuccess(true);
       setTimeout(() => setSavedKeySuccess(false), 3000);
     }

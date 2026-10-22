@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { 
   User, 
   auth, 
@@ -31,22 +31,13 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const explicitPreview = useRef(false);
 
   useEffect(() => {
-    // 1. Phục hồi phiên giáo viên nếu đã đăng nhập trước đó
-    try {
-      const saved = localStorage.getItem('toan_thcs_teacher_auth_session');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && parsed.uid) {
-          setUser(parsed);
-          setLoading(false);
-        }
-      }
-    } catch {}
-
+    // Only Firebase SDK may restore a real teacher login, not a cached name/UID.
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
+        explicitPreview.current = false;
         setUser(currentUser);
         try {
           localStorage.setItem('toan_thcs_teacher_auth_session', JSON.stringify({
@@ -56,6 +47,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             photoURL: currentUser.photoURL
           }));
         } catch {}
+      } else if (!explicitPreview.current) {
+        setUser(null);
       }
       setLoading(false);
     });
@@ -64,6 +57,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const loginAsTeacher = (displayName?: string, email?: string): AuthUser => {
+    explicitPreview.current = true;
     const teacherUser: TeacherAuthUser = {
       uid: 'teacher_preview_user',
       email: email || 'giaovien.toan@thcs.edu.vn',
@@ -71,14 +65,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       photoURL: null
     };
     setUser(teacherUser);
-    try {
-      localStorage.setItem('toan_thcs_teacher_auth_session', JSON.stringify(teacherUser));
-    } catch {}
+    // Explicit demo is never persisted as a real authenticated teacher.
     setLoading(false);
     return teacherUser;
   };
 
   const signInWithGoogle = async (): Promise<AuthUser> => {
+    explicitPreview.current = false;
+    setUser(null);
     setLoading(true);
     try {
       const result = await signInWithPopup(auth, googleProvider);
@@ -96,19 +90,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch (error: any) {
       const isDomainErr = error?.code === 'auth/unauthorized-domain' || error?.message?.includes('unauthorized-domain');
       if (isDomainErr) {
-        console.warn('Firebase auth/unauthorized-domain: Tên miền chưa trong Authorized Domains của Firebase. Tự động kích hoạt phiên Giáo viên xem trước.');
-        const fallbackUser: TeacherAuthUser = {
-          uid: 'teacher_preview_user',
-          email: 'giaovien.toan@thcs.edu.vn',
-          displayName: 'Thầy/Cô Giáo viên (Toán THCS)',
-          photoURL: null
-        };
-        setUser(fallbackUser);
-        try {
-          localStorage.setItem('toan_thcs_teacher_auth_session', JSON.stringify(fallbackUser));
-        } catch {}
         setLoading(false);
-        return fallbackUser;
+        throw new Error('Tên miền Preview chưa được Firebase cho phép đăng nhập Google. Hãy thêm vào Authentication > Settings > Authorized domains. Không chuyển sang tài khoản giáo viên giả.');
       }
       setLoading(false);
       console.warn('Thông báo đăng nhập Google:', error?.message || error);
@@ -117,6 +100,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = async (): Promise<void> => {
+    explicitPreview.current = false;
     try {
       localStorage.removeItem('toan_thcs_teacher_auth_session');
       await signOut(auth);

@@ -187,7 +187,7 @@ export class FirestoreService {
   /**
    * Lấy danh sách đề thi của giáo viên (lọc theo teacherId) hoặc toàn bộ đề trên Firestore
    */
-  static async getExams(teacherId?: string, teacherEmail?: string | null): Promise<Assignment[]> {
+  static async getExams(teacherId?: string, teacherEmail?: string | null, strict = false): Promise<Assignment[]> {
     try {
       if (!teacherId) {
         const q = query(collection(db, EXAMS_COLLECTION));
@@ -231,6 +231,7 @@ export class FirestoreService {
       return Array.from(map.values());
     } catch (error) {
       console.error('[Firestore Error] Lỗi tải danh sách đề thi:', error);
+      if (strict) throw error;
       return [];
     }
   }
@@ -262,7 +263,7 @@ export class FirestoreService {
   /**
    * Lấy toàn bộ kết quả bài nộp từ Firestore (Dùng cho Giáo viên đồng bộ giữa các máy)
    */
-  static async getAllResults(): Promise<Submission[]> {
+  static async getAllResults(strict = false): Promise<Submission[]> {
     try {
       const q = query(collection(db, RESULTS_COLLECTION));
       const querySnapshot = await getDocs(q);
@@ -276,6 +277,7 @@ export class FirestoreService {
       return results;
     } catch (error) {
       console.error('[Firestore Error] Lỗi tải tất cả kết quả từ Firestore:', error);
+      if (strict) throw error;
       return [];
     }
   }
@@ -672,8 +674,10 @@ export class FirestoreService {
     if (!teacherId) return;
     try {
       const teacherDocRef = doc(db, TEACHERS_COLLECTION, teacherId);
+      // A paid Gemini secret must not enter a readable Firestore profile.
+      const { geminiApiKey: _legacySecret, ...publicData } = data;
       const payload = {
-        ...data,
+        ...publicData,
         updatedAt: new Date().toISOString()
       };
       await setDoc(teacherDocRef, sanitizeForFirestore(payload), { merge: true });
@@ -686,7 +690,7 @@ export class FirestoreService {
   /**
    * Đọc cấu hình và trạng thái của Giáo viên từ Cloud Firestore
    */
-  static async getTeacherProfile(teacherId: string): Promise<{
+  static async getTeacherProfile(teacherId: string, strict = false): Promise<{
     email?: string;
     displayName?: string;
     hasClearedDemoData?: boolean;
@@ -712,6 +716,7 @@ export class FirestoreService {
       return null;
     } catch (error) {
       console.warn('[Firestore Error] Lỗi đọc thông tin giáo viên:', error);
+      if (strict) throw error;
       return null;
     }
   }
