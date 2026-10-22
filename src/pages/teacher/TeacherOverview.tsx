@@ -168,7 +168,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
       <section className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm">
         <div className="flex items-center justify-between gap-3 mb-3">
           <h2 className="text-sm font-black text-slate-900 dark:text-white">Chu trình học từ lỗi sai</h2>
-          <div className="flex items-center gap-3 text-[10px] font-bold text-slate-500">
+          <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[10px] font-bold text-slate-500">
             <span>AI: {aiAnalyzedAnswers}</span>
             <span>Lỗi gốc: {rootErrorsDetected}</span>
             <button
@@ -233,8 +233,8 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
       </section>
       {/* ĐỢT 8B: KỊCH BẢN DEMO NHANH 3–5 PHÚT */}
       <section id="judge-demo" className="scroll-mt-28 rounded-2xl border border-dashed border-fuchsia-200 dark:border-fuchsia-900 bg-gradient-to-r from-fuchsia-50 via-white to-indigo-50 dark:from-fuchsia-950/20 dark:via-slate-900 dark:to-indigo-950/20 p-4 sm:p-5 shadow-sm">
-        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
-          <div className="max-w-xl">
+        <div className="flex flex-col gap-4">
+          <div className="w-full">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-fuchsia-100 dark:bg-fuchsia-950 text-fuchsia-700 dark:text-fuchsia-300 text-[10px] font-black uppercase tracking-wider mb-2">
               <Play className="w-3.5 h-3.5" />
               <span>Demo 3 phút</span>
@@ -245,7 +245,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
 
    </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 flex-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 w-full">
             <button
               onClick={() => onNavigate('create', { autoOpenImport: true })}
               className="text-left rounded-2xl bg-white dark:bg-slate-900 border border-violet-200 dark:border-violet-900 p-3.5 hover:shadow-md transition-all"
@@ -255,8 +255,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 <FileText className="w-4 h-4 text-violet-500" />
               </div>
               <div className="mt-2 inline-flex px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 text-[9px] font-black">0:00–0:35</div>
-              <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">Tách đề nguồn</div>
-              <div className="text-[10px] text-slate-500 mt-1">PDF / Ảnh / Word / LaTeX</div>
+              <div className="font-black text-sm leading-snug text-slate-900 dark:text-white mt-1.5">Tách đề nguồn</div>
             </button>
 
             <button
@@ -269,8 +268,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 <QrCode className="w-4 h-4 text-indigo-500" />
               </div>
               <div className="mt-2 inline-flex px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[9px] font-black">0:35–1:00</div>
-              <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">QR / mã bài</div>
-              <div className="text-[10px] text-slate-500 mt-1">Giao cho học sinh</div>
+              <div className="font-black text-sm leading-snug text-slate-900 dark:text-white mt-1.5">QR / mã bài</div>
             </button>
 
             <button
@@ -283,8 +281,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 <Play className="w-4 h-4 text-blue-500" />
               </div>
               <div className="mt-2 inline-flex px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[9px] font-black">1:00–1:20</div>
-              <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">Mở bài học sinh</div>
-              <div className="text-[10px] text-slate-500 mt-1">Làm thử & nộp</div>
+              <div className="font-black text-sm leading-snug text-slate-900 dark:text-white mt-1.5">Mở bài học sinh</div>
             </button>
 
             <button
@@ -296,12 +293,11 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 <span className="w-7 h-7 rounded-full bg-fuchsia-600 text-white flex items-center justify-center text-xs font-black">4</span>
                 <Eye className="w-4 h-4 text-fuchsia-500" />
               </div>
-              <div className="mt-2 flex items-center gap-1.5">
-                <span className="inline-flex px-2 py-0.5 rounded-full bg-fuchsia-50 text-fuchsia-700 text-[9px] font-black">1:20–2:35</span>
-                <span className="inline-flex px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-black">TRỌNG TÂM</span>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="inline-flex px-2 py-0.5 rounded-full bg-fuchsia-50 text-fuchsia-700 text-[10px] font-black whitespace-nowrap">1:20–2:35</span>
+                <span className="inline-flex px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black whitespace-nowrap">TRỌNG TÂM</span>
               </div>
-              <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">AI chấm & lỗi gốc</div>
-              <div className="text-[10px] text-slate-500 mt-1">Step Analysis</div>
+              <div className="font-black text-sm leading-snug text-slate-900 dark:text-white mt-1.5">AI chấm & lỗi gốc</div>
             </button>
 
             <button
@@ -314,8 +310,7 @@ export const TeacherOverview: React.FC<TeacherOverviewProps> = ({
                 <BarChart3 className="w-4 h-4 text-emerald-500" />
               </div>
               <div className="mt-2 inline-flex px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[9px] font-black">2:35–3:00</div>
-              <div className="font-black text-xs text-slate-900 dark:text-white mt-1.5">Kết quả lớp</div>
-              <div className="text-[10px] text-slate-500 mt-1">Thống kê & bài cần duyệt</div>
+              <div className="font-black text-sm leading-snug text-slate-900 dark:text-white mt-1.5">Kết quả lớp</div>
             </button>
           </div>
         </div>
