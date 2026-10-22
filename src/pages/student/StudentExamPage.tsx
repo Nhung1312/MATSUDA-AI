@@ -240,6 +240,9 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
   const [isFocusMode, setIsFocusMode] = useState<boolean>(false);
   const [isSubmittingWithAI, setIsSubmittingWithAI] = useState<boolean>(false);
   const isSubmittingRef = useRef<boolean>(false);
+  // Keep exactly the same graded submission after a failed cloud write.
+  // Retrying must not call Gemini twice or generate a new submission ID.
+  const pendingCloudSubmissionRef = useRef<Submission | null>(null);
   const [isMuted, setIsMuted] = useState<boolean>(() => soundEffects.isMuted());
   const [matrixFilter, setMatrixFilter] = useState<'all' | 'unanswered' | 'flagged'>('all');
 
@@ -729,16 +732,47 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
     submitExam();
   };
 
+  const saveToCloudAndFinish = async (submission: Submission): Promise<boolean> => {
+    try {
+      await FirestoreService.saveResult(submission);
+    } catch (error) {
+      // Local backup is optional. A browser quota error must not mask Cloud failure.
+      try { StorageService.saveSubmission(submission, { syncCloud: false }); }
+      catch (cacheError) { console.warn('Không thể lưu bản dự phòng trên máy:', cacheError); }
+      console.warn('Lưu bài nộp lên Firebase chưa thành công:', error);
+      setIsSubmittingWithAI(false);
+      isSubmittingRef.current = false;
+      alert('CHƯA NỘP THÀNH CÔNG: Firebase chưa xác nhận đã nhận bài. Đáp án vẫn ở trang này. Kiểm tra mạng rồi bấm Nộp bài một lần nữa để gửi lại chính bài cũ, không chấm AI lần nữa. Đừng đóng trang.');
+      return false;
+    }
+
+    // Cloud confirmed; an optional local cache failure is not a failed submission.
+    try { StorageService.saveSubmission(submission, { syncCloud: false }); }
+    catch (cacheError) { console.warn('Bộ nhớ trình duyệt đầy; bài vẫn đã lưu trên Firebase:', cacheError); }
+    try { localStorage.removeItem(draftStorageKey); } catch {}
+    pendingCloudSubmissionRef.current = null;
+
+    try { useMistakeVaultStore.getState().addMistakesFromSubmission(submission, currentAssignment); }
+    catch (error) { console.warn('Không lưu được sổ tay câu sai:', error); }
+
+    soundEffects.playSuccess();
+    setIsSubmittingWithAI(false);
+    isSubmittingRef.current = false;
+    onFinishExam(submission);
+    return true;
+  };
+
   const submitExam = async () => {
     if (isSubmittingRef.current || isSubmittingWithAI) return;
     isSubmittingRef.current = true;
     setShowSubmitModal(false);
-    soundEffects.playSuccess();
     setIsSubmittingWithAI(true);
 
-    try {
-      localStorage.removeItem(draftStorageKey);
-    } catch {}
+    // After an interrupted upload, resend the exact prior submission and score.
+    if (pendingCloudSubmissionRef.current) {
+      await saveToCloudAndFinish(pendingCloudSubmissionRef.current);
+      return;
+    }
 
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
@@ -807,23 +841,8 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
       aiFeedbacks
     });
 
-    try {
-      await FirestoreService.saveResult(submission);
-    } catch (err) {
-      console.warn('Lỗi lưu kết quả lên Firestore:', err);
-    }
-
-    // MỚI: Tự động gom các câu làm sai vào Sổ tay câu sai (Mistake Vault)
-    try {
-      useMistakeVaultStore.getState().addMistakesFromSubmission(submission, currentAssignment);
-    } catch (e) {
-      console.warn('Lỗi tự động lưu vào Sổ tay câu sai:', e);
-    }
-
-    StorageService.saveSubmission(submission);
-    setIsSubmittingWithAI(false);
-    isSubmittingRef.current = false;
-    onFinishExam(submission);
+    pendingCloudSubmissionRef.current = submission;
+    await saveToCloudAndFinish(submission);
   };
 
   // Metrics
