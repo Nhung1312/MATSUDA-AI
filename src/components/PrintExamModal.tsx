@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Assignment } from '../types';
 import { MathDisplay } from './MathDisplay';
+import { getPrintableQuestionText } from '../utils/printExamUtils';
 import { 
   Printer, 
   X, 
@@ -26,9 +27,9 @@ export const PrintExamModal: React.FC<PrintExamModalProps> = ({
   assignment
 }) => {
   const [printMode, setPrintMode] = useState<'exam_only' | 'exam_with_solutions' | 'answer_sheet'>('exam_only');
-  const [schoolName, setSchoolName] = useState('TRƯỜNG THCS NGUYỄN DU');
+  const [schoolName, setSchoolName] = useState('TRƯỜNG TH&THCS LƯƠNG CHÍ');
   const [examSemester, setExamSemester] = useState('KIỂM TRA ĐỊNH KỲ MÔN TOÁN');
-  const [schoolYear, setSchoolYear] = useState('Năm học: 2025 - 2026');
+  const [schoolYear, setSchoolYear] = useState('Năm học: 2026 - 2027');
   const [showAnswerKey, setShowAnswerKey] = useState(false);
 
   if (!isOpen) return null;
@@ -48,7 +49,7 @@ export const PrintExamModal: React.FC<PrintExamModalProps> = ({
       */}
       <style type="text/css" media="print">
         {`
-          @page { size: auto; margin: 15mm; }
+          @page { size: A4 portrait; margin: 15mm; }
           body * { visibility: hidden !important; }
           #print-area, #print-area * { visibility: visible !important; }
           #print-area { 
@@ -240,7 +241,7 @@ export const PrintExamModal: React.FC<PrintExamModalProps> = ({
                             Câu {idx + 1}. ({q.points} điểm):
                           </span>
                           <div className="flex-1 font-medium">
-                            <MathDisplay text={q.question} />
+                            <MathDisplay text={getPrintableQuestionText(q.question)} />
                             {q.imageUrl && (
                               <div className="my-2 flex justify-center">
                                 <img 
@@ -395,7 +396,7 @@ export const PrintExamModal: React.FC<PrintExamModalProps> = ({
                         Câu {idx + 1}. ({q.points} điểm):
                       </span>
                       <div className="flex-1 font-medium">
-                        <MathDisplay text={q.question} />
+                        <MathDisplay text={getPrintableQuestionText(q.question)} />
                         {q.imageUrl && (
                           <div className="my-2 flex justify-center">
                             <img 
