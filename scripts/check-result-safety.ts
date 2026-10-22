@@ -172,7 +172,13 @@ delete (contest as any).assignmentId;
 const contestSaved = await saveContestSubmissionConfirmed(contest, {intent:'student'});
 assert.equal(contestSaved.cloudSaved,true);
 assert.equal(contestSaved.submission!.id,contest.id);
-console.log('PASS old MCQ values read unchanged; online contest uses the same confirmed persistence');
+const duplicateHistory={...mcq,id:'duplicate-history',shuffledQuestions:[{id:'duplicate-q',correctAnswer:'A',points:1},{id:'duplicate-q',correctAnswer:'B',points:1}],
+  answers:[{questionId:'duplicate-q',selectedAnswer:'A',pointsEarned:1,maxPoints:1,isCorrect:true},{questionId:'duplicate-q',selectedAnswer:'B',pointsEarned:1,maxPoints:1,isCorrect:true}]} as Submission;
+seed(duplicateHistory);
+const untouchedHistory=await read('duplicate-history');
+assert.deepEqual(untouchedHistory.answers,duplicateHistory.answers);
+assert.deepEqual(untouchedHistory.shuffledQuestions,duplicateHistory.shuffledQuestions);
+console.log('PASS old MCQ values and duplicate historical question IDs read unchanged; online contest uses the same confirmed persistence');
 
 const expectedExams = [{id:'exam-fixture',questions:[],assignmentCode:'FIX'}] as unknown as Assignment[];
 const hundredOne = Array.from({length:101},(_,i)=>({...mcq,id:'mcq-'+i}));

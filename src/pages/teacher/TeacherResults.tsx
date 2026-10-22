@@ -162,6 +162,11 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
   const reviewBusy = savingSubmission || gradingSingleInProgress || Object.values(gradingAiInProgress).some(Boolean);
 
   const currentAssignment = safeAssignments.find(a => a.id === selectedAsgId) || safeAssignments[0];
+  const matchesCurrentAssignment = (submission: Submission) => {
+    const normalize = (key: string) => key.replace(/\s+/g, '').toUpperCase();
+    return Boolean(currentAssignment && [currentAssignment.id, currentAssignment.assignmentCode || '']
+      .some(key => normalize(key) === normalize(submission.assignmentId || '')));
+  };
   const targetClass = currentAssignment ? safeClasses.find(c => c.id === currentAssignment.classId) : null;
   const classStudents = targetClass?.students || [];
 
@@ -183,12 +188,12 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
     : 0;
 
   const pendingSubmissionCount = currentAssignment
-    ? safeSubmissions.filter(s => s.assignmentId === currentAssignment.id && getPendingReviewCount(s) > 0).length
+    ? safeSubmissions.filter(s => matchesCurrentAssignment(s) && getPendingReviewCount(s) > 0).length
     : 0;
 
   // Filter submissions for current assignment
   const currentSubmissions = useMemo(() => {
-    return safeSubmissions.filter(s => s.assignmentId === currentAssignment?.id);
+    return safeSubmissions.filter(matchesCurrentAssignment);
   }, [safeSubmissions, currentAssignment]);
 
   const pendingReviewSubmissions = useMemo(

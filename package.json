@@ -17,7 +17,8 @@
     "test:points": "node scripts/test-point-distribution.mjs",
     "check:result-safety": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-result-safety.ts",
     "check:teacher-navigation": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-teacher-navigation.tsx",
-    "check:review-save": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-review-save.ts"
+    "check:review-save": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-review-save.ts",
+    "check:teacher-review-ui": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-teacher-review-ui.tsx"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
