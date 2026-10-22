@@ -799,18 +799,24 @@ export const TeacherCreateAssignment: React.FC<TeacherCreateAssignmentProps> = (
         };
       }
 
-      // 1. Save to Cloud Firestore
+      // An edited paper is not published until Cloud Firestore confirms it.
+      // Never report success just because the teacher's browser saved a copy:
+      // that left students on the old question set under the same code.
       try {
         await FirestoreService.saveExam(savedAssignment, user || undefined);
       } catch (firestoreErr) {
-        console.warn('Lưu Firestore thất bại, lưu dự phòng LocalStorage:', firestoreErr);
+        console.error('Firebase chưa lưu được đề mới:', firestoreErr);
+        setIsSaving(false);
+        alert('CHƯA LƯU LÊN FIREBASE! Học sinh vẫn sẽ thấy đề cũ. Nội dung đang chỉnh sửa vẫn còn trên trang này. Hãy kiểm tra kết nối hoặc quyền Firebase và bấm lưu lại; không phát link lúc này.');
+        return;
       }
 
-      // 2. Save to Local Cache
-      StorageService.saveAssignment(savedAssignment);
+      // Local cache is optional once the server has acknowledged the update.
+      try { StorageService.saveAssignment(savedAssignment); }
+      catch (cacheError) { console.warn('Đề đã lưu Cloud; không lưu được cache trên máy:', cacheError); }
 
       setIsSaving(false);
-      alert(isEditing ? 'Đã lưu cập nhật bài tập và câu hỏi thành công!' : 'Tạo bài tập thành công!');
+      alert(isEditing ? 'Firebase đã xác nhận cập nhật đề và câu hỏi thành công!' : 'Firebase đã xác nhận tạo bài tập thành công!');
       onSaveSuccess(savedAssignment);
     } catch (err) {
       console.error('Lỗi khi lưu đề thi:', err);

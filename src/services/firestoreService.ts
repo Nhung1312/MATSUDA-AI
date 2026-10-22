@@ -107,7 +107,7 @@ export class FirestoreService {
   /**
    * 2. Tìm kiếm đề thi theo "Mã đề" (assignmentCode) trên Firestore
    */
-  static async getExamByCode(code: string): Promise<Assignment | null> {
+  static async getExamByCode(code: string, forceServer = false): Promise<Assignment | null> {
     if (!code) return null;
     const cleanCode = code.trim().toUpperCase();
      
@@ -117,14 +117,22 @@ export class FirestoreService {
         where('assignmentCode', '==', cleanCode)
       );
 
-      const querySnapshot = await getDocs(q);
-       
+      const querySnapshot = forceServer ? await getDocsFromServer(q) : await getDocs(q);
       if (!querySnapshot.empty) {
-        return normalizeAssignmentDoc(querySnapshot.docs[0].data(), querySnapshot.docs[0].id);
+        // A code should be unique; if older duplicate docs exist, choose the
+        // most recently updated one instead of an arbitrary Firestore ordering.
+        const matches = [...querySnapshot.docs].sort((left, right) => {
+          const leftData = left.data();
+          const rightData = right.data();
+          return String(rightData.updatedAt || rightData.createdAt || '').localeCompare(
+            String(leftData.updatedAt || leftData.createdAt || '')
+          );
+        });
+        return normalizeAssignmentDoc(matches[0].data(), matches[0].id);
       }
 
       const docRef = doc(db, EXAMS_COLLECTION, cleanCode);
-      const docSnap = await getDoc(docRef);
+      const docSnap = forceServer ? await getDocFromServer(docRef) : await getDoc(docRef);
       if (docSnap.exists()) {
         return normalizeAssignmentDoc(docSnap.data(), docSnap.id);
       }
@@ -132,7 +140,10 @@ export class FirestoreService {
       // Dự phòng tìm kiếm mềm (bỏ dấu gạch ngang hoặc khoảng trắng thừa)
       const codeNoDash = cleanCode.replace(/[^A-Z0-9]/g, '');
       if (codeNoDash) {
-        const allExams = await this.getExams();
+        const allExams = forceServer
+          ? (await getDocsFromServer(collection(db, EXAMS_COLLECTION))).docs.map(snap =>
+              normalizeAssignmentDoc(snap.data(), snap.id))
+          : await this.getExams();
         const found = allExams.find(e => {
           const rawCode = (e.assignmentCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
           const rawId = (e.id || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
@@ -144,6 +155,7 @@ export class FirestoreService {
       return null;
     } catch (error) {
       console.error('[Firestore Error] Lỗi tìm đề theo mã:', error);
+      if (forceServer) throw error;
       return null;
     }
   }

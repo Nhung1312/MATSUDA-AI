@@ -138,7 +138,21 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
   onFinishExam
 }) => {
   const { isDark, toggleTheme } = useTheme();
-  const draftStorageKey = `toan_thcs_draft_${assignment.id}_${encodeURIComponent(studentName)}`;
+  // Keep drafts from different teacher edits separate. Existing students'
+  // old drafts are not deleted, but must never replace a newer question set.
+  const baseDraftKey = `toan_thcs_draft_${assignment.id}_${encodeURIComponent(studentName)}`;
+  const revisionInput = JSON.stringify({
+    updatedAt: (assignment as Assignment & { updatedAt?: string }).updatedAt || '',
+    type: assignment.type,
+    questions: assignment.questions,
+    totalPoints: assignment.totalPoints,
+    pdfUrl: assignment.pdfUrl
+  });
+  let revisionHash = 2166136261;
+  for (let index = 0; index < revisionInput.length; index++) {
+    revisionHash = Math.imul(revisionHash ^ revisionInput.charCodeAt(index), 16777619);
+  }
+  const draftStorageKey = `${baseDraftKey}_rev_${(revisionHash >>> 0).toString(36)}`;
 
   // Nhận diện chế độ PDF
   const isPdfMode = (assignment as any).type === 'pdf';
@@ -148,8 +162,17 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
   const [initialLoadedDraft] = useState<ExamDraft | null>(() => {
     try {
       const saved = localStorage.getItem(draftStorageKey);
-      if (saved) {
-        return JSON.parse(saved) as ExamDraft;
+      if (saved) return JSON.parse(saved) as ExamDraft;
+      // Compatible legacy draft on the same revision can still be restored.
+      // If the teacher changed the paper, leave the old draft untouched.
+      const previous = localStorage.getItem(baseDraftKey);
+      if (previous) {
+        const parsed = JSON.parse(previous) as ExamDraft;
+        const draftSource = parsed.shuffledAssignment as (Assignment & { updatedAt?: string }) | undefined;
+        const latestVersion = (assignment as Assignment & { updatedAt?: string }).updatedAt;
+        if (draftSource?.updatedAt && latestVersion && draftSource.updatedAt === latestVersion) {
+          return parsed;
+        }
       }
     } catch (e) {
       console.warn('Failed to load draft:', e);

@@ -412,6 +412,7 @@ function AppContent() {
             element={
               examSession.assignment ? (
                 <StudentExamPage
+                  key={`${examSession.assignment.id}:${examSession.studentName || ''}:${(examSession.assignment as Assignment & { updatedAt?: string }).updatedAt || ''}`}
                   assignment={examSession.assignment}
                   studentName={examSession.studentName || 'Học sinh'}
                   classId={examSession.classId || 'other'}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
@@ -46,6 +46,7 @@ export const StudentJoinPage: React.FC<StudentJoinPageProps> = ({ initialCode = 
   const [assignment, setAssignment] = useState<Assignment | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const lookupRequestId = useRef(0);
   const [recentAssignments, setRecentAssignments] = useState<Assignment[]>([]);
 
   // Search & Filter state for exam browser
@@ -98,62 +99,49 @@ export const StudentJoinPage: React.FC<StudentJoinPageProps> = ({ initialCode = 
   }, [queryCode, initialCode]);
 
   const handleLookupCode = async (searchCode: string) => {
+    const requestId = ++lookupRequestId.current;
+    const cleanCode = searchCode.trim().toUpperCase();
     setErrorMsg('');
-    if (!searchCode.trim()) {
-      setAssignment(null);
-      return;
-    }
+    // Never present a previously cached question count while loading a new code.
+    setAssignment(null);
+    if (!cleanCode) { setIsSearching(false); return; }
 
     setIsSearching(true);
-    const cleanCode = searchCode.trim().toUpperCase();
-
-    // 1. Try local storage first
-    let found = StorageService.getAssignmentByCode(cleanCode);
-
-    // 2. If not found locally, query Cloud Firestore
-    if (!found) {
-      try {
-        found = await FirestoreService.getExamByCode(cleanCode);
-        if (found) {
-          // Cache in local storage for faster subsequent access
-          StorageService.saveAssignment(found);
-        } else {
-          // Kiểm tra xem có phải mã Cuộc thi trực tuyến (Contest) không
-          const contest = await FirestoreService.getContestByCode(cleanCode);
-          if (contest) {
-            setIsSearching(false);
-            window.location.href = `/contest/${cleanCode}`;
-            return;
-          }
+    try {
+      // Students must see the latest published paper, not the browser's old
+      // localStorage or Firestore offline-cache copy of the same code.
+      const found = await FirestoreService.getExamByCode(cleanCode, true);
+      if (requestId !== lookupRequestId.current) return;
+      if (!found) {
+        const contest = await FirestoreService.getContestByCode(cleanCode);
+        if (requestId !== lookupRequestId.current) return;
+        if (contest) {
+          window.location.href = `/contest/${cleanCode}`;
+          return;
         }
-      } catch (err) {
-        console.error('Lỗi khi tra cứu Firestore:', err);
+        setErrorMsg('Không tìm thấy đề mới nhất trên Firebase. Kiểm tra mã bài hoặc yêu cầu giáo viên lưu đề lên Cloud.');
+        return;
       }
-    }
-
-    setIsSearching(false);
-
-    if (found) {
       setAssignment(found);
       if (found.classId && found.classId !== 'all') {
         setSelectedClassId(found.classId);
       } else {
         setSelectedClassId('other');
-        if (found.className && !customClassName) {
-          setCustomClassName(found.className);
-        } else if (found.grade && !customClassName) {
-          setCustomClassName(`Lớp ${found.grade}`);
-        }
+        setCustomClassName(previous => previous || found.className || `Lớp ${found.grade}`);
       }
-    } else {
-      setAssignment(null);
-      setErrorMsg('Không tìm thấy bài tập với mã này. Vui lòng kiểm tra lại mã bài tập do giáo viên cung cấp.');
+    } catch (error) {
+      if (requestId !== lookupRequestId.current) return;
+      console.error('Không tải được đề mới nhất từ Firebase:', error);
+      setErrorMsg('Không tải được đề mới nhất từ Firebase. Kiểm tra kết nối mạng rồi bấm Kiểm tra lại; không dùng đề cũ lưu trên máy.');
+    } finally {
+      if (requestId === lookupRequestId.current) setIsSearching(false);
     }
   };
 
   const handleSelectExamFromCatalog = (selectedAsg: Assignment) => {
     setCode(selectedAsg.assignmentCode);
-    setAssignment(selectedAsg);
+    setAssignment(null);
+    void handleLookupCode(selectedAsg.assignmentCode);
     if (selectedAsg.classId && selectedAsg.classId !== 'all') {
       setSelectedClassId(selectedAsg.classId);
     } else {
@@ -166,35 +154,43 @@ export const StudentJoinPage: React.FC<StudentJoinPageProps> = ({ initialCode = 
     setErrorMsg('');
   };
 
-  const handleStart = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!assignment) {
-      setErrorMsg('Vui lòng nhập mã bài tập hợp lệ hoặc chọn một đề từ kho bài tập.');
-      return;
-    }
+  const handleStart = async (event: React.FormEvent) => {
+    event.preventDefault();
     const cleanName = studentName.trim();
-    if (!cleanName) {
-      setErrorMsg('Vui lòng nhập Họ và tên của bạn.');
-      return;
-    }
-
-    let className = 'Tự do';
-    const foundClass = classes.find(c => c.id === selectedClassId);
-    if (foundClass) {
-      className = foundClass.name;
-    } else if (customClassName.trim()) {
-      className = customClassName.trim();
-    }
-
-    // Persist student profile locally so they never have to re-enter
+    const cleanCode = code.trim().toUpperCase();
+    if (!cleanName) { setErrorMsg('Vui lòng nhập họ và tên học sinh.'); return; }
+    if (!cleanCode) { setErrorMsg('Vui lòng nhập mã bài tập.'); return; }
+    const requestId = ++lookupRequestId.current;
+    setIsSearching(true);
+    setErrorMsg('');
     try {
-      localStorage.setItem('toan_thcs_student_name', cleanName);
-      localStorage.setItem('toan_thcs_student_class', className);
-    } catch {
-      // ignore
+      // The teacher may have edited the exam after the join page was opened.
+      // Recheck the server immediately before entering the exam.
+      const newest = await FirestoreService.getExamByCode(cleanCode, true);
+      if (requestId !== lookupRequestId.current) return;
+      if (!newest) {
+        setAssignment(null);
+        setErrorMsg('Mã bài không còn tồn tại trên Firebase. Vui lòng nhờ giáo viên kiểm tra lại đề.');
+        return;
+      }
+      setAssignment(newest);
+      const foundClass = classes.find(cls => cls.id === selectedClassId);
+      const resolvedClass = foundClass
+        ? foundClass.name
+        : (customClassName.trim() || newest.className || 'Tự do');
+      try {
+        localStorage.setItem('toan_thcs_student_name', cleanName);
+        localStorage.setItem('toan_thcs_student_class', resolvedClass);
+      } catch { /* Storage quotas cannot prevent starting an exam. */ }
+      onStartExam(newest, cleanName, selectedClassId || 'other', resolvedClass);
+    } catch (error) {
+      if (requestId !== lookupRequestId.current) return;
+      console.error('Không xác nhận được đề trước khi làm:', error);
+      setAssignment(null);
+      setErrorMsg('Chưa vào bài: không kết nối được Firebase để xác nhận đề mới. Kiểm tra mạng và thử lại.');
+    } finally {
+      if (requestId === lookupRequestId.current) setIsSearching(false);
     }
-
-    onStartExam(assignment, cleanName, selectedClassId || 'other', className);
   };
 
   // Filter exams in catalog
@@ -300,6 +296,8 @@ export const StudentJoinPage: React.FC<StudentJoinPageProps> = ({ initialCode = 
                   onChange={(e) => {
                     const val = e.target.value.toUpperCase();
                     setCode(val);
+                    ++lookupRequestId.current;
+                    setAssignment(null);
                     if (val.length >= 6) {
                       handleLookupCode(val);
                     }
