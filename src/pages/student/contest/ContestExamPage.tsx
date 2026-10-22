@@ -1,3 +1,4 @@
+import { PendingResultSaves } from '../../../components/PendingResultSaves';
 import { saveContestSubmissionConfirmed } from '../../../services/submissionSaveService';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -483,6 +484,9 @@ export const ContestExamPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-white flex flex-col select-none">
+      <PendingResultSaves kind="contest" relationId={contest.id} studentName={studentName}
+        onBusyChange={busy => { isSubmittingRef.current = busy; setIsSubmitting(busy); }}
+        onSaved={record => navigate('/contest/' + contest.code + '/result/' + record.id)} />
       {/* 1. TOP BAR */}
       <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 py-2.5 flex items-center justify-between shadow-xs">
         {/* Info Left */}

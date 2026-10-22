@@ -7,19 +7,24 @@ export interface PendingResult {
 async function run<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open('matsuda_result_saves_v1', 1);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; reject(new Error('Mở bản dự phòng quá thời gian chờ; vẫn thử lưu Firebase.')); }, 2000);
     req.onupgradeneeded = () => req.result.createObjectStore('operations', { keyPath: 'operationId' });
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error || new Error('Không mở được bản lưu chờ.'));
+    req.onsuccess = () => { clearTimeout(timer); if (timedOut) req.result.close(); else resolve(req.result); };
+    req.onerror = () => { clearTimeout(timer); reject(req.error || new Error('Không mở được bản lưu chờ.')); };
   });
   try {
     return await new Promise<T>((resolve, reject) => {
       const tx = db.transaction('operations', mode);
-      const req = action(tx.objectStore('operations'));
+      const timer = setTimeout(() => { tx.abort(); reject(new Error('Bản dự phòng chưa hoàn tất; vẫn thử lưu Firebase.')); }, 2000);
+      let req: IDBRequest<T>;
+      try { req = action(tx.objectStore('operations')); }
+      catch (error) { clearTimeout(timer); tx.abort(); reject(error); return; }
       let value: T;
       req.onsuccess = () => { value = req.result; };
-      req.onerror = () => reject(req.error);
-      tx.oncomplete = () => resolve(value);
-      tx.onabort = tx.onerror = () => reject(tx.error || new Error('Không ghi được bản lưu chờ.'));
+      req.onerror = () => { clearTimeout(timer); reject(req.error); };
+      tx.oncomplete = () => { clearTimeout(timer); resolve(value); };
+      tx.onabort = tx.onerror = () => { clearTimeout(timer); reject(tx.error || new Error('Không ghi được bản lưu chờ.')); };
     });
   } finally { db.close(); }
 }

@@ -95,8 +95,9 @@ export interface Assignment {
 
 export interface ViolationEvent {
   timestamp: string;
-  type: 'tab_switch' | 'window_blur' | 'fullscreen_exit' | 'context_menu' | 'copy_attempt';
-  description: string;
+  type: 'tab_switch' | 'window_blur' | 'fullscreen_exit' | 'context_menu' | 'copy_attempt' | 'TAB_SWITCH';
+  description?: string;
+  durationSeconds?: number; // Legacy contest records already use this shape.
 }
 
 export interface StudentAnswer {
@@ -388,6 +389,8 @@ export type StepErrorType =
   | 'None';
 
 export interface SocraticContext {
+  firstErrorType?: StepErrorType;
+  firstErrorExplanation?: string;
   questionId?: string;
   questionText: string;
   questionType?: QuestionType;

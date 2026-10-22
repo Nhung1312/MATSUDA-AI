@@ -45,9 +45,11 @@ export function inspectLegacyStorage(storage: Storage) {
 export async function buildTeacherBackup() {
   const user = auth.currentUser;
   if (!user) throw new Error('Đăng nhập Google giáo viên để sao lưu dữ liệu thật. Không dùng dữ liệu mẫu thay thế.');
+  const expectedClasses = StorageService.getClasses();
   const expectedAssignments = StorageService.getAssignments();
   const expectedSubmissions = StorageService.getSubmissions();
   const source = await FirestoreService.readTeacherBackupSource(user.uid, user.email);
+  assertSameIds('Lớp', expectedClasses, source.classes);
   assertSameIds('Đề', expectedAssignments, source.assignments);
   assertSameIds('Lượt nộp', expectedSubmissions, source.submissions);
   const legacy = inspectLegacyStorage(localStorage);

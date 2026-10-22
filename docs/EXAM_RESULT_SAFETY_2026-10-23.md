@@ -25,6 +25,8 @@ Bản sửa không thực hiện chuyển đổi, tự hòa trộn, xóa cache h
 - Xuất JSON đọc Cloud trực tiếp, đối chiếu ID và nội dung qua hai lần đọc, giữ dữ liệu trình duyệt riêng. Thiếu quyền, thiếu ID hoặc dữ liệu đang thay đổi thì dừng. Manifest nêu rõ URL ngoài chưa được đóng gói; không tuyên bố sao lưu đủ tệp.
 - Không đổi thuật toán AI, cách tính điểm, đáp án, barem hoặc câu hỏi; chỉ trả lại snapshot lưu đã xác nhận từ gradingService. Không đổi ID câu trùng của ba đề cũ.
 
+Một số lỗi TypeScript có sẵn ở main được sửa tối thiểu để chạy được kiểm tra: bổ sung trường kiểu dữ liệu đã dùng trong SocraticContext và log cuộc thi; truyền tên học sinh đúng kiểu cho form bài giấy. Không đổi cách chấm.
+
 ## Kiểm thử và giới hạn
 
 CI `Exam result safety (no deployment)`: TypeScript, build, kiểm thử lưu kết quả, ba đường điều hướng, và các kiểm thử hồi quy sẵn có. Kiểm thử mới chặn mạng và dùng bản ghi giả; không dùng bài thật để ghi thử. Xem trạng thái chạy và log trong PR; chưa coi là đạt trước khi CI hoàn tất.

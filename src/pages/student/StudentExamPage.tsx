@@ -1,3 +1,4 @@
+import { PendingResultSaves } from '../../components/PendingResultSaves';
 import { saveSubmissionConfirmed } from '../../services/submissionSaveService';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Assignment, Submission, ViolationEvent, Question } from '../../types';
@@ -906,6 +907,9 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
   return (
     <div className={rootContainerClasses} style={{ WebkitUserSelect: 'none', userSelect: 'none' }}>
       
+      <PendingResultSaves kind="result" relationId={assignment.id} studentName={studentName}
+        onBusyChange={busy => { isSubmittingRef.current = busy; setIsSubmittingWithAI(busy); }}
+        onSaved={record => onFinishExam(record as Submission)} />
       {/* FLOATING ANTI-CHEAT WARNING TOAST */}
       {antiCheatToast && (
         <div className="fixed top-16 sm:top-5 left-1/2 -translate-x-1/2 z-50 max-w-md w-full px-4 animate-in slide-in-from-top-4 duration-200">

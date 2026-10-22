@@ -1,3 +1,4 @@
+import { PendingResultSaves } from '../../../components/PendingResultSaves';
 import { saveContestSubmissionConfirmed } from '../../../services/submissionSaveService';
 import React, { useState, useEffect } from 'react';
 import { 
@@ -504,6 +505,12 @@ export const TeacherContestResults: React.FC<TeacherContestResultsProps> = ({
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-16 animate-in fade-in duration-200">
+      <PendingResultSaves kind="contest" relationId={contestId}
+        onSaved={record => {
+          const confirmed = record as ContestSubmission;
+          setSubmissions(prev => rankContestSubmissions(prev.map(s => s.id === confirmed.id ? confirmed : s)));
+          setGradingSubmission(prev => prev?.id === confirmed.id ? confirmed : prev);
+        }} />
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <button

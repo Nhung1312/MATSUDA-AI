@@ -128,7 +128,12 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
       };
     });
 
-    setItems(mapped);
+    setItems(previous => mapped.map(item => {
+      const old = previous.find(row => row.id === item.id);
+      // Background root updates must not reset an active row or its unsent analysis.
+      if (old && (old.status === 'grading' || old.cloudSaveWarning)) return old;
+      return item;
+    }));
   }, [isOpen, submissions, assignment]);
 
   if (!isOpen) return null;

@@ -1,3 +1,4 @@
+import { PendingResultSaves } from '../../components/PendingResultSaves';
 import { saveSubmissionConfirmed } from '../../services/submissionSaveService';
 import React, { useState, useEffect } from 'react';
 import { Submission, Assignment, Question } from '../../types';
@@ -424,6 +425,10 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-16">
       <div className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-8 space-y-4 sm:space-y-6">
+        {!isTeacherPreview && !isDemoPreview && <PendingResultSaves kind="result" relationId={assignment.id}
+          studentName={submission.studentName} onSaved={record => {
+            if (record.id === submission.id) { setSubmission(record as Submission); setPendingResultSave(null); }
+          }} />}
         {pendingResultSave && <div role="alert" className="bg-amber-50 border border-amber-300 p-3 rounded-xl text-sm">
           Kết quả phân tích chưa được Firebase xác nhận.
           <button type="button" className="ml-2 underline font-bold" onClick={() => void retryResultSave()}>Thử lưu lại</button>

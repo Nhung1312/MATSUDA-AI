@@ -2563,7 +2563,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
           onClose={() => setShowBatchGradingModal(false)}
           assignment={currentAssignment}
           submissions={currentSubmissions}
-          classStudents={classStudents}
+          classStudents={classStudents.map(student => student.name)}
           onSubmissionsUpdated={(updatedList, options) => {
             // The grading core has already saved its updated records. Rewriting
             // the entire old list could restore another student's stale score.
