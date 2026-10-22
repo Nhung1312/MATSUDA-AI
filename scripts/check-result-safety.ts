@@ -150,6 +150,17 @@ state.offline=false;
 const pendingBeforeReload = await PendingResultStore.list('teacher-fixture');
 assert.ok(pendingBeforeReload.some(r=>r.submission.id==='offline'));
 console.log('PASS offline failure retains an independent pending attempt across database reopen');
+const originalOutboxPut=PendingResultStore.put;
+try {
+  PendingResultStore.put=async()=>{throw new DOMException('Fixture outbox full','QuotaExceededError');};
+  const noLocal=await saveSubmissionConfirmed(fixture('outbox-full'),{intent:'student'});
+  assert.equal(noLocal.localSaved,false); assert.equal(noLocal.cloudSaved,true);
+  state.offline=true;
+  const neither=await saveSubmissionConfirmed(fixture('both-unavailable'),{intent:'student'});
+  assert.equal(neither.localSaved,false); assert.equal(neither.cloudSaved,false);
+  assert.ok(neither.error); assert.equal(state.records.has('results/both-unavailable'),false);
+} finally { PendingResultStore.put=originalOutboxPut; state.offline=false; }
+console.log('PASS unavailable IndexedDB never blocks Cloud; simultaneous storage/network failure is not reported as success');
 
 const mcq = { ...fixture('legacy-mcq'), totalScore:9.5, maxScore:10, gradingStatus:'graded',
   answers:[{ questionId:'old-duplicate-id', selectedAnswer:'B', isCorrect:true, pointsEarned:9.5,maxPoints:10 }] } as Submission;

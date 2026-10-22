@@ -59,7 +59,7 @@ const compiled=await build({entryPoints:['src/App.tsx'],bundle:true,write:false,
       const name=args.path.split('/').pop()!.replace(/\.(tsx?|jsx?)$/,'');
       if(modules[name])return {path:name,namespace:'navigation-mock'};
       if(name==='TeacherLayout'||name==='App')return;
-      if(/components\/|pages\//.test(args.path)) {
+      if(/components\/|pages\//.test(args.path) || args.importer.endsWith('/TeacherLayout.tsx')) {
         modules[name]='export const '+name+'=()=>null;';
         return {path:name,namespace:'navigation-mock'};
       }
@@ -100,5 +100,14 @@ for(const [path,click] of [
   await act(async()=>{nav('Tổng quan').props.onClick();});
   console.log('PASS navigation '+path+': selected target/input retained; confirmed parent snapshot survives stale refresh');
 }
+let rejectRead!:(error:Error)=>void;
+env.nextRead=new Promise((_resolve,reject)=>{rejectRead=reject;});
+await act(async()=>{nav('Kết quả').props.onClick();await tick();});
+await act(async()=>{byTest('teacher-input').props.onChange({target:{value:'keep on error'}});});
+const beforeErrorMounts=env.mounts;
+await act(async()=>{rejectRead(Error('fixture offline refresh'));await tick();});
+assert.equal(env.mounts,beforeErrorMounts);
+assert.equal(byTest('teacher-input').props.value,'keep on error');
+console.log('PASS background refresh failure preserves Results and unsaved input');
 await act(async()=>{renderer!.unmount();});
 console.log('TEACHER NAVIGATION PASS — actual App and TeacherLayout, mocked pages/services, network blocked');
