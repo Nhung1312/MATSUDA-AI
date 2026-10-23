@@ -77,7 +77,7 @@ try {
   cloudCalls = [];
   StorageService.saveSubmission(manual, { syncCloud: false });
   await flush(); assert.equal(cloudCalls.length, 0);
-  await saveSubmissionConfirmed(manual);
+  await saveSubmissionConfirmed(manual, { intent: 'teacher' });
   assert.equal(cloudCalls.length, 1, 'Confirmed save sends exactly one cloud write');
   console.log('PASS: old StorageService default preserved; confirmed save sends one cloud write');
 
@@ -134,8 +134,8 @@ try {
   cloudCalls = [];
   let releaseFirst: () => void = () => {};
   cloud = submission => submission.totalScore === .2 ? new Promise(resolve => { releaseFirst = resolve; }) : Promise.resolve();
-  const firstSave = saveSubmissionConfirmed({ ...manual, id: 'ordered', totalScore: .2 });
-  const secondSave = saveSubmissionConfirmed({ ...manual, id: 'ordered', totalScore: .4 });
+  const firstSave = saveSubmissionConfirmed({ ...manual, id: 'ordered', totalScore: .2 }, { intent: 'teacher' });
+  const secondSave = saveSubmissionConfirmed({ ...manual, id: 'ordered', totalScore: .4 }, { intent: 'teacher' });
   await flush(); assert.deepEqual(cloudCalls.map(s => s.totalScore), [.2]);
   releaseFirst(); await Promise.all([firstSave, secondSave]);
   assert.deepEqual(cloudCalls.map(s => s.totalScore), [.2, .4]);
@@ -144,11 +144,15 @@ try {
 
   const oldTimeout = globalThis.setTimeout, oldClear = globalThis.clearTimeout;
   let timeoutAction: (() => void) | undefined;
-  globalThis.setTimeout = ((fn: () => void) => { timeoutAction = fn; return 1; }) as any;
-  globalThis.clearTimeout = (() => {}) as any;
+  const uiTimer = {};
+  globalThis.setTimeout = ((fn: () => void, ms: number, ...args:any[]) => {
+    if(ms===15000){timeoutAction=fn;return uiTimer;}
+    return oldTimeout(fn,ms,...args);
+  }) as any;
+  globalThis.clearTimeout = ((timer:any) => { if(timer!==uiTimer)oldClear(timer); }) as any;
   try {
     cloud = () => new Promise(() => {});
-    const timeoutSave = saveSubmissionConfirmed({ ...manual, id: 'timeout' });
+    const timeoutSave = saveSubmissionConfirmed({ ...manual, id: 'timeout' }, { intent: 'teacher' });
     await flush(); assert.ok(timeoutAction); timeoutAction!();
     const timedOut = await timeoutSave; assert.equal(timedOut.localSaved, true); assert.equal(timedOut.cloudSaved, false); assert.ok(timedOut.pendingSubmission);
   } finally { globalThis.setTimeout = oldTimeout; globalThis.clearTimeout = oldClear; }

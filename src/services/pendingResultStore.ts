@@ -3,6 +3,7 @@ export interface PendingResult {
   operationId: string; scope: string; kind: 'result' | 'contest';
   intent: NonNullable<ResultWriteOptions['intent']>;
   submission: ResultRecord; savedAt: string; status: 'pending' | 'confirmed';
+  requestFingerprint?: string;
 }
 async function run<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -16,7 +17,7 @@ async function run<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) 
   try {
     return await new Promise<T>((resolve, reject) => {
       const tx = db.transaction('operations', mode);
-      const timer = setTimeout(() => { tx.abort(); reject(new Error('Bản dự phòng chưa hoàn tất; vẫn thử lưu Firebase.')); }, 2000);
+      const timer = setTimeout(() => { try { tx.abort(); } catch { /* Transaction may already have completed. */ } reject(new Error('Bản dự phòng chưa hoàn tất; vẫn thử lưu Firebase.')); }, 2000);
       let req: IDBRequest<T>;
       try { req = action(tx.objectStore('operations')); }
       catch (error) { clearTimeout(timer); tx.abort(); reject(error); return; }
@@ -30,6 +31,7 @@ async function run<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) 
 }
 export const PendingResultStore = {
   async put(record: PendingResult) { await run('readwrite', store => store.put(record)); },
+  async get(operationId: string): Promise<PendingResult | undefined> { return run('readonly', store => store.get(operationId)); },
   async list(scope: string, includeConfirmed = false): Promise<PendingResult[]> {
     const records = await run<PendingResult[]>('readonly', store => store.getAll());
     return records.filter(r => r.scope === scope && (includeConfirmed || r.status === 'pending'));

@@ -38,7 +38,7 @@ const mocks:Record<string,string>={
   firestoreService:`export const FirestoreService={getResultById:globalThis.__reviewUITest.read};`,
   storageService:`export const StorageService={};`,
   aiService:`export const aiService={analyzeClassMistakes:async()=>{throw Error('Unexpected AI request');}};`,
-  stepGradingService:`export const stepGradingService={analyzeStepByStep:async()=>{throw Error('Unexpected AI grading');}};`,
+  stepGradingService:`export const stepGradingService={analyzeStepByStep:async(...args)=>{const e=globalThis.__reviewUITest;if(e.ai)return e.ai(...args);throw Error('Unexpected AI grading');}};`,
   submissionExportService:`export const downloadSubmissionExport=async()=>{throw Error('Unexpected export');};`,
   MathDisplay:`import React from 'react';export const MathDisplay=({text})=>React.createElement('span',{},text);`,
   StepGradingBreakdown:`import React from 'react';export const StepGradingBreakdown=({result})=>React.createElement('pre',{},JSON.stringify(result));`
@@ -98,7 +98,7 @@ const questionTwo=()=>renderer!.root.find(node=>node.props.id==='teacher-review-
 const saveQuestionTwo=()=>questionTwo().findAll(node=>node.type==='button'&&['Lưu','Đã lưu'].includes(label(node)))[0].props.onClick();
 env.deferNext=true;
 await act(async()=>{questionTwo().findAll(node=>node.type==='input'&&node.props.type==='number')[0].props.onChange({target:{value:'0.6'}});});
-await act(async()=>{await saveQuestionTwo();await new Promise<void>(resolve=>setImmediate(resolve));});
+await act(async()=>{await await saveQuestionTwo();await new Promise<void>(resolve=>setImmediate(resolve));});
 assert.ok(JSON.stringify(renderer!.toJSON()).includes('Fixture awaiting acknowledgement'));
 const late=await prepareResultWrite(latest,env.pending,{intent:'teacher',operationId:'late-op'});
 latest=late.record;
@@ -108,8 +108,37 @@ await act(async()=>{
 });
 assert.ok(JSON.stringify(renderer!.toJSON()).includes('Firebase đã xác nhận bản gửi trước đó'));
 await act(async()=>{questionTwo().findAll(node=>node.type==='input'&&node.props.type==='number')[0].props.onChange({target:{value:'0.7'}});});
-await act(async()=>{saveQuestionTwo();await new Promise<void>(resolve=>setImmediate(resolve));});
+await act(async()=>{await saveQuestionTwo();await new Promise<void>(resolve=>setImmediate(resolve));});
 assert.equal(latest.answers[0].teacherScore,.75);assert.equal(latest.answers[1].teacherScore,.7);
 assert.equal(env.saveCalls,4,'A late acknowledgement releases the pending edit without another AI call');
 await act(async()=>{renderer!.unmount();});
 console.log('PASS actual TeacherResults: delayed Cloud list/alias opens exact pending ID, old essay image/solution/analysis render, q1-close-reopen-q2 retains q1 without any AI request');
+
+for (const mode of ['mcq', 'mixed']) {
+  const qs:any[] = mode === 'mcq'
+    ? [{ id:'mcq', order:1, question:'Synthetic MCQ question',type:'multiple_choice',points:1,options:[{id:'A',text:'2'}],correctAnswer:'A' }]
+    : questions;
+  const currentExam={...exam,id:'new-'+mode,questions:qs};
+  latest={...original,id:'new-result-'+mode,assignmentId:currentExam.id,submissionWorkflow:'submit_first',
+    shuffledQuestions:qs,gradingStatus:mode==='mixed'?'pending_teacher_grading':'graded',
+    hasEssayQuestions:mode==='mixed',isProvisional:mode==='mixed',needsTeacherReview:mode==='mixed',
+    totalScore:mode==='mcq'?9.5:0,answers:mode==='mcq'?[{questionId:'mcq',selectedAnswer:'A',isCorrect:true,pointsEarned:1,maxPoints:1}]:original.answers.map(a=>({...a,stepAnalysis:undefined}))};
+  let calls=0;
+  env.ai=async()=>{calls++;return {success:true,analysisSource:'ai',score:.75,maxScore:1,isAllCorrect:false,needsTeacherReview:false,
+    firstErrorStep:2,firstErrorType:'calculation',firstErrorExplanation:'Synthetic first error',feedback:'Synthetic suggestion',
+    analysis:[{stepIndex:1,studentLatex:'x=1',status:'correct',confidence:.99,comment:'Synthetic analysis'},{stepIndex:2,studentLatex:'x=2',status:'first_error',confidence:.99,comment:'Synthetic first error'}]};};
+  await act(async()=>{renderer=create(React.createElement(TeacherResults,{assignments:[currentExam],classes:[],submissions:[await versionResult(latest)],initialAssignmentId:currentExam.id,initialSubmissionId:latest.id,onOpenShare:()=>{}}));await new Promise<void>(resolve=>setImmediate(resolve));});
+  assert.equal(calls,0,'opening existing or pending work never starts AI');
+  if(mode==='mixed'){
+    assert.ok(renderer!.root.findAllByType('img').some(n=>n.props.src==='data:image/png;base64,ORIGINAL_0'));
+    assert.ok(JSON.stringify(renderer!.toJSON()).includes('Original student solution 0'));
+    const aiButton=renderer!.root.findAll(n=>n.type==='button'&&label(n)==='✨ Chấm bằng AI (Từng bước)')[0];
+    assert.ok(aiButton);
+    await act(async()=>{await aiButton.props.onClick();await new Promise<void>(resolve=>setImmediate(resolve));});
+    assert.equal(calls,1);assert.equal(latest.answers[0].teacherScore,undefined);assert.equal(latest.answers[0].needsTeacherReview,true);
+    assert.equal(latest.answers[0].stepAnalysis[1].status,'first_error');
+    assert.deepEqual(latest.answers[0].essayImages,original.answers[0].essayImages);
+  }else assert.ok(JSON.stringify(renderer!.toJSON()).includes('9.5'));
+  await act(async()=>{renderer!.unmount();});
+  console.log('PASS actual TeacherResults opens new '+mode+' result; teacher-only explicit AI after save preserves work and requires approval');
+}

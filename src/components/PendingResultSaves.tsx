@@ -8,9 +8,10 @@ interface Props {
   kind: PendingResult['kind']; relationId: string; studentName?: string;
   onSaved?: (submission: ResultRecord) => void;
   onBusyChange?: (busy: boolean) => void;
+  onPendingCountChange?: (count: number) => void;
 }
 /** Explicit recovery only: separate attempts keep their own IDs, even for the same student. */
-export function PendingResultSaves({ kind, relationId, studentName, onSaved, onBusyChange }: Props) {
+export function PendingResultSaves({ kind, relationId, studentName, onSaved, onBusyChange, onPendingCountChange }: Props) {
   const [records, setRecords] = useState<PendingResult[]>([]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
@@ -18,13 +19,14 @@ export function PendingResultSaves({ kind, relationId, studentName, onSaved, onB
     let live = true;
     const reload = () => { void listPendingResultSaves().then(items => {
       if (!live) return;
-      setRecords(items.filter(item => item.kind === kind
+      const matching = items.filter(item => item.kind === kind
         && ('assignmentId' in item.submission ? item.submission.assignmentId : item.submission.contestId) === relationId
-        && (studentName === undefined || item.submission.studentName === studentName)));
-    }).catch(() => {}); };
+        && (studentName === undefined || item.submission.studentName === studentName));
+      setRecords(matching); onPendingCountChange?.(matching.length);
+    }).catch(() => { if (live) onPendingCountChange?.(0); }); };
     reload(); window.addEventListener('submissions-confirmed', reload);
     return () => { live = false; window.removeEventListener('submissions-confirmed', reload); };
-  }, [kind, relationId, studentName]);
+  }, [kind, relationId, studentName, onPendingCountChange]);
   const retry = async (record: PendingResult) => {
     if (busy) return;
     setBusy(true); onBusyChange?.(true);

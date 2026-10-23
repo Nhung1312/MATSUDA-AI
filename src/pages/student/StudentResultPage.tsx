@@ -1,4 +1,5 @@
 import { PendingResultSaves } from '../../components/PendingResultSaves';
+import { StudentSubmissionReceipt } from '../../components/StudentSubmissionReceipt';
 import { saveSubmissionConfirmed } from '../../services/submissionSaveService';
 import React, { useState, useEffect } from 'react';
 import { Submission, Assignment, Question } from '../../types';
@@ -145,6 +146,9 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   }, [submission.id]);
 
   const handleAnalyzeStepByStep = async (question: Question, studentSolutionText?: string, images?: string[]) => {
+    if (submission.submissionWorkflow === 'submit_first' && !isDemoPreview && !isTeacherPreview) {
+      setAiActionMessage({ type: 'warning', text: 'Bài đã được nộp. Giáo viên sẽ kích hoạt chấm AI và duyệt điểm.' }); return;
+    }
     if (pendingResultSave) { setAiActionMessage({ type: 'error', text: 'Cần thử lưu lại bản phân tích đang chờ trước khi phân tích câu khác.' }); return; }
     setLoadingStepGrading(prev => ({ ...prev, [question.id]: true }));
     try {
@@ -366,6 +370,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
   };
 
   const handleGradeWithAI = async (question: Question, studentSolutionText?: string, images?: string[]) => {
+    if (submission.submissionWorkflow === 'submit_first' && !isDemoPreview && !isTeacherPreview) return;
     setLoadingAiGrading(prev => ({ ...prev, [question.id]: true }));
     try {
       const res = await aiService.gradeEssay({
@@ -431,9 +436,15 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
   // Đợt 8A: Hiển thị rõ chu trình AI khép kín để học sinh và người xem hiểu ngay.
   const currentAssignmentMistakes = mistakeRecords.filter(m => m.assignmentId === assignment.id);
+  const submittedFirst = submission.submissionWorkflow === 'submit_first' && !isDemoPreview && !isTeacherPreview;
+  if (submittedFirst && assignment.allowViewResult === false) return <div className="max-w-3xl mx-auto p-5 space-y-4">
+    <StudentSubmissionReceipt submission={submission} assignment={assignment} />
+    <button type="button" onClick={onGoHome}>Về trang chủ</button>
+  </div>;
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-16">
       <div className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-8 space-y-4 sm:space-y-6">
+        {submittedFirst && <StudentSubmissionReceipt submission={submission} assignment={assignment} />}
         {!isTeacherPreview && !isDemoPreview && <PendingResultSaves kind="result" relationId={assignment.id}
           studentName={submission.studentName} onSaved={record => {
             if (record.id === submission.id) { setSubmission(record as Submission); setPendingResultSave(null); }
@@ -501,7 +512,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
 
           {/* Big Score Display */}
           <div className="my-4">
-            {isAwaitingReview ? (
+            {submittedFirst && hasPendingTeacherGrading ? <p className="font-bold text-amber-800">Điểm tổng kết: Chưa chốt.</p> : isAwaitingReview ? (
               <div className="inline-flex flex-col items-center space-y-2 bg-gradient-to-br from-amber-50 to-indigo-50 dark:from-amber-950/40 dark:to-indigo-950/40 px-4 sm:px-8 py-5 rounded-2xl border border-amber-200 dark:border-amber-800 shadow-sm max-w-md mx-auto">
                 <span className="px-3 py-1 rounded-full bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 font-black text-xs flex items-center gap-1">
                   <Clock className="w-3.5 h-3.5 text-amber-700" />
@@ -1053,7 +1064,7 @@ export const StudentResultPage: React.FC<StudentResultPageProps> = ({
                     )}
 
                     {/* Step-by-Step AI Grading & Diagnosis (Đợt 4) */}
-                    {question.type === 'essay' && (ans.studentSolutionText || images.length > 0) && (
+                    {question.type === 'essay' && (ans.studentSolutionText || images.length > 0) && (!submittedFirst || !!stepGradingResults[question.id]) && (
                       <div className="mb-4">
                         {!stepGradingResults[question.id] ? (
                           <div className="flex flex-wrap items-center gap-2">

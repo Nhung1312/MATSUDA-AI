@@ -294,7 +294,8 @@ function AppContent() {
     refreshAllData();
     if (examSession.assignment) {
       // Record progress into Zustand persistent store
-      useLearningProgressStore.getState().recordSubmission(submission, examSession.assignment);
+      try { useLearningProgressStore.getState().recordSubmission(submission, examSession.assignment); }
+      catch (error) { console.warn('Cache tiến độ đầy; bài đã được Firebase xác nhận:', error); }
     }
     updateExamSession(prev => ({
       ...prev,

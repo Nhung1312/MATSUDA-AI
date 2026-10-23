@@ -17,6 +17,7 @@ import { Assignment, Submission, ClassRoom, ExamTemplate, Contest, ContestSubmis
 import { getDocFromServer, getDocsFromServer, runTransaction } from 'firebase/firestore';
 
 import { prepareResultWrite, versionResult, newSaveOperationId, type ResultRecord, type ResultWriteOptions } from './resultPersistence';
+import { assertResultDocumentFits } from './resultDocumentSize';
 
 export const EXAMS_COLLECTION = 'exams';
 export const RESULTS_COLLECTION = 'results';
@@ -191,6 +192,21 @@ export class FirestoreService {
     if (intent === 'teacher' && !auth.currentUser) throw new Error('Cần đăng nhập giáo viên để lưu điểm.');
     const operationId = options.operationId || submission.saveAttemptId || newSaveOperationId();
     const ref = doc(db, collectionName, submission.id);
+    if (intent === 'student') {
+      // Anonymous production Rules allow CREATE only. No transaction/get/readback.
+      // A replay of an existing ID is denied by Rules, never interpreted as success.
+      if (submission.saveRevision || submission.saveBaseFingerprint || submission.answers.some(a => a.teacherReviewed || a.teacherScore !== undefined)) {
+        throw new Error('Bài đã nộp hoặc đã được duyệt. Học sinh không được cập nhật kết quả; giữ nguyên bản đã lưu.');
+      }
+      const record = sanitizeForFirestore({ ...submission, saveRevision: 1, saveOperationId: operationId,
+        createdAt: (submission as any).createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() });
+      delete record.saveBaseFingerprint;
+      delete record.saveAttemptId;
+      assertResultDocumentFits(collectionName, submission.id, record, 16_384);
+      // setDoc resolves only on backend acknowledgement, never on the local cache write.
+      await setDoc(ref, record);
+      return versionResult(record);
+    }
     const committed = await runTransaction(db, async transaction => {
       const snap = await transaction.get(ref);
       const latest = snap.exists() ? { ...snap.data(), id: snap.id } as T : null;
@@ -203,6 +219,7 @@ export class FirestoreService {
       };
       delete record.saveBaseFingerprint;
       delete record.saveAttemptId;
+      assertResultDocumentFits(collectionName, submission.id, record);
       transaction.set(ref, sanitizeForFirestore(record), { merge: true });
       return record;
     });

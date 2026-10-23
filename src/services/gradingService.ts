@@ -931,6 +931,17 @@ export class GradingService {
     const rawScore = totalMax > 0 ? (totalEarned / totalMax) * scoreScale : 0;
     const finalScore = Number(formatDecimalPoint(rawScore));
 
+    // Workflow state only: AI suggestions for newly submitted work require teacher approval.
+    if (submission.submissionWorkflow === 'submit_first') {
+      for (const answer of updatedAnswers) {
+        const q = gradingQuestions.find(item => item.id === answer.questionId);
+        if (q && isEssayQuestion(q) && !answer.teacherReviewed) {
+          answer.needsTeacherReview = true;
+          answer.isProvisional = true;
+          overallNeedsReview = true;
+        }
+      }
+    }
     const hasAnyProvisional = updatedAnswers.some(a => a.isProvisional || (a.needsTeacherReview && a.teacherScore === undefined));
 
     const updatedSubmission: Submission = {
@@ -956,7 +967,7 @@ export class GradingService {
       }
     };
 
-    const persistence = await saveSubmissionConfirmed(updatedSubmission);
+    const persistence = await saveSubmissionConfirmed(updatedSubmission, { intent: 'teacher' });
 
     return {
       success: true,

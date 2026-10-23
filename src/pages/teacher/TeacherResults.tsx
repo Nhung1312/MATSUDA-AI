@@ -470,6 +470,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       const updatedAnswers: StudentAnswer[] = selectedSubmissionDetail.answers.map(a => {
         if (a.questionId === ans.questionId) {
           const manualGrade = Number.isFinite(a.teacherScore) && (a.teacherReviewed === true || !/^\[(?:Gemini|Matsuda) AI\]/i.test(a.teacherFeedback || ''));
+          const requireApproval = selectedSubmissionDetail.submissionWorkflow === 'submit_first';
           return {
             ...a,
             pointsEarned: manualGrade ? a.teacherScore! : scoreVal,
@@ -484,8 +485,8 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
             firstErrorStep: firstErrorStepVal,
             firstErrorType: firstErrorTypeVal,
             firstErrorExplanation: firstErrorExplVal,
-            needsTeacherReview: manualGrade ? false : needsReviewVal,
-            isProvisional: manualGrade ? false : needsReviewVal,
+            needsTeacherReview: manualGrade ? false : needsReviewVal || requireApproval,
+            isProvisional: manualGrade ? false : needsReviewVal || requireApproval,
             aiGradingError: !!(stepResp && (stepResp.analysisSource === 'rule' || stepResp.analysisSource === 'unavailable')),
             stepGradingResponse: stepResp
           };
@@ -544,8 +545,8 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
 
       await persistReviewSubmission(updatedSubmission);
       setActionNotice({
-        type: needsReviewVal ? 'warning' : 'success',
-        text: needsReviewVal
+        type: pendingReviewCount > 0 ? 'warning' : 'success',
+        text: pendingReviewCount > 0
           ? 'AI đã phân tích. Câu này cần giáo viên duyệt trước khi thành điểm chính thức.'
           : `AI đã chấm câu này: ${scoreVal}/${question.points} điểm.`
       });
@@ -2326,7 +2327,9 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
                     {ans.needsTeacherReview && (
                       <div className="mb-2 p-2.5 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 flex items-center gap-2">
                         <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                        <span><strong>Lưu ý:</strong> AI phát hiện nét chữ chưa hoàn toàn rõ hoặc điểm số cần giáo viên đối chiếu lại barem.</span>
+                        <span><strong>Lưu ý:</strong> {selectedSubmissionDetail.submissionWorkflow === 'submit_first'
+                          ? ans.aiGraded ? 'AI đã đề xuất điểm. Giáo viên cần kiểm tra và duyệt trước khi chốt.' : 'Tự luận đang chờ chấm. Giáo viên có thể kích hoạt AI từng bước hoặc duyệt trực tiếp.'
+                          : 'AI phát hiện nét chữ chưa hoàn toàn rõ hoặc điểm số cần giáo viên đối chiếu lại barem.'}</span>
                       </div>
                     )}
 

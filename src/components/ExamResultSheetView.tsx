@@ -63,9 +63,14 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
   const reviewedWrongCount = reviewedAnswers.filter(ans => !ans.isCorrect).length;
 
   const scoreToDisplay =
-    hasPendingReview && submission.mcqScore !== undefined
+    submission.submissionWorkflow === 'submit_first' && hasPendingReview
+      ? submission.mcqPoints ?? 0
+      : hasPendingReview && submission.mcqScore !== undefined
       ? submission.mcqScore
       : submission.totalScore;
+  const scoreDenominator = submission.submissionWorkflow === 'submit_first'
+    ? hasPendingReview ? submission.maxMcqPoints ?? 0 : submission.maxScore
+    : 10;
 
   const statusTitle = hasPendingReview ? 'KẾT QUẢ TẠM TÍNH' : 'KẾT QUẢ CHÍNH THỨC';
   const statusNote = hasPendingReview
@@ -286,11 +291,11 @@ export const ExamResultSheetView: React.FC<ExamResultSheetViewProps> = ({
             }`}
           >
             <div className={`text-[11px] font-black uppercase ${hasPendingReview ? 'text-amber-700' : 'text-indigo-700'}`}>
-              {hasPendingReview ? 'Điểm tạm tính' : 'Điểm'}
+              {submission.submissionWorkflow === 'submit_first' && hasPendingReview ? 'Trắc nghiệm tạm thời • Tổng kết chưa chốt' : hasPendingReview ? 'Điểm tạm tính' : 'Điểm'}
             </div>
             <div className={`text-4xl font-black mt-1 ${hasPendingReview ? 'text-amber-700' : 'text-indigo-700'}`}>
-              {scoreToDisplay.toFixed(1)}
-              <span className="text-base text-slate-400"> / 10</span>
+              {scoreDenominator > 0 ? scoreToDisplay.toFixed(1) : 'Chờ chấm'}
+              {scoreDenominator > 0 && <span className="text-base text-slate-400"> / {scoreDenominator}</span>}
             </div>
           </div>
 

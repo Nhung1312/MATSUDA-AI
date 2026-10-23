@@ -10,15 +10,17 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "check:imports": "tsx scripts/check-import-parsers.ts",
+    "check:imports": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-import-parsers.ts",
     "check:exam-workflow": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-exam-workflow.ts",
     "check:ai-efficiency": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-ai-efficiency.ts",
-    "test:strikeout": "tsx scripts/test-strikeout-grading.ts",
+    "test:strikeout": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/test-strikeout-grading.ts",
     "test:points": "node scripts/test-point-distribution.mjs",
     "check:result-safety": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-result-safety.ts",
     "check:teacher-navigation": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-teacher-navigation.tsx",
     "check:review-save": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-review-save.ts",
-    "check:teacher-review-ui": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-teacher-review-ui.tsx"
+    "check:teacher-review-ui": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-teacher-review-ui.tsx",
+    "check:submit-first-emulator": "firebase emulators:exec --only firestore --project demo-matsuda-submit-first --config firebase.emulator.json \"node scripts/check-submit-first-emulator.mjs\"",
+    "check:submit-first-ui": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submit-first-ui.tsx"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -57,6 +59,8 @@
     "vite": "^6.2.3",
     "fake-indexeddb": "^6.0.0",
     "react-test-renderer": "^19.0.1",
-    "@types/react-test-renderer": "^19.0.0"
+    "@types/react-test-renderer": "^19.0.0",
+    "@firebase/rules-unit-testing": "5.0.2",
+    "firebase-tools": "15.34.1"
   }
 }

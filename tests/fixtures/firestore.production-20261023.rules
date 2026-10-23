@@ -1,0 +1,81 @@
+// Firestore Rules dung chung cho MATSUDA-AI va web-giao-bai.
+// UID giao vien da dien theo thong tin do nguoi dung cung cap.
+// Ban sao luu Rules cu, kiem tra voi tai khoan HS va GV truoc khi Publish.
+// Luu y: ung dung Web Giao Bai va MATSUDA AI cung Firebase; cac luong thi truc tuyen can thu rieng.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isTeacher() {
+      return request.auth != null
+        && request.auth.uid == 'SfYjnDb35FhINTqWH1HaUZtp7fk1';
+    }
+
+
+    // Ca hai ung dung: HS doc de, chi GV duoc tao/sua/xoa.
+    // Luu y: dap an trong tai lieu exams co the duoc tai xuong tu trinh duyet.
+    match /exams/{examId} {
+      allow read: if true;
+      allow create, update, delete: if isTeacher();
+    }
+
+
+    // HS duoc NOP MOI mot lan khong can dang nhap; khong doc/sua/xoa bai da nop.
+    // Khong the dam bao diem khong bi gia mao neu cham tren thiet bi HS.
+    match /results/{resultId} {
+      allow create: if request.resource.data.id == resultId
+        && request.resource.data.assignmentId is string
+        && request.resource.data.studentName is string;
+      allow read, update, delete: if isTeacher();
+    }
+
+
+    // Kho de co the doc de tuong thich voi ung dung cu, nhung khong duoc ghi an danh.
+    match /exam_templates/{templateId} {
+      allow read: if true;
+      allow create, update, delete: if isTeacher();
+    }
+
+
+    // Danh sach lop co the chua thong tin ca nhan HS.
+    match /classes/{classId} {
+      allow read, write: if isTeacher();
+    }
+
+
+    // Ho so GV; luu y xoa khoa API bi luu tu truoc neu co.
+    match /teachers/{teacherId} {
+      allow read, write: if isTeacher() && request.auth.uid == teacherId;
+    }
+
+
+    // Hoc sinh co the gui yeu cau; chi GV duoc doc du lieu doi soat.
+    // Neu app cu co tra cuu thanh toan khong dang nhap thi can nang cap rieng.
+    match /payment_requests/{paymentId} {
+      allow create: if true;
+      allow read, update, delete: if isTeacher();
+    }
+
+
+    // Cac tinh nang thi truc tuyen KHAC voi Bai tap: can kiem thu rieng.
+    match /contests/{contestId} {
+      allow read: if true;
+      allow create, update, delete: if isTeacher();
+    }
+    match /contest_submissions/{submissionId} {
+      allow create: if true;
+      allow read, update, delete: if isTeacher();
+    }
+    match /contest_drafts/{draftId} {
+      allow create: if true;
+      allow read, update, delete: if isTeacher();
+    }
+
+
+    // QUAN TRONG: Khong de allow read: if true trong wildcard bao phu,
+    // vi no vo hieu hoa quy tac han che tai cac collection o tren.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

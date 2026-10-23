@@ -152,6 +152,7 @@ export interface ResultSaveVersion {
   saveAttemptId?: string;
 }
 export interface Submission extends ResultSaveVersion {
+  submissionWorkflow?: 'submit_first';
   id: string;
   assignmentId: string;
   assignmentTitle: string;

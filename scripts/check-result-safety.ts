@@ -44,7 +44,7 @@ export const getDocFromServer = async ref => { if (state.failRead || state.offli
 export const getDoc = getDocFromServer;
 export const getDocs = async () => { throw Error('Unexpected fixture query'); };
 export const getDocsFromServer = getDocs;
-export const setDoc = async () => { throw Error('Nontransactional overwrite forbidden'); };
+export const setDoc = async (ref,value) => { if(state.offline)throw Error('fixture offline'); if(state.records.has(ref.key))throw Object.assign(Error('existing result denied'),{code:'permission-denied'}); state.records.set(ref.key,structuredClone(value));state.writes++; };
 export const addDoc = setDoc, deleteDoc = setDoc;
 export function runTransaction(_db, update) {
   const task = state.chain.then(async () => {
@@ -117,7 +117,7 @@ assert.equal(afterRace.answers[1].teacherScore, undefined);
 const afterReload = await isolated.saveResult(edit(afterRace,1,.6), { intent:'teacher', operationId:'tab2-reloaded' });
 assert.equal(afterReload.answers[0].teacherScore,.8);
 assert.equal(afterReload.answers[1].teacherScore,.6);
-await assert.rejects(isolated.saveResult(edit(afterReload,0,0), { intent:'student', operationId:'old-student' }), /giáo viên duyệt/);
+await assert.rejects(isolated.saveResult(edit(afterReload,0,0), { intent:'student', operationId:'old-student' }), /Học sinh không được cập nhật/);
 console.log('PASS two tabs: stale writer rejected; reload preserves both teacher scores; student overwrite rejected');
 
 seed(fixture('legacy-race'));
@@ -129,13 +129,13 @@ console.log('PASS legacy revision-0 fingerprint detects a concurrent edit before
 const retry = fixture('retry-one-id');
 state.failRead = true;
 const writesBefore = state.writes;
-const failedAck = await saveSubmissionConfirmed(retry, { intent:'student' });
+const failedAck = await saveSubmissionConfirmed(retry, { intent:'teacher' });
 assert.equal(failedAck.cloudSaved, false); assert.equal(failedAck.localSaved,true);
 assert.ok(failedAck.error?.includes('read denied'));
 const pending = await PendingResultStore.list('teacher-fixture');
 assert.ok(pending.some(r => r.submission.id === retry.id));
 state.failRead = false;
-const resent = await saveSubmissionConfirmed(failedAck.pendingSubmission!, { intent:'student' });
+const resent = await saveSubmissionConfirmed(failedAck.pendingSubmission!, { intent:'teacher' });
 assert.equal(resent.cloudSaved,true);
 assert.equal(resent.submission!.id,retry.id);
 assert.equal(state.writes,writesBefore + 1, 'Retry is an idempotent receipt, not another write or submission');

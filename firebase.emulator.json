@@ -1,0 +1,15 @@
+{
+  "firestore": {
+    "rules": "tests/fixtures/firestore.production-20261023.rules"
+  },
+  "emulators": {
+    "firestore": {
+      "host": "127.0.0.1",
+      "port": 8097
+    },
+    "ui": {
+      "enabled": false
+    },
+    "singleProjectMode": true
+  }
+}
