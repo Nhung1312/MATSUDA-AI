@@ -2,6 +2,16 @@
 
 Bản vá tiếp tục trên nhánh `fix/exam-review-storage-safety-20261023`; chưa merge/deploy. Không đổi database, dữ liệu lịch sử, thuật toán AI, đáp án hoặc thang điểm. Không sửa/publish Security Rules production. Không ghi thử dữ liệu thật.
 
+## Trạng thái dừng kiểm thử theo yêu cầu giáo viên — 23/10/2026
+
+Đã dừng phiên chạy cuối theo yêu cầu; không chạy lại AI, không merge/deploy. Bổ sung cuối chỉ là mã kiểm thử và fixture ảnh giả, không đổi mã ứng dụng hoặc thuật toán chấm.
+
+- Commit ứng dụng `cf9fc61` đã đạt 14 bước CI. Trong lượt cuối, cache-pressure, ba đường mở Kết quả, TeacherResults UI, submit-first UI, lint/build đã chạy lại và đạt.
+- Gọi trực tiếp API AI hiện có bằng ảnh giả: HTTP 200, `analysisSource: ai`, khoảng 23 giây; đọc đủ 5 bước, phát hiện lỗi đầu tiên ở bước 3 và 2 bước kéo theo. Endpoint chấm không lưu Firestore.
+- Ca tích hợp TeacherResults + AI thật + Emulator có lần hết thời gian chờ 55 giây. Lần chạy tiếp theo đã bị dừng theo yêu cầu trước khi có kết quả cuối; **chưa xác nhận ca tích hợp cuối đạt**, không xác định timeout là lỗi ứng dụng hay đường truyền kiểm thử.
+- Giữ helper kiểm thử thủ công `run-live-ai-review-smoke.mjs` cùng fixture ảnh chỉ chứa dữ liệu giả. Chỉ gọi AI khi đặt rõ `MATSUDA_LIVE_AI_SMOKE=1`; CI mặc định không bật. Giới hạn một request AI mỗi phiên, URL cố định, chặn redirect, chỉ cho gửi fixture giả; kết quả bài nộp chỉ ở project Emulator `demo-matsuda-submit-first`.
+- Chưa đủ căn cứ tuyên bố sẵn sàng triển khai toàn bộ luồng AI thật. Các giới hạn cũ vẫn còn: document quá 1 MiB bị chặn và giữ bản chờ, chưa phân trang/tải chi tiết theo nhu cầu. Chưa ghi thử Firebase production hoặc thay Rules.
+
 ## Luồng đã sửa
 
 1. `StudentExamPage` dùng bộ chấm trắc nghiệm hiện có qua `buildStudentSubmission`, giữ đáp án, lời giải, ảnh và snapshot đề; không gọi AI khi nộp.

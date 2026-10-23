@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
+import { spawn } from 'node:child_process';
 import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
 import * as sdk from 'firebase/firestore';
 import 'fake-indexeddb/auto';
@@ -11,9 +12,56 @@ import 'fake-indexeddb/auto';
 // This suite never imports a production Firebase configuration or uses real student data.
 assert.equal(process.env.FIRESTORE_EMULATOR_HOST, '127.0.0.1:8097');
 const projectId = 'demo-matsuda-submit-first';
+const liveAI = process.env.MATSUDA_LIVE_AI_SMOKE === '1';
+const aiOrigin = 'https://matsuda-ai-xi.vercel.app';
+const liveFixture = liveAI ? JSON.parse(fs.readFileSync('tests/fixtures/live-ai-synthetic-image.json', 'utf8')) : null;
+let liveRequests = 0;
+let liveResponse;
 const nativeFetch = globalThis.fetch;
-globalThis.fetch = (input, options) => {
-  const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+// The Work Mode proxy is supported by urllib. Keep the live smoke's transport isolated
+// from the Emulator, with a fixed URL, redirects disabled and only a validated fake body.
+async function requestLiveAI(body) {
+  const script = `import sys,json,urllib.request,urllib.error
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+ def redirect_request(self,req,fp,code,msg,headers,newurl): return None
+request=urllib.request.Request('https://matsuda-ai-xi.vercel.app/api/grading/step-analysis',data=sys.stdin.buffer.read(),headers={'Content-Type':'application/json'},method='POST')
+try:
+ with urllib.request.build_opener(NoRedirect()).open(request,timeout=90) as response:
+  print(json.dumps({'status':response.status,'body':response.read().decode()}))
+except urllib.error.HTTPError as error:
+ print(json.dumps({'status':error.code,'body':error.read().decode()}))
+`;
+  return new Promise((resolve, reject) => {
+    const child = spawn('python', ['-c', script], { stdio: ['pipe', 'pipe', 'pipe'] });
+    let output = '', error = '';
+    const timer = setTimeout(() => { child.kill(); reject(Error('Live AI HTTP request timed out after 95 seconds')); }, 95000);
+    child.stdout.on('data', chunk => { output += chunk; });
+    child.stderr.on('data', chunk => { error += chunk; });
+    child.on('error', failure => { clearTimeout(timer); reject(failure); });
+    child.on('close', code => {
+      clearTimeout(timer);
+      if (code !== 0) { reject(Error('Live AI transport failed: ' + error.slice(-1200))); return; }
+      try { const response = JSON.parse(output); resolve(new Response(response.body, { status: response.status, headers: { 'Content-Type': 'application/json' } })); }
+      catch (failure) { reject(failure); }
+    });
+    child.stdin.end(body);
+  });
+}
+globalThis.fetch = async (input, options) => {
+  const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, liveAI ? aiOrigin : undefined);
+  if (liveAI && url.origin === aiOrigin && url.pathname === '/api/grading/step-analysis' && !url.search) {
+    assert.equal(options?.method, 'POST');
+    assert.equal(globalThis.__submitFirstEmulator.user?.uid, teacherUid, 'AI only after selecting the synthetic teacher');
+    const body = JSON.parse(options.body);
+    for (const key of ['questionText', 'grade', 'topic', 'maxPoints', 'correctAnswer', 'rubric', 'studentSolutionText', 'essayImages']) {
+      assert.deepEqual(body[key], liveFixture[key], 'Only the committed synthetic fixture may reach the live AI endpoint: ' + key);
+    }
+    assert.equal(++liveRequests, 1, 'At most one paid AI request per manual smoke run');
+    const response = await requestLiveAI(options.body);
+    liveResponse = { httpStatus: response.status, body: await response.clone().json() };
+    fs.writeFileSync(path.join(tmp, 'live-ai-response.json'), JSON.stringify(liveResponse, null, 2) + '\n');
+    return response;
+  }
   if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) throw Error('PRODUCTION_NETWORK_FORBIDDEN');
   return nativeFetch(input, options);
 };
@@ -43,17 +91,28 @@ export {StorageService} from './src/services/storageService';
 export {buildStudentSubmission} from './src/services/studentSubmission';
 export {GradingService} from './src/services/gradingService';
 export {stepGradingService} from './src/services/stepGradingService';
+${liveAI ? "export {TeacherResults} from './src/pages/teacher/TeacherResults';" : ''}
 export {useDb} from 'emulator-bridge';`, resolveDir: process.cwd(), sourcefile: 'submit-first-entry.ts' },
   bundle: true, write: false, platform: 'node', format: 'esm', packages: 'external',
   plugins: [{ name: 'only-emulator-config', setup(b) {
+    if (liveAI) {
+      b.onResolve({ filter: /\/components\// }, args => ({ path: args.path.split('/').pop(), namespace: 'smoke-ui-components' }));
+      b.onLoad({ filter: /.*/, namespace: 'smoke-ui-components' }, args => ({
+        contents: `import React from 'react'; export const ${args.path} = ${args.path === 'MathDisplay'
+          ? "({text})=>React.createElement('span',{},text)"
+          : args.path === 'StepGradingBreakdown' ? "({result})=>React.createElement('pre',{},JSON.stringify(result))" : '()=>null'};`, loader: 'js', resolveDir: process.cwd()
+      }));
+    }
     b.onResolve({ filter: /(^emulator-bridge$|\/firebase$)/ }, () => ({ path: 'firebase', namespace: 'submit-bridge' }));
     b.onLoad({ filter: /.*/, namespace: 'submit-bridge' }, () => ({ contents: bridge, loader: 'js', resolveDir: process.cwd() }));
   } }] });
 const tmp = fs.mkdtempSync(path.resolve('.test-submit-emulator-'));
 const modulePath = path.join(tmp, 'adapter.mjs');
 fs.writeFileSync(modulePath, buildResult.outputFiles[0].text);
+const adapter = await import(pathToFileURL(modulePath).href);
 const { FirestoreService: service, saveSubmissionConfirmed: save, saveContestSubmissionConfirmed: saveContest,
-  PendingResultStore, StorageService, buildStudentSubmission: buildSubmission, GradingService, stepGradingService, useDb } = await import(pathToFileURL(modulePath).href);
+  PendingResultStore, StorageService, buildStudentSubmission: buildSubmission, GradingService, stepGradingService, useDb } = adapter;
+const realAnalyze = stepGradingService.analyzeStepByStep.bind(stepGradingService);
 const rules = fs.readFileSync('tests/fixtures/firestore.production-20261023.rules', 'utf8');
 assert.equal(createHash('sha256').update(rules).digest('hex'), '02ca86dd5a88131f85b0b60de630412ad7fcefd43e596a22f71d0496653f7ba8');
 const teacherUid = 'SfYjnDb35FhINTqWH1HaUZtp7fk1';
@@ -177,5 +236,13 @@ try {
   ok('shared anonymous create path remains compatible with contest create permission');
   assert.deepEqual([...legacyDisk], originalDisk, 'Legacy draft must remain byte-for-byte intact');
   ok('old draft untouched; contest cache quota error does not block its Cloud acknowledgement');
+  if (liveAI) {
+    const { runLiveAIReviewSmoke } = await import('./run-live-ai-review-smoke.mjs');
+    const report = await runLiveAIReviewSmoke({ fixture: liveFixture, service, save, buildSubmission, select, anon, teacher, teacherUid,
+      TeacherResults: adapter.TeacherResults, stepGradingService, realAnalyze, getLiveResponse: () => liveResponse, getLiveRequests: () => liveRequests });
+    assert.deepEqual([...legacyDisk], originalDisk);
+    fs.writeFileSync(path.join(tmp, 'live-ai-smoke-report.json'), JSON.stringify(report, null, 2) + '\n');
+    console.log('LIVE AI REVIEW SMOKE PASS ' + JSON.stringify(report));
+  }
   console.log('SUBMIT FIRST EMULATOR PASS — exact deployed Rules fixture, synthetic records only, production writes: 0');
 } finally { await env.cleanup(); }
