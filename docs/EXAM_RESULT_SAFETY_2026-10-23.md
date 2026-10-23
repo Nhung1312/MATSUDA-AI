@@ -2,15 +2,20 @@
 
 Bản vá tiếp tục trên nhánh `fix/exam-review-storage-safety-20261023`; chưa merge/deploy. Không đổi database, dữ liệu lịch sử, thuật toán AI, đáp án hoặc thang điểm. Không sửa/publish Security Rules production. Không ghi thử dữ liệu thật.
 
-## Trạng thái dừng kiểm thử theo yêu cầu giáo viên — 23/10/2026
+## Kết quả cuối — 23/10/2026
 
-Đã dừng phiên chạy cuối theo yêu cầu; không chạy lại AI, không merge/deploy. Bổ sung cuối chỉ là mã kiểm thử và fixture ảnh giả, không đổi mã ứng dụng hoặc thuật toán chấm.
+**Sẵn sàng trình giáo viên phê duyệt merge/deploy bản vá trong phạm vi đã kiểm thử.** Chưa merge/deploy. Không thay mã ứng dụng, thuật toán AI, phát hiện lỗi hoặc thang điểm so với `cf9fc61`; giữ 14 bước CI đã đạt, không chạy lại toàn bộ.
 
-- Commit ứng dụng `cf9fc61` đã đạt 14 bước CI. Trong lượt cuối, cache-pressure, ba đường mở Kết quả, TeacherResults UI, submit-first UI, lint/build đã chạy lại và đạt.
-- Gọi trực tiếp API AI hiện có bằng ảnh giả: HTTP 200, `analysisSource: ai`, khoảng 23 giây; đọc đủ 5 bước, phát hiện lỗi đầu tiên ở bước 3 và 2 bước kéo theo. Endpoint chấm không lưu Firestore.
-- Ca tích hợp TeacherResults + AI thật + Emulator có lần hết thời gian chờ 55 giây. Lần chạy tiếp theo đã bị dừng theo yêu cầu trước khi có kết quả cuối; **chưa xác nhận ca tích hợp cuối đạt**, không xác định timeout là lỗi ứng dụng hay đường truyền kiểm thử.
-- Giữ helper kiểm thử thủ công `run-live-ai-review-smoke.mjs` cùng fixture ảnh chỉ chứa dữ liệu giả. Chỉ gọi AI khi đặt rõ `MATSUDA_LIVE_AI_SMOKE=1`; CI mặc định không bật. Giới hạn một request AI mỗi phiên, URL cố định, chặn redirect, chỉ cho gửi fixture giả; kết quả bài nộp chỉ ở project Emulator `demo-matsuda-submit-first`.
-- Chưa đủ căn cứ tuyên bố sẵn sàng triển khai toàn bộ luồng AI thật. Các giới hạn cũ vẫn còn: document quá 1 MiB bị chặn và giữ bản chờ, chưa phân trang/tải chi tiết theo nhu cầu. Chưa ghi thử Firebase production hoặc thay Rules.
+- Xác định timeout 55 giây tại chặng HTTP gọi AI của bộ kiểm thử, trước bước lưu phân tích/điểm GV. Không có bằng chứng Firebase lưu/đọc lại bị timeout. Adapter HTTP tương thích proxy đã có ở `5a3edac` nay được kiểm chứng; thêm chế độ chỉ chạy ca còn thiếu và log từng chặng. Một lần thành công không chứng minh mọi độ trễ AI tương lai đều dưới 55 giây.
+- Một lần gọi AI thật bằng ảnh giả 23.472 byte: HTTP 200, `analysisSource: ai`, **29.541 ms**. Giao diện TeacherResults thật đã nhận, lưu phân tích và đọc lại từ Emulator. Bài được xác nhận nộp trước khi gọi AI, localStorage luôn báo đầy.
+- Sửa hai giả định sai trong bộ test, không sửa thuật toán: AI có thể không đếm dòng chép đề nên số bước lỗi khác nhau; kiểm tra chính biểu thức sai `2x+1=3x-7` và liên kết `firstErrorStep`. Đề thử có thang 2,5 điểm, không mặc định đổi sang thang 10.
+- Dùng lại nguyên phản hồi AI vừa ghi nhận để hoàn tất thao tác TeacherResults, không gọi API thêm: GV nhập **1,25 điểm**, lời phê, lưu và chốt; đọc lại **1,75/2,5 điểm**, đóng/mở lại vẫn đúng. Giữ nguyên ảnh/nhận xét/phân tích. Gửi lại từ học sinh không thêm lượt hoặc ghi đè điểm đã duyệt.
+- Phần duyệt/lưu/mở lại dùng phản hồi AI thật đã ghi nhận (0 request AI mới), không phải một lần gọi HTTP mới. Kiểm thử UI dùng React test renderer với event handler thật, Firebase SDK thật và Emulator; không tuyên bố đã chạy bản PR triển khai trong trình duyệt hoặc ghi Firebase production.
+- Giữ nguyên bản nháp/cache cũ; không sửa Rules, không ghi dữ liệu thật. Bài quá 1 MiB tiếp tục bị chặn rõ và giữ pending. Phân trang/tải chi tiết vẫn ngoài phạm vi bản vá cuối.
+
+Bằng chứng có số lượt API và thời gian từng chặng: `docs/PR58_FINAL_VERIFICATION_2026-10-23.json`. Fixture `live-ai-observed-response-20261023.json` chỉ chứa đề/ảnh/phản hồi giả lập danh tính, được nhận từ API AI thật; không có dữ liệu học sinh thật.
+
+Chạy lại riêng ca cần thiết (thủ công, có gọi AI): đặt `MATSUDA_LIVE_AI_SMOKE=1 MATSUDA_LIVE_AI_ONLY=1` khi chạy `check:submit-first-emulator`. Để kiểm tra riêng phần duyệt với phản hồi đã thu thập và không tốn API, thêm `MATSUDA_REUSE_OBSERVED_AI=1`. CI mặc định không bật các cờ này.
 
 ## Luồng đã sửa
 

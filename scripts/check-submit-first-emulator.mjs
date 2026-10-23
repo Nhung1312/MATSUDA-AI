@@ -13,9 +13,15 @@ import 'fake-indexeddb/auto';
 assert.equal(process.env.FIRESTORE_EMULATOR_HOST, '127.0.0.1:8097');
 const projectId = 'demo-matsuda-submit-first';
 const liveAI = process.env.MATSUDA_LIVE_AI_SMOKE === '1';
+const liveOnly = process.env.MATSUDA_LIVE_AI_ONLY === '1';
+assert.ok(!liveOnly || liveAI, 'The focused live test requires explicit live AI opt-in');
+const reuseObservedAI = process.env.MATSUDA_REUSE_OBSERVED_AI === '1';
+assert.ok(!reuseObservedAI || (liveAI && liveOnly), 'Captured response reuse is only for the focused synthetic UI test');
 const aiOrigin = 'https://matsuda-ai-xi.vercel.app';
 const liveFixture = liveAI ? JSON.parse(fs.readFileSync('tests/fixtures/live-ai-synthetic-image.json', 'utf8')) : null;
 let liveRequests = 0;
+let actualHttpRequests = 0;
+let replayedResponses = 0;
 let liveResponse;
 const nativeFetch = globalThis.fetch;
 // The Work Mode proxy is supported by urllib. Keep the live smoke's transport isolated
@@ -57,8 +63,22 @@ globalThis.fetch = async (input, options) => {
       assert.deepEqual(body[key], liveFixture[key], 'Only the committed synthetic fixture may reach the live AI endpoint: ' + key);
     }
     assert.equal(++liveRequests, 1, 'At most one paid AI request per manual smoke run');
-    const response = await requestLiveAI(options.body);
+    console.log('STAGE live-ai-http START');
+    const started = Date.now();
+    let response;
+    if (reuseObservedAI) {
+      // Exact captured response from the just-completed real AI call, never a fabricated grade.
+      const observed = JSON.parse(fs.readFileSync('tests/fixtures/live-ai-observed-response-20261023.json', 'utf8'));
+      assert.deepEqual(body.essayImages, observed.syntheticRequest.essayImages);
+      for (const key of ['questionText', 'maxPoints', 'correctAnswer', 'rubric']) assert.deepEqual(body[key], observed.syntheticRequest[key]);
+      response = new Response(JSON.stringify(observed.response.body), { status: observed.response.httpStatus, headers: { 'Content-Type': 'application/json' } });
+      replayedResponses++;
+    } else {
+      actualHttpRequests++;
+      response = await requestLiveAI(options.body);
+    }
     liveResponse = { httpStatus: response.status, body: await response.clone().json() };
+    console.log('STAGE live-ai-http END ' + JSON.stringify({ ms: Date.now() - started, status: response.status, source: liveResponse.body.analysisSource, reusedCapturedResponse: reuseObservedAI }));
     fs.writeFileSync(path.join(tmp, 'live-ai-response.json'), JSON.stringify(liveResponse, null, 2) + '\n');
     return response;
   }
@@ -138,6 +158,7 @@ stepGradingService.analyzeStepByStep = async () => { aiCalls++; throw Error('AI 
 try {
   assert.doesNotThrow(() => StorageService.initDemoData());
   const cacheWritesAfterDemo = cacheWrites;
+  if (!liveOnly) {
   for (const mode of ['mcq', 'text', 'image']) {
     const db = select(anon), { sub } = fixture('submit-' + mode, mode);
     const result = await save(sub, { intent: 'student' });
@@ -236,13 +257,15 @@ try {
   ok('shared anonymous create path remains compatible with contest create permission');
   assert.deepEqual([...legacyDisk], originalDisk, 'Legacy draft must remain byte-for-byte intact');
   ok('old draft untouched; contest cache quota error does not block its Cloud acknowledgement');
+  }
   if (liveAI) {
     const { runLiveAIReviewSmoke } = await import('./run-live-ai-review-smoke.mjs');
     const report = await runLiveAIReviewSmoke({ fixture: liveFixture, service, save, buildSubmission, select, anon, teacher, teacherUid,
-      TeacherResults: adapter.TeacherResults, stepGradingService, realAnalyze, getLiveResponse: () => liveResponse, getLiveRequests: () => liveRequests });
+      TeacherResults: adapter.TeacherResults, stepGradingService, realAnalyze, getLiveResponse: () => liveResponse, getLiveRequests: () => liveRequests,
+      getTransportStats: () => ({ liveAIRequests: actualHttpRequests, replayedAIResponses: replayedResponses }) });
     assert.deepEqual([...legacyDisk], originalDisk);
     fs.writeFileSync(path.join(tmp, 'live-ai-smoke-report.json'), JSON.stringify(report, null, 2) + '\n');
-    console.log('LIVE AI REVIEW SMOKE PASS ' + JSON.stringify(report));
+    console.log((reuseObservedAI ? 'CAPTURED REAL-AI REVIEW SMOKE PASS ' : 'LIVE AI REVIEW SMOKE PASS ') + JSON.stringify(report));
   }
   console.log('SUBMIT FIRST EMULATOR PASS — exact deployed Rules fixture, synthetic records only, production writes: 0');
 } finally { await env.cleanup(); }
