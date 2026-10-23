@@ -33,6 +33,16 @@ Nguồn: https://firebase.google.com/docs/reference/js/firestore#setdoc ; https:
 - `check:teacher-review-ui`: màn TeacherResults thật; mở trắc nghiệm mới và tự luận chờ, đủ ảnh/lời giải/phân tích; q1 → đóng/mở → q2; xác nhận muộn; AI chỉ khi giáo viên bấm và còn phải duyệt.
 - Giữ kiểm tra `check:result-safety`, `check:review-save`, `check:exam-workflow`, `check:ai-efficiency`, `check:imports`, `test:strikeout`, `test:points`; chạy lint/build.
 
+## Bổ sung bảo vệ cache đầy
+
+- Tái hiện được `QuotaExceededError` khi đã có dữ liệu cũ nhưng thiếu cờ khởi tạo. Trước sửa, `StorageService.initDemoData()` ném lỗi ra các getter của trang học sinh. Sau sửa, chỉ thử khởi tạo một lần mỗi phiên trang, giữ nguyên chuỗi cache cũ và tiếp tục đọc; demo dự phòng có thể dùng trong RAM.
+- Bài học sinh đã được Firebase xác nhận không còn đọc rồi ghi lại toàn bộ mảng `toan_thcs_submissions_v4`. Chỉ giữ bài hiện tại trong RAM và biên nhận đầy đủ theo khóa trong IndexedDB. Cache Cloud của giáo viên vẫn ở RAM theo UID. Không xóa hoặc tự chuyển đổi dữ liệu cũ/bản nháp.
+- Khôi phục bản gửi chờ dùng cursor trên database v1 hiện có, chỉ tích lũy bản phù hợp tài khoản/trạng thái; không dùng `getAll()` để giữ mọi biên nhận và ảnh trong RAM. Bản sao lưu chủ động vẫn có thể lấy cả bản đã xác nhận. Cursor còn phải quét từng bản; chưa thêm index/migration.
+- `check:cache-pressure` dùng 119 đề có ảnh giả, 100 bài trắc nghiệm cũ giả và một bài tự luận giả; đo riêng từng nhóm, quota luôn từ chối ghi. Kiểm tra cache Cloud không ghi disk, dữ liệu/ảnh/nhận xét/bản nháp cũ giữ nguyên byte, nộp mới và gửi lại không sao chép toàn bộ mảng. Đây là dữ liệu thử, **không phải dung lượng production**.
+- Emulator nay dùng `StorageService` thật với localStorage giả luôn đầy, thay cho mock cache. Nộp bài hỗn hợp, AI/duyệt điểm/đọc lại server được kiểm chứng với đúng Rules fixture. Luồng contest giữ cách đếm/lưu lịch sử hiện có; lỗi quota của cache contest vẫn được bắt để không chặn xác nhận Cloud.
+
+Phạm vi này xử lý việc localStorage đầy chặn luồng chính và ghi lặp không cần thiết. Chưa hoàn thành phân trang/tải chi tiết theo nhu cầu: màn giáo viên vẫn tải đầy đủ danh sách Cloud vào RAM. Không tuyên bố đã giải quyết toàn bộ tiêu thụ RAM hoặc đã kiểm thử đầy đủ trên thiết bị giáo viên. Cache cũ có thể vẫn đầy vì được bảo toàn; không cần reset để dùng các luồng đã sửa.
+
 Chỉ dùng dữ liệu giả. AI được mô phỏng trong kiểm thử luồng, không tuyên bố đã chấm thử bằng API thật hoặc đã xác nhận trên production. Kết quả chạy và CI được ghi trong PR.
 
 ## Còn cần trước triển khai

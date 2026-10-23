@@ -5,7 +5,7 @@ export interface PendingResult {
   submission: ResultRecord; savedAt: string; status: 'pending' | 'confirmed';
   requestFingerprint?: string;
 }
-async function run<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+async function run<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest, readResult?: () => T): Promise<T> {
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open('matsuda_result_saves_v1', 1);
     let timedOut = false;
@@ -18,13 +18,13 @@ async function run<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) 
     return await new Promise<T>((resolve, reject) => {
       const tx = db.transaction('operations', mode);
       const timer = setTimeout(() => { try { tx.abort(); } catch { /* Transaction may already have completed. */ } reject(new Error('Bản dự phòng chưa hoàn tất; vẫn thử lưu Firebase.')); }, 2000);
-      let req: IDBRequest<T>;
+      let req: IDBRequest;
       try { req = action(tx.objectStore('operations')); }
       catch (error) { clearTimeout(timer); tx.abort(); reject(error); return; }
       let value: T;
-      req.onsuccess = () => { value = req.result; };
+      if (!readResult) req.onsuccess = () => { value = req.result; };
       req.onerror = () => { clearTimeout(timer); reject(req.error); };
-      tx.oncomplete = () => { clearTimeout(timer); resolve(value); };
+      tx.oncomplete = () => { clearTimeout(timer); resolve(readResult ? readResult() : value); };
       tx.onabort = tx.onerror = () => { clearTimeout(timer); reject(tx.error || new Error('Không ghi được bản lưu chờ.')); };
     });
   } finally { db.close(); }
@@ -33,7 +33,19 @@ export const PendingResultStore = {
   async put(record: PendingResult) { await run('readwrite', store => store.put(record)); },
   async get(operationId: string): Promise<PendingResult | undefined> { return run('readonly', store => store.get(operationId)); },
   async list(scope: string, includeConfirmed = false): Promise<PendingResult[]> {
-    const records = await run<PendingResult[]>('readonly', store => store.getAll());
-    return records.filter(r => r.scope === scope && (includeConfirmed || r.status === 'pending'));
+    // Scan the existing v1 store without accumulating every owner's confirmed image payloads.
+    // No database upgrade, rewrite, or removal of historical/pending records.
+    const records: PendingResult[] = [];
+    return run('readonly', store => {
+      const request = store.openCursor();
+      request.addEventListener('success', () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        const record = cursor.value as PendingResult;
+        if (record.scope === scope && (includeConfirmed || record.status === 'pending')) records.push(record);
+        cursor.continue();
+      });
+      return request;
+    }, () => records);
   }
 };

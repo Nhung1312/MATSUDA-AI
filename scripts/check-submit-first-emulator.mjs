@@ -20,6 +20,15 @@ globalThis.fetch = (input, options) => {
 const state = { user: null, writes: 0 };
 globalThis.__submitFirstEmulator = state;
 globalThis.window = new EventTarget();
+const legacyDisk = new Map([['toan_thcs_exam_draft_keep', 'SYNTHETIC UNSYNCED ORIGINAL']]);
+const originalDisk = [...legacyDisk];
+let cacheWrites = 0;
+globalThis.localStorage = {
+  get length() { return legacyDisk.size; }, key: i => [...legacyDisk.keys()][i] ?? null,
+  getItem: key => legacyDisk.get(key) ?? null,
+  setItem: () => { cacheWrites++; throw new DOMException('Synthetic localStorage full', 'QuotaExceededError'); },
+  removeItem: () => { throw Error('Never remove legacy data'); }, clear: () => { throw Error('Never reset cache'); }
+};
 const bridge = `import * as sdk from 'firebase/firestore';
 export let db;
 export function useDb(value){db=value;}
@@ -30,6 +39,7 @@ const buildResult = await build({ stdin: { contents: `
 export {FirestoreService} from './src/services/firestoreService';
 export {saveSubmissionConfirmed,saveContestSubmissionConfirmed} from './src/services/submissionSaveService';
 export {PendingResultStore} from './src/services/pendingResultStore';
+export {StorageService} from './src/services/storageService';
 export {buildStudentSubmission} from './src/services/studentSubmission';
 export {GradingService} from './src/services/gradingService';
 export {stepGradingService} from './src/services/stepGradingService';
@@ -37,14 +47,13 @@ export {useDb} from 'emulator-bridge';`, resolveDir: process.cwd(), sourcefile: 
   bundle: true, write: false, platform: 'node', format: 'esm', packages: 'external',
   plugins: [{ name: 'only-emulator-config', setup(b) {
     b.onResolve({ filter: /(^emulator-bridge$|\/firebase$)/ }, () => ({ path: 'firebase', namespace: 'submit-bridge' }));
-    b.onResolve({ filter: /\/storageService$/ }, () => ({ path: 'storage', namespace: 'submit-bridge' }));
-    b.onLoad({ filter: /.*/, namespace: 'submit-bridge' }, a => ({ contents: a.path === 'firebase' ? bridge : 'export const StorageService={saveSubmission(){},saveContestSubmission(){},getTeacherSettings(){return {};}};', loader: 'js', resolveDir: process.cwd() }));
+    b.onLoad({ filter: /.*/, namespace: 'submit-bridge' }, () => ({ contents: bridge, loader: 'js', resolveDir: process.cwd() }));
   } }] });
 const tmp = fs.mkdtempSync(path.resolve('.test-submit-emulator-'));
 const modulePath = path.join(tmp, 'adapter.mjs');
 fs.writeFileSync(modulePath, buildResult.outputFiles[0].text);
 const { FirestoreService: service, saveSubmissionConfirmed: save, saveContestSubmissionConfirmed: saveContest,
-  PendingResultStore, buildStudentSubmission: buildSubmission, GradingService, stepGradingService, useDb } = await import(pathToFileURL(modulePath).href);
+  PendingResultStore, StorageService, buildStudentSubmission: buildSubmission, GradingService, stepGradingService, useDb } = await import(pathToFileURL(modulePath).href);
 const rules = fs.readFileSync('tests/fixtures/firestore.production-20261023.rules', 'utf8');
 assert.equal(createHash('sha256').update(rules).digest('hex'), '02ca86dd5a88131f85b0b60de630412ad7fcefd43e596a22f71d0496653f7ba8');
 const teacherUid = 'SfYjnDb35FhINTqWH1HaUZtp7fk1';
@@ -68,6 +77,8 @@ const edit = (s, score) => ({ ...s, answers: s.answers.map(a => a.questionId ===
 let aiCalls = 0;
 stepGradingService.analyzeStepByStep = async () => { aiCalls++; throw Error('AI must not run during submission'); };
 try {
+  assert.doesNotThrow(() => StorageService.initDemoData());
+  const cacheWritesAfterDemo = cacheWrites;
   for (const mode of ['mcq', 'text', 'image']) {
     const db = select(anon), { sub } = fixture('submit-' + mode, mode);
     const result = await save(sub, { intent: 'student' });
@@ -158,9 +169,13 @@ try {
   await denied(sdk.setDoc(sdk.doc(db, 'results', approved.id), JSON.parse(JSON.stringify(fixture(approved.id, 'image').sub))));
   assert.equal((await read(original.id)).answers[1].teacherScore, 1.25);
   ok('teacher AI first/cascading error analysis is stored as provisional; approval survives reload; stale tab/student cannot overwrite it; no old approved regrade');
+  assert.equal(cacheWrites, cacheWritesAfterDemo, 'Acknowledged student/teacher results must not rewrite localStorage arrays');
+  ok('actual StorageService under full localStorage: acknowledged creates, teacher AI/review/reload succeed with zero result-cache writes');
   const contest = { ...fixture('contest-create', 'mcq').sub, contestId: 'synthetic-contest', contestCode: 'SYN', contestTitle: 'Synthetic', studentClass: 'C', essayScore: 0, hasEssay: false, isEssayGraded: true, attemptNumber: 1 };
   delete contest.assignmentId;
   assert.equal((await saveContest(contest, { intent: 'student' })).cloudSaved, true);
   ok('shared anonymous create path remains compatible with contest create permission');
+  assert.deepEqual([...legacyDisk], originalDisk, 'Legacy draft must remain byte-for-byte intact');
+  ok('old draft untouched; contest cache quota error does not block its Cloud acknowledgement');
   console.log('SUBMIT FIRST EMULATOR PASS — exact deployed Rules fixture, synthetic records only, production writes: 0');
 } finally { await env.cleanup(); }

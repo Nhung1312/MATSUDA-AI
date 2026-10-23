@@ -26,6 +26,12 @@ const STORAGE_KEYS = {
   HAS_CLEARED_DEMO: 'toan_thcs_has_cleared_demo_v4'
 };
 
+let demoInitializationAttempted = false;
+// The current confirmed student result. Durable receipts live in IndexedDB, not a growing JSON array.
+let latestStudentResult: Submission | undefined;
+const withLatest = <T extends { id: string }>(records: T[], latest?: T): T[] =>
+  latest ? [latest, ...records.filter(record => record.id !== latest.id)] : records;
+
 export const INITIAL_CLASSES: ClassRoom[] = [
   {
     id: 'class_6a1',
@@ -144,7 +150,8 @@ export class StorageService {
    * Kiểm tra xem người dùng đã xóa dữ liệu mẫu hay chưa
    */
   static hasClearedDemoData(): boolean {
-    return localStorage.getItem(STORAGE_KEYS.HAS_CLEARED_DEMO) === 'true';
+    try { return localStorage.getItem(STORAGE_KEYS.HAS_CLEARED_DEMO) === 'true'; }
+    catch { return false; }
   }
 
   /**
@@ -162,27 +169,33 @@ export class StorageService {
    * Khởi tạo dữ liệu mẫu nếu chưa có và người dùng chưa từng yêu cầu xóa dữ liệu mẫu
    */
   static initDemoData(): void {
-    if (auth.currentUser?.uid) return;
-    if (this.hasClearedDemoData()) {
-      localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
-      if (localStorage.getItem(STORAGE_KEYS.CLASSES) === null) {
-        localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify([]));
+    if (auth.currentUser?.uid || demoInitializationAttempted) return;
+    demoInitializationAttempted = true;
+    try {
+      if (this.hasClearedDemoData()) {
+        localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
+        if (localStorage.getItem(STORAGE_KEYS.CLASSES) === null) {
+          localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify([]));
+        }
+        if (localStorage.getItem(STORAGE_KEYS.ASSIGNMENTS) === null) {
+          localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify([]));
+        }
+        if (localStorage.getItem(STORAGE_KEYS.SUBMISSIONS) === null) {
+          localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify([]));
+        }
+        return;
       }
-      if (localStorage.getItem(STORAGE_KEYS.ASSIGNMENTS) === null) {
-        localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify([]));
-      }
-      if (localStorage.getItem(STORAGE_KEYS.SUBMISSIONS) === null) {
-        localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify([]));
-      }
-      return;
-    }
 
-    const initialized = localStorage.getItem(STORAGE_KEYS.INITIALIZED);
-    if (!initialized) {
-      if (localStorage.getItem(STORAGE_KEYS.CLASSES) === null) localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(INITIAL_CLASSES));
-      if (localStorage.getItem(STORAGE_KEYS.ASSIGNMENTS) === null) localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(INITIAL_ASSIGNMENTS));
-      if (localStorage.getItem(STORAGE_KEYS.SUBMISSIONS) === null) localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify(INITIAL_SUBMISSIONS));
-      localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
+      const initialized = localStorage.getItem(STORAGE_KEYS.INITIALIZED);
+      if (!initialized) {
+        if (localStorage.getItem(STORAGE_KEYS.CLASSES) === null) localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(INITIAL_CLASSES));
+        if (localStorage.getItem(STORAGE_KEYS.ASSIGNMENTS) === null) localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(INITIAL_ASSIGNMENTS));
+        if (localStorage.getItem(STORAGE_KEYS.SUBMISSIONS) === null) localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify(INITIAL_SUBMISSIONS));
+        localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
+      }
+    } catch (error) {
+      // Legacy records stay untouched. Getters can still read them or use the bundled demo in memory.
+      console.warn('[StorageService] Không ghi được dữ liệu mẫu; vẫn đọc dữ liệu hiện có:', error);
     }
   }
 
@@ -600,11 +613,11 @@ export class StorageService {
       const data = localStorage.getItem(STORAGE_KEYS.SUBMISSIONS);
       if (data !== null) {
         const list = JSON.parse(data);
-        return Array.isArray(list) ? list.filter((s): s is Submission => Boolean(s && typeof s === 'object' && s.id)) : [];
+        return withLatest(Array.isArray(list) ? list.filter((s): s is Submission => Boolean(s && typeof s === 'object' && s.id)) : [], latestStudentResult);
       }
-      return INITIAL_SUBMISSIONS || [];
+      return withLatest(INITIAL_SUBMISSIONS || [], latestStudentResult);
     } catch {
-      return INITIAL_SUBMISSIONS || [];
+      return withLatest(INITIAL_SUBMISSIONS || [], latestStudentResult);
     }
   }
 
@@ -618,7 +631,11 @@ export class StorageService {
     localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify(safe));
   }
 
-  static saveSubmission(submission: Submission, options: { syncCloud?: boolean } = {}): void {
+  static saveSubmission(submission: Submission, options: { syncCloud?: boolean; memoryOnly?: boolean } = {}): void {
+    if (!auth.currentUser?.uid && options.memoryOnly && options.syncCloud === false) {
+      latestStudentResult = submission;
+      return;
+    }
     const submissions = this.getSubmissions();
     const idx = submissions.findIndex(s => s.id === submission.id);
     if (idx >= 0) {

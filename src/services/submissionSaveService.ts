@@ -69,7 +69,7 @@ async function saveConfirmed<T extends ResultRecord>(kind: PendingResult['kind']
       try { await PendingResultStore.put({ ...pending, submission: confirmed, status: 'confirmed' }); } catch { /* The original pending copy remains for reconciliation. */ }
       if (scope === resultSaveScope()) {
         try {
-          if (kind === 'result') StorageService.saveSubmission(confirmed as Submission, { syncCloud: false });
+          if (kind === 'result') StorageService.saveSubmission(confirmed as Submission, { syncCloud: false, memoryOnly: true });
           else StorageService.saveContestSubmission(confirmed as ContestSubmission, { syncCloud: false });
         } catch (error) { console.warn('[SubmissionSave] Cache đầy; kết quả đã xác nhận trên Firebase:', error); }
         if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('submissions-confirmed', {

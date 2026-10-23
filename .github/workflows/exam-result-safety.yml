@@ -35,6 +35,8 @@ jobs:
       - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run check:submit-first-ui
       - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run check:cache-pressure
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run check:exam-workflow
       - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run check:ai-efficiency
