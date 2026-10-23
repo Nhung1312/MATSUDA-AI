@@ -11,7 +11,8 @@
   ],
   "git": {
     "deploymentEnabled": {
-      "fix/exam-review-storage-safety-20261023": false
+      "fix/exam-review-storage-safety-20261023": false,
+      "audit/auto-ai-after-submit-20261023": false
     }
   }
 }
