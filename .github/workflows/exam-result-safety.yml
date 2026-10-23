@@ -41,6 +41,10 @@ jobs:
       - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run check:ai-efficiency
       - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run check:verification-restoration
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run check:verification-review-ui
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run check:imports
       - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run test:strikeout

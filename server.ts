@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { socraticRouter } from './server/routes/socratic.js';
+import { examVerificationRouter } from './server/routes/examVerification.js';
 import { gradingRouter } from './server/routes/grading.js';
 import { remedialRouter } from './server/routes/remedial.js';
 
@@ -56,6 +57,8 @@ app.all(['/_/upload*', '/upload*'], (_req: Request, res: Response) => {
 app.use(['/api/tutor/socratic', '/api/v1/tutor/socratic'], socraticRouter);
 app.use(['/api/grading', '/api/v1/grading'], gradingRouter);
 app.use(['/api/remedial', '/api/v1/remedial'], remedialRouter);
+
+app.use(['/api/exam-verification', '/api/v1/exam-verification'], examVerificationRouter);
 
 // Aliases tương thích tiện lợi với quy chuẩn Matsuda
 app.use(['/api/tutor/verify-scratchpad', '/api/v1/tutor/verify-scratchpad'], (req, res, next) => {

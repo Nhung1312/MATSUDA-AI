@@ -1,3 +1,4 @@
+import { invokeVerification } from './verification-offline-route';
 import assert from 'node:assert/strict';
 import { FileParserService } from '../src/services/fileParserService';
 import { normalizeMediaExamQuestions, ExamImportError } from '../src/utils/examImportUtils';
@@ -105,10 +106,15 @@ Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
   setItem: (k: string, v: string) => fakeStore.set(k, v),
   removeItem: (k: string) => fakeStore.delete(k)
 } });
-aiService.setApiKey('test-key-unused-no-network');
+const previousVerificationKey = process.env.GEMINI_API_KEY;
+process.env.GEMINI_API_KEY = 'synthetic-server-key-never-sent';
 let generateFixture: (request: any) => Promise<{ text: string }>;
 (globalThis as any).__examOfflineFetch = async (_url: any, init: RequestInit) => {
   const request = JSON.parse(String(init.body));
+  if (String(_url) === '/api/exam-verification/pass') {
+    const result = await invokeVerification(request);
+    return new Response(JSON.stringify(result.value), { status: result.status, headers: { 'content-type': 'application/json' } });
+  }
   const fixture = await generateFixture({ contents: [{ text: request.contents[0].parts[0].text }] });
   return new Response(JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: fixture.text }] } }] }), {
     status: 200, headers: { 'content-type': 'application/json' }
@@ -143,10 +149,10 @@ try {
 
   calls = 0;
   generateFixture = async () => ++calls === 1 ? { text: '[]' } : { text: JSON.stringify({ pass2Answer: 'B', confidence: 'high' }) };
-  const incomplete = await aiService.verifyExamQuestions({ questions: [actualQuestions[0]], force: true });
-  assert.equal(incomplete[0].needsReview, true);
+  await assert.rejects(() => aiService.verifyExamQuestions({ questions: [actualQuestions[0]], force: true }), (e: any) => e.status === 502);
   console.log('PASS: missing first-pass result cannot be marked verified');
 } finally {
+  if (previousVerificationKey === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = previousVerificationKey;
   delete (globalThis as any).__examOfflineFetch;
 }
 

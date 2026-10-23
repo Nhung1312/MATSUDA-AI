@@ -1035,13 +1035,10 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
               eligibleForSampleBank: allVerified ? true : false
             };
             // 1. Lưu đồng bộ lên Cloud Firestore
-            try {
-              await FirestoreService.saveExam(updatedAsg);
-            } catch (err) {
-              console.warn('Lỗi lưu Firestore:', err);
-            }
+            await FirestoreService.saveExam(updatedAsg);
             // 2. Lưu bộ nhớ máy LocalStorage
-            StorageService.saveAssignment(updatedAsg);
+            try { StorageService.saveAssignment(updatedAsg); }
+            catch { /* Cloud has acknowledged; a full browser cache must not block review. */ }
             alert(`Đã cập nhật trạng thái thẩm định cho đề "${updatedAsg.title}"!\nTrạng thái: ${allVerified ? 'ĐÃ THẨM ĐỊNH 100% (Đủ điều kiện đề mẫu)' : 'CẦN XEM LẠI CÁC CÂU NGHI VẤN'}.`);
             setAiSolvingAssignment(null);
             await onRefresh();

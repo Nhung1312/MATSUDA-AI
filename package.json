@@ -21,7 +21,9 @@
     "check:teacher-review-ui": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-teacher-review-ui.tsx",
     "check:submit-first-emulator": "firebase emulators:exec --only firestore --project demo-matsuda-submit-first --config firebase.emulator.json \"node scripts/check-submit-first-emulator.mjs\"",
     "check:submit-first-ui": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-submit-first-ui.tsx",
-    "check:cache-pressure": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-cache-pressure.ts"
+    "check:cache-pressure": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-cache-pressure.ts",
+    "check:verification-restoration": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-verification-restoration.ts",
+    "check:verification-review-ui": "node --import ./scripts/offline-test-guard.mjs --import tsx scripts/check-verification-review-ui.tsx"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
