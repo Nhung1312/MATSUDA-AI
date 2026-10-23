@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build",
+    "build": "node scripts/check-react-versions.mjs && vite build",
     "start": "tsx server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
@@ -39,8 +39,8 @@
     "motion": "^12.23.24",
     "pdfjs-dist": "^6.2.108",
     "qrcode": "^1.5.4",
-    "react": "^19.0.1",
-    "react-dom": "^19.0.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "react-katex": "^3.1.0",
     "react-router-dom": "^7.18.2",
     "vite": "^6.2.3",
@@ -59,7 +59,7 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.3",
     "fake-indexeddb": "^6.0.0",
-    "react-test-renderer": "^19.0.1",
+    "react-test-renderer": "19.3.1",
     "@types/react-test-renderer": "^19.0.0",
     "@firebase/rules-unit-testing": "5.0.2",
     "firebase-tools": "15.34.1"
