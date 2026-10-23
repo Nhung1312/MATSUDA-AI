@@ -68,7 +68,7 @@ globalThis.fetch = async (input, options) => {
     let response;
     if (reuseObservedAI) {
       // Exact captured response from the just-completed real AI call, never a fabricated grade.
-      const observed = JSON.parse(fs.readFileSync('tests/fixtures/live-ai-observed-response-20261023.json', 'utf8'));
+      const observed = JSON.parse(fs.readFileSync(process.env.MATSUDA_OBSERVED_AI_RESPONSE || 'tests/fixtures/live-ai-observed-response-20261023.json', 'utf8'));
       assert.deepEqual(body.essayImages, observed.syntheticRequest.essayImages);
       for (const key of ['questionText', 'maxPoints', 'correctAnswer', 'rubric']) assert.deepEqual(body[key], observed.syntheticRequest[key]);
       response = new Response(JSON.stringify(observed.response.body), { status: observed.response.httpStatus, headers: { 'Content-Type': 'application/json' } });

@@ -1,0 +1,149 @@
+{
+  "date": "2026-10-23",
+  "status": "PASS_EMULATOR_AND_LIVE_CONNECTION_NOT_DEPLOYED",
+  "baseCommit": "041a5817a11add993609ea028cf51dfb8dc83e98",
+  "live_connection_before_patch": {
+    "status": "PASS",
+    "projectId": "demo-matsuda-submit-first",
+    "productionFirestoreWrites": 0,
+    "data": "synthetic only",
+    "imageBytes": 23472,
+    "aiClientRequests": 1,
+    "liveAIRequests": 1,
+    "replayedAIResponses": 0,
+    "aiHttpStatus": 200,
+    "analysisSource": "ai",
+    "modelUsed": "gemini-3.8-flash",
+    "aiDurationMs": 20081,
+    "analyzedSteps": 4,
+    "firstErrorStep": 2,
+    "cascadingSteps": 2,
+    "aiSuggestedPoints": 1,
+    "teacherApprovedPoints": 1.25,
+    "reloadedTotalScore": 1.75,
+    "reloadedMaxScore": 2.5,
+    "cacheFull": true,
+    "actualTeacherResultsHandlers": true,
+    "actualImageShown": true,
+    "reviewAndFinalizePersisted": true,
+    "stages": [
+      {
+        "name": "student-save-start",
+        "atMs": 1
+      },
+      {
+        "name": "student-save-confirmed",
+        "atMs": 466
+      },
+      {
+        "name": "teacher-server-read-complete",
+        "atMs": 543
+      },
+      {
+        "name": "results-ui-open-with-original-image",
+        "atMs": 577
+      },
+      {
+        "name": "ai-ui-handler-returned",
+        "atMs": 20659
+      },
+      {
+        "name": "ai-analysis-saved-and-read-back",
+        "atMs": 20673
+      },
+      {
+        "name": "teacher-score-saved",
+        "atMs": 20743
+      },
+      {
+        "name": "final-score-read-back",
+        "atMs": 20831
+      },
+      {
+        "name": "results-reopened-from-server",
+        "atMs": 20871
+      }
+    ]
+  },
+  "patched_ui_with_exact_captured_response": {
+    "status": "PASS",
+    "projectId": "demo-matsuda-submit-first",
+    "productionFirestoreWrites": 0,
+    "data": "synthetic only",
+    "imageBytes": 23472,
+    "aiClientRequests": 1,
+    "liveAIRequests": 0,
+    "replayedAIResponses": 1,
+    "aiHttpStatus": 200,
+    "analysisSource": "ai",
+    "modelUsed": "gemini-3.8-flash",
+    "aiDurationMs": 123,
+    "analyzedSteps": 4,
+    "firstErrorStep": 2,
+    "cascadingSteps": 2,
+    "aiSuggestedPoints": 1,
+    "teacherApprovedPoints": 1.25,
+    "reloadedTotalScore": 1.75,
+    "reloadedMaxScore": 2.5,
+    "cacheFull": true,
+    "actualTeacherResultsHandlers": true,
+    "wholeAiButtonReusedSavedAnalysis": true,
+    "actualImageShown": true,
+    "reviewAndFinalizePersisted": true,
+    "stages": [
+      {
+        "name": "student-save-start",
+        "atMs": 1
+      },
+      {
+        "name": "student-save-confirmed",
+        "atMs": 487
+      },
+      {
+        "name": "teacher-server-read-complete",
+        "atMs": 622
+      },
+      {
+        "name": "results-ui-open-with-original-image",
+        "atMs": 676
+      },
+      {
+        "name": "ai-ui-handler-returned",
+        "atMs": 799
+      },
+      {
+        "name": "ai-analysis-saved-and-read-back",
+        "atMs": 816
+      },
+      {
+        "name": "whole-ai-button-reused-saved-analysis",
+        "atMs": 913
+      },
+      {
+        "name": "teacher-score-saved",
+        "atMs": 1023
+      },
+      {
+        "name": "final-score-read-back",
+        "atMs": 1088
+      },
+      {
+        "name": "results-reopened-from-server",
+        "atMs": 1138
+      }
+    ]
+  },
+  "productionFirestoreWrites": 0,
+  "newGeminiCallsTotal": 1,
+  "algorithmPromptUnchanged": true,
+  "algorithmNormalizationAndScoringUnchanged": true,
+  "vercelObserved": {
+    "functionMaxDurationSeconds": 300,
+    "teacherRequestExecutionSeconds": 16.48,
+    "teacherRequestResponseSeconds": 17.5,
+    "syntheticRequestExecutionSeconds": 12.59,
+    "syntheticRequestResponseSeconds": 13.1,
+    "platformTimeoutObserved": false
+  },
+  "limitation": "Original browser NETWORK_IO_SUSPENDED was not reproduced or conclusively correlated to a server invocation. New backend error paths are tested offline, not deployed."
+}

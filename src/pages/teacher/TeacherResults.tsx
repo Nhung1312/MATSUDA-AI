@@ -443,7 +443,7 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
         ...reference,
         studentSolutionText: studentText,
         essayImages: studentImages
-      }, { force: true });
+      }, { previousResult: ans.stepGradingResponse });
 
       if (!stepRes.success || stepRes.analysisSource !== 'ai' || !stepRes.analysis?.length) {
         setActionNotice({ type: 'warning', text: stepRes.feedback || 'AI chưa đủ dữ liệu để chấm. Điểm đã lưu được giữ; giáo viên có thể duyệt trực tiếp.' });
@@ -470,7 +470,6 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       const updatedAnswers: StudentAnswer[] = selectedSubmissionDetail.answers.map(a => {
         if (a.questionId === ans.questionId) {
           const manualGrade = Number.isFinite(a.teacherScore) && (a.teacherReviewed === true || !/^\[(?:Gemini|Matsuda) AI\]/i.test(a.teacherFeedback || ''));
-          const requireApproval = selectedSubmissionDetail.submissionWorkflow === 'submit_first';
           return {
             ...a,
             pointsEarned: manualGrade ? a.teacherScore! : scoreVal,
@@ -485,8 +484,8 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
             firstErrorStep: firstErrorStepVal,
             firstErrorType: firstErrorTypeVal,
             firstErrorExplanation: firstErrorExplVal,
-            needsTeacherReview: manualGrade ? false : needsReviewVal || requireApproval,
-            isProvisional: manualGrade ? false : needsReviewVal || requireApproval,
+            needsTeacherReview: !manualGrade,
+            isProvisional: !manualGrade,
             aiGradingError: !!(stepResp && (stepResp.analysisSource === 'rule' || stepResp.analysisSource === 'unavailable')),
             stepGradingResponse: stepResp
           };
@@ -543,7 +542,11 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       }
       setExpandedStepAnalysis(prev => ({ ...prev, [ans.questionId]: true }));
 
-      await persistReviewSubmission(updatedSubmission);
+      const saved = await persistReviewSubmission(updatedSubmission);
+      if (!saved.cloudSaved) {
+        setActionNotice({ type: 'warning', text: 'AI đã phân tích nhưng Firebase chưa xác nhận lưu. Giữ trang đang mở và bấm Lưu lại; không cần chấm AI lại.' });
+        return;
+      }
       setActionNotice({
         type: pendingReviewCount > 0 ? 'warning' : 'success',
         text: pendingReviewCount > 0
@@ -576,6 +579,14 @@ export const TeacherResults: React.FC<TeacherResultsProps> = ({
       });
       setSelectedSubmissionDetail(res.submission);
       if (res.persistence) showSubmissionSaveResult(res.submission, res.persistence);
+      if (res.persistence && !res.persistence.cloudSaved) {
+        setActionNotice({ type: 'warning', text: 'Firebase chưa xác nhận lưu kết quả AI. Giữ trang đang mở và bấm Lưu lại; không cần chấm AI lại.' });
+        return;
+      }
+      if (res.aiFailures) {
+        setActionNotice({ type: 'warning', text: `${res.aiCompleted || 0} câu nhận được phân tích AI; ${res.aiFailures} câu chưa phân tích được. ${res.errorMsg || ''} Phân tích cũ và điểm đã duyệt được giữ. Có thể bấm AI để thử lại các câu chưa chấm.` });
+        return;
+      }
       setActionNotice({
         type: res.submission.needsTeacherReview || res.submission.isProvisional ? 'warning' : 'success',
         text: res.submission.needsTeacherReview || res.submission.isProvisional

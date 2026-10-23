@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { randomUUID } from 'node:crypto';
 import { Type } from '@google/genai';
 import {
   AI_CONFIG,
@@ -100,6 +101,14 @@ NGUYÊN TẮC CỐT LÕI (BẮT BUỘC):
  * Chấm chi tiết bài làm tự luận từng bước, phát hiện first_error, cascading_error, independent_error
  */
 gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
+  const startedAt = Date.now();
+  const requestId = randomUUID();
+  const reply = (status: number, data: object) => {
+    // Correlate failures without logging student work, images, prompts or keys.
+    console.info('[Step Grading]', JSON.stringify({ requestId, status, durationMs: Date.now() - startedAt,
+      analysisSource: (data as any).analysisSource, errorCode: (data as any).errorCode }));
+    return res.status(status).json({ ...data, requestId });
+  };
   try {
     const body: StepGradingRequest = req.body;
     const {
@@ -116,11 +125,11 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
     } = body || {};
 
     if (!Number.isFinite(maxPoints) || maxPoints <= 0) {
-      return res.status(400).json({ ...generateRuleBasedGrading(body), feedback: 'Thang điểm không hợp lệ; cần giáo viên kiểm tra.' });
+      return reply(400, { ...generateRuleBasedGrading(body), feedback: 'Thang điểm không hợp lệ; cần giáo viên kiểm tra.' });
     }
 
     if (!questionText || (!studentSolutionText && (!essayImages || essayImages.length === 0))) {
-      return res.status(400).json({
+      return reply(400, {
         success: false,
         analysis: [],
         firstErrorStep: null,
@@ -141,8 +150,7 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
     try {
       ai = getSystemGeminiClient();
     } catch (keyErr: any) {
-      console.warn('[Step Grading] GEMINI_API_KEY không khả dụng, kích hoạt phân tích luật mẫu:', keyErr?.message);
-      return res.status(200).json(generateRuleBasedGrading(body));
+      return reply(503, { ...generateRuleBasedGrading(body), success: false, errorCode: 'configuration', feedback: 'Máy chủ chưa cấu hình được Gemini. Bài làm được giữ; cần quản trị kiểm tra cấu hình API.' });
     }
 
     // Chuẩn bị payload nội dung cho Gemini
@@ -175,7 +183,7 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
     const parts: any[] = [{ text: promptText }];
     if (questionImageUrl) {
       const sourceImage = questionImageUrl.match(/^data:(image\/[^;]+);base64,([\s\S]+)$/);
-      if (!sourceImage) return res.status(400).json({ ...generateRuleBasedGrading(body), feedback: 'Chưa đọc được hình của đề bài; cần kiểm tra ảnh nguồn trước khi chấm.' });
+      if (!sourceImage) return reply(400, { ...generateRuleBasedGrading(body), feedback: 'Chưa đọc được hình của đề bài; cần kiểm tra ảnh nguồn trước khi chấm.' });
       parts.push({ text: 'HÌNH NGUỒN CỦA ĐỀ BÀI, không phải bài làm học sinh:' });
       parts.push({ inlineData: { mimeType: sourceImage[1], data: sourceImage[2] } });
     }
@@ -198,7 +206,7 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
           }
         }
       }
-      if (attachedImages !== essayImages.length) return res.status(400).json({ ...generateRuleBasedGrading(body), feedback: 'Chưa đọc được đủ ảnh bài làm. Không tự chấm thiếu ảnh; cần giáo viên kiểm tra.' });
+      if (attachedImages !== essayImages.length) return reply(400, { ...generateRuleBasedGrading(body), feedback: 'Chưa đọc được đủ ảnh bài làm. Không tự chấm thiếu ảnh; cần giáo viên kiểm tra.' });
     }
 
     contents.push({ parts });
@@ -345,16 +353,17 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
         }
       } catch (err: any) {
         if (Number(err?.status || err?.code) === 429 || /429|RESOURCE_EXHAUSTED|quota/i.test(String(err?.message || err))) {
-          return res.status(429).json({ ...generateRuleBasedGrading(body), errorCode: 'quota', feedback: 'AI hết hạn mức (429). Đã dừng gọi lặp; bài làm được giữ để giáo viên duyệt.' });
+          return reply(429, { ...generateRuleBasedGrading(body), errorCode: 'quota', feedback: 'AI hết hạn mức (429). Đã dừng gọi lặp; bài làm được giữ để giáo viên duyệt.' });
         }
-        console.warn(`[Step Grading] Model ${modelName} thất bại, thử mô hình dự phòng:`, err?.message || err);
-        await new Promise(r => setTimeout(r, 400));
+        const providerStatus = Number(err?.status || err?.code) || undefined;
+        console.warn('[Step Grading] Gemini thất bại', JSON.stringify({ requestId, providerStatus }));
+        return reply(providerStatus === 503 ? 503 : 502, { ...generateRuleBasedGrading(body), success: false, errorCode: 'gemini',
+          feedback: `Gemini chưa phân tích được bài${providerStatus ? ` (mã ${providerStatus})` : ''}. Bài làm và điểm đã duyệt được giữ; có thể thử lại sau.` });
       }
     }
 
     if (!resultJson) {
-      console.warn('[Step Grading] Các model AI tạm thời quá tải, sử dụng bộ phân tích dự phòng chuẩn sư phạm.');
-      return res.status(200).json(generateRuleBasedGrading(body));
+      return reply(502, { ...generateRuleBasedGrading(body), success: false, errorCode: 'invalid_response', feedback: 'Gemini chưa trả phân tích hợp lệ. Bài làm được giữ để giáo viên duyệt hoặc thử lại.' });
     }
 
     // Hậu xử lý & Chuẩn hóa dữ liệu theo nguyên tắc Đợt 4 & Matsuda Strikeout Guard
@@ -598,10 +607,10 @@ gradingRouter.post('/step-analysis', async (req: Request, res: Response) => {
       modelUsed: usedModel,
     };
 
-    return res.status(200).json(finalResponse);
+    return reply(200, finalResponse);
   } catch (error: any) {
-    console.error('[Step Grading API Error]:', error);
-    return res.status(200).json(generateRuleBasedGrading(req.body));
+    console.error('[Step Grading API Error]', JSON.stringify({ requestId, errorType: error?.name || 'Error' }));
+    return reply(500, { ...generateRuleBasedGrading(req.body), success: false, errorCode: 'http', feedback: 'API chấm AI gặp lỗi xử lý. Bài làm và điểm đã duyệt được giữ; cần thử lại sau.' });
   }
 });
 

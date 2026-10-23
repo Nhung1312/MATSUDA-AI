@@ -84,6 +84,16 @@ export async function runLiveAIReviewSmoke({ fixture, service, save, buildSubmis
     assert.equal(aiSaved.isProvisional, true);
     assert.equal(button('Chốt kết quả').props.disabled, true, 'AI suggestion cannot finalize before teacher approval');
 
+    // The whole-submission button must reuse the just-saved matching analysis.
+    // This exercises its actual handler without spending a second Gemini call.
+    await act(async () => { await button('AI chấm toàn bài').props.onClick(); await tick(); });
+    const wholeSaved = await service.getResultById(submission.id);
+    assert.equal(getLiveRequests(), 1, 'Whole AI must reuse the unchanged result, not invoke Gemini twice');
+    assert.deepEqual(wholeSaved.answers[1].stepAnalysis, essay.stepAnalysis);
+    assert.equal(wholeSaved.answers[1].teacherScore, undefined);
+    assert.equal(wholeSaved.answers[1].needsTeacherReview, true);
+    stage('whole-ai-button-reused-saved-analysis');
+
     await act(async () => {
       renderer.root.findAll(node => node.type === 'input' && node.props.type === 'number')[0].props.onChange({ target: { value: '1.25' } });
       renderer.root.findAll(node => node.type === 'input' && node.props.placeholder === 'Lời phê của giáo viên...')[0].props.onChange({ target: { value: 'SYNTHETIC approved comment' } });
@@ -118,6 +128,7 @@ export async function runLiveAIReviewSmoke({ fixture, service, save, buildSubmis
       modelUsed: response.body.modelUsed, aiDurationMs: durationMs, analyzedSteps: essay.stepAnalysis.length,
       firstErrorStep: essay.firstErrorStep, cascadingSteps: essay.stepAnalysis.filter(step => step.status === 'cascading_error').length,
       aiSuggestedPoints: essay.aiScore, teacherApprovedPoints: 1.25, reloadedTotalScore: finalized.totalScore, reloadedMaxScore: finalized.maxScore,
-      cacheFull: true, actualTeacherResultsHandlers: true, actualImageShown: true, reviewAndFinalizePersisted: true, stages };
-  } finally { if (renderer) await act(async () => { renderer.unmount(); }); }
+      cacheFull: true, actualTeacherResultsHandlers: true, wholeAiButtonReusedSavedAnalysis: true, actualImageShown: true, reviewAndFinalizePersisted: true, stages };
+  } catch (error) { console.error('LIVE UI SMOKE FAILURE', error); throw error; }
+  finally { if (renderer) await act(async () => { renderer.unmount(); }); }
 }

@@ -32,6 +32,8 @@ export interface GradeSingleSubmissionWithAiResult {
   firstError?: { step: number; type: StepErrorType; explanation: string };
   errorMsg?: string;
   quotaExceeded?: boolean;
+  aiFailures?: number;
+  aiCompleted?: number;
   persistence?: SubmissionSaveResult;
 }
 
@@ -723,6 +725,9 @@ export class GradingService {
     let wrongCnt = 0;
     let overallNeedsReview = false;
     let quotaExceeded = false;
+    let aiFailures = 0;
+    let aiCompleted = 0;
+    let aiErrorMsg: string | undefined;
     const imageMemo: AIImageMemo = new Map();
     let totalErrorsCount = 0;
     let firstFoundError: { step: number; type: StepErrorType; explanation: string } | undefined = undefined;
@@ -842,11 +847,15 @@ export class GradingService {
         }, { force: forceRegrade, previousResult: existingAns?.stepGradingResponse, imageMemo });
 
         quotaExceeded ||= stepRes.errorCode === 'quota';
+        if (!stepRes.success || stepRes.analysisSource !== 'ai' || !stepRes.analysis?.length) {
+          throw new Error(stepRes.feedback || 'AI chưa trả phân tích hợp lệ.');
+        }
+        aiCompleted++;
 
         const scoreEarned = stepRes.success && Number.isFinite(stepRes.score)
           ? Math.min(maxPoints, Math.max(0, stepRes.score)) : existingAns?.pointsEarned ?? 0;
         const hasStepError = !!stepRes.firstErrorStep || (stepRes.analysis || []).some(s => s.status === 'first_error' || s.status === 'cascading_error' || s.status === 'independent_error');
-        const needsReview = !hasManualGrade && (!stepRes.success || !stepRes.analysis?.length || !!stepRes.needsTeacherReview || stepRes.analysisSource === 'rule' || stepRes.analysisSource === 'unavailable');
+        const needsReview = !hasManualGrade && !!stepRes.needsTeacherReview;
         const isCorrect = hasManualGrade ? existingAns!.isCorrect : !needsReview && !hasStepError && (stepRes.isAllCorrect === true || ((stepRes.analysis || []).length > 0 && (stepRes.analysis || []).every(s => s.status === 'correct') && scoreEarned >= maxPoints));
 
         if (needsReview) {
@@ -891,17 +900,24 @@ export class GradingService {
           firstErrorExplanation: stepRes.firstErrorExplanation,
           needsTeacherReview: needsReview,
           isProvisional: needsReview,
-          aiGradingError: stepRes.analysisSource === 'rule' || stepRes.analysisSource === 'unavailable',
+          aiGradingError: false,
           stepGradingResponse: stepRes,
           hasCrossedOutDetection: stepRes.hasCrossedOutDetection,
           uncertainCorrectionDetected: stepRes.uncertainCorrectionDetected,
           teacherCorrectionNotice: stepRes.teacherCorrectionNotice
         });
       } catch (err: any) {
-        console.error(`[GradingService] Lỗi chấm câu ${q.id}:`, err);
+        aiFailures++;
+        aiErrorMsg = err?.message || 'AI chưa trả phân tích hợp lệ.';
+        console.warn('[GradingService] Chưa phân tích được một câu; giữ dữ liệu đã lưu.');
         const hasTeacherGraded = existingAns?.teacherScore !== undefined;
         const fallbackScore = hasTeacherGraded ? existingAns.teacherScore! : (existingAns?.pointsEarned ?? 0);
         totalEarned += fallbackScore;
+        if (existingAns?.firstErrorStep) {
+          totalErrorsCount++;
+          firstFoundError ||= { step: existingAns.firstErrorStep, type: existingAns.firstErrorType || 'other',
+            explanation: existingAns.firstErrorExplanation || 'Có bước biến đổi sai' };
+        }
 
         if (hasTeacherGraded) {
           // Điểm GV đã có là điểm chính thức; lỗi AI không được hạ trạng thái bài xuống "chờ duyệt".
@@ -920,9 +936,9 @@ export class GradingService {
           needsTeacherReview: !hasTeacherGraded,
           isProvisional: !hasTeacherGraded,
           aiGradingError: !hasTeacherGraded,
-          aiFeedback: hasTeacherGraded
+          aiFeedback: existingAns?.aiFeedback || (hasTeacherGraded
             ? 'AI tạm thời không khả dụng; giữ nguyên điểm Giáo viên đã chấm.'
-            : `AI chưa thể chấm câu này (${err?.message || 'Lỗi kết nối/ảnh không đọc được'}). Câu này CHƯA CÓ ĐIỂM chính thức và đang chờ Giáo viên duyệt.`
+            : `AI chưa thể chấm câu này (${err?.message || 'Lỗi kết nối/ảnh không đọc được'}). Câu này CHƯA CÓ ĐIỂM chính thức và đang chờ Giáo viên duyệt.`)
         });
       }
     }
@@ -931,15 +947,13 @@ export class GradingService {
     const rawScore = totalMax > 0 ? (totalEarned / totalMax) * scoreScale : 0;
     const finalScore = Number(formatDecimalPoint(rawScore));
 
-    // Workflow state only: AI suggestions for newly submitted work require teacher approval.
-    if (submission.submissionWorkflow === 'submit_first') {
-      for (const answer of updatedAnswers) {
-        const q = gradingQuestions.find(item => item.id === answer.questionId);
-        if (q && isEssayQuestion(q) && !answer.teacherReviewed) {
-          answer.needsTeacherReview = true;
-          answer.isProvisional = true;
-          overallNeedsReview = true;
-        }
+    // AI suggestions remain provisional until the teacher approves, including legacy work.
+    for (const answer of updatedAnswers) {
+      const q = gradingQuestions.find(item => item.id === answer.questionId);
+      if (q && isEssayQuestion(q) && !answer.teacherReviewed && !Number.isFinite(answer.teacherScore)) {
+        answer.needsTeacherReview = true;
+        answer.isProvisional = true;
+        overallNeedsReview = true;
       }
     }
     const hasAnyProvisional = updatedAnswers.some(a => a.isProvisional || (a.needsTeacherReview && a.teacherScore === undefined));
@@ -977,6 +991,7 @@ export class GradingService {
       totalErrors: totalErrorsCount,
       firstError: firstFoundError,
       quotaExceeded,
+      aiFailures, aiCompleted, errorMsg: aiErrorMsg,
       persistence
     };
   }

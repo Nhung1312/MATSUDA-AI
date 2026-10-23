@@ -66,7 +66,7 @@ class StepGradingService {
     finally { if (fingerprint) this.inFlight.delete(fingerprint); }
   }
 
-  private unavailable(request: StepGradingRequest, feedback: string, errorCode?: 'quota'): StepGradingResponse {
+  private unavailable(request: StepGradingRequest, feedback: string, errorCode?: StepGradingResponse['errorCode']): StepGradingResponse {
     return { success: false, analysis: [], firstErrorStep: null, firstErrorType: null,
       firstErrorExplanation: null, totalSteps: 0, correctStepsCount: 0, isAllCorrect: false,
       score: 0, maxScore: request.maxPoints || 10, feedback, analysisSource: 'unavailable',
@@ -88,11 +88,18 @@ class StepGradingService {
           this.quotaUntil = Date.now() + 60000;
           return this.unavailable(request, 'AI hết hạn mức (429). Đã dừng gọi lặp; hãy duyệt điểm hoặc thử lại sau.', 'quota');
         }
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || `Lỗi máy chủ: ${res.status}`);
+        const errorData = (await res.json().catch(() => ({}))) || {};
+        const timedOut = res.status === 504 || res.status === 408;
+        const failure = this.unavailable(request,
+          errorData.feedback || (timedOut
+            ? `Máy chủ AI hết thời gian chờ (HTTP ${res.status}). Bài làm và điểm đã duyệt được giữ. Có thể thử lại sau.`
+            : `Máy chủ AI trả lỗi HTTP ${res.status}. Bài làm và điểm đã duyệt được giữ. Có thể thử lại sau.`),
+          timedOut ? 'timeout' : errorData.errorCode || 'http');
+        return { ...failure, requestId: errorData.requestId || res.headers.get('x-vercel-id') || undefined };
       }
 
-      const result: StepGradingResponse = await res.json();
+      const result: StepGradingResponse | null = await res.json().catch(() => null);
+      if (!result) return this.unavailable(request, 'API chấm AI trả phản hồi không hợp lệ. Bài làm và điểm đã duyệt được giữ; có thể thử lại sau.', 'invalid_response');
       if (!Number.isFinite(result.score) || result.score < 0 || result.score > (request.maxPoints || 10)) {
         return this.unavailable(request, 'Điểm AI trả về không hợp lệ. Cần giáo viên kiểm tra, không tự chốt điểm.');
       }
@@ -103,23 +110,12 @@ class StepGradingService {
       }
       return result;
     } catch (error: any) {
-      console.warn('[StepGradingService] Phân tích thất bại, chuyển sang cơ chế dự phòng:', error?.message);
-      // Fallback cục bộ an toàn nếu mạng mất kết nối
-      return {
-        success: false,
-        analysis: [],
-        firstErrorStep: null,
-        firstErrorType: null,
-        firstErrorExplanation: null,
-        totalSteps: 0,
-        correctStepsCount: 0,
-        isAllCorrect: false,
-        score: 0,
-        maxScore: request.maxPoints || 10,
-        feedback: 'Không thể kết nối với máy chủ AI lúc này. Vui lòng kiểm tra lại kết nối mạng.',
-        analysisSource: 'unavailable',
-        message: error?.message || 'Lỗi kết nối'
-      };
+      // Fetch rejects before an HTTP response is available. Do not label this as
+      // Gemini failure/timeout or automatically repeat a possibly delivered POST.
+      console.warn('[StepGradingService] Chưa nhận được phản hồi HTTP:', error?.message);
+      return { ...this.unavailable(request,
+        'Kết nối tới AI bị gián đoạn, chưa nhận được phản hồi. Hãy khôi phục mạng, giữ trang đang mở và bấm AI để thử lại. Bài làm, ảnh và điểm đã duyệt được giữ nguyên.',
+        'network'), message: error?.message || 'Lỗi kết nối' };
     }
   }
 
