@@ -1,3 +1,4 @@
+import { invokeVerification } from './verification-offline-route';
 import assert from 'node:assert/strict';
 import { aiService } from '../src/services/aiService';
 import { stepGradingService } from '../src/services/stepGradingService';
@@ -19,6 +20,7 @@ aiService.setApiKey('synthetic-key-never-sent-to-network');
 const oldKey = process.env.GEMINI_API_KEY;
 process.env.GEMINI_API_KEY = 'synthetic-server-key-never-sent-to-network';
 
+const trueNow = Date.now; let clockAdvance = 0; Date.now = () => trueNow() + clockAdvance;
 let providerCalls = 0;
 let endpointCalls = 0;
 let sdkHandler: (request: any) => Promise<{ value?: any; status?: number }>;
@@ -31,6 +33,10 @@ async function invokeGrading(body: any): Promise<{ status: number; value: any }>
 }
 (globalThis as any).__examOfflineFetch = async (url: any, init: RequestInit) => {
   const request = JSON.parse(String(init.body));
+  if (String(url) === '/api/exam-verification/pass') {
+    const result = await invokeVerification(request);
+    return new Response(JSON.stringify(result.value), { status: result.status, headers: { 'content-type': 'application/json' } });
+  }
   if (String(url) === '/api/grading/step-analysis') {
     endpointCalls++;
     const result = await invokeGrading(request);
@@ -100,6 +106,8 @@ try {
   await assert.rejects(() => aiService.verifyExamQuestions({ questions: partial }), (error: any) => error.status === 429);
   assert.equal(providerCalls - before, 2);
   sdkHandler = goodVerification;
+  await assert.rejects(() => aiService.verifyExamQuestions({ questions: partial }), (e: any) => e.status === 429);
+  clockAdvance += 61000;
   before = providerCalls;
   await aiService.verifyExamQuestions({ questions: partial });
   assert.equal(providerCalls - before, 3);
@@ -111,6 +119,7 @@ try {
   sdkHandler = async request => ++pass2QuotaSequence === 2 ? { status: 429 } : suspectedFixture(request);
   await assert.rejects(() => aiService.verifyExamQuestions({ questions: pass1Only }));
   sdkHandler = suspectedFixture;
+  clockAdvance += 61000;
   before = providerCalls;
   await aiService.verifyExamQuestions({ questions: pass1Only });
   assert.equal(providerCalls - before, 1);
@@ -354,6 +363,7 @@ try {
   console.log('PASS: persisted cache contains neither API keys nor image bytes');
   console.log('AI EFFICIENCY / GRADING SAFETY CHECK: PASS (network blocked; fake responses; no cloud writes)');
 } finally {
+  Date.now = trueNow;
   delete (globalThis as any).__examOfflineFetch;
   if (oldKey === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = oldKey;
 }

@@ -6,6 +6,7 @@ import { StorageService } from '../services/storageService';
 import { FirestoreService } from '../services/firestoreService';
 import { soundEffects } from '../utils/soundEffects';
 import { isEssayQuestion } from '../utils/questionUtils';
+import { hasVerificationReference } from '../utils/verificationUtils';
 import confetti from 'canvas-confetti';
 import { 
   Sparkles, 
@@ -69,8 +70,8 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
         return {
           assignment: asg,
           totalQuestions: questions.length,
-          verifiedCount: questions.filter(q => q.verificationStatus === 'verified' && !q.needsReview).length,
-          needsReviewCount: questions.filter(q => q.verificationStatus === 'needs_review' || q.needsReview).length,
+          verifiedCount: questions.filter(q => hasVerificationReference(q) && q.verificationStatus === 'verified' && !q.needsReview).length,
+          needsReviewCount: questions.filter(q => !hasVerificationReference(q) || q.verificationStatus === 'needs_review' || q.needsReview).length,
           status: 'pending'
         };
       });
@@ -127,7 +128,7 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
       const questions = asg.questions || [];
 
       // Không chạy lại câu đã xác minh từ trước (Requirement F)
-      const needsCheck = await Promise.all(questions.map(async q => q.verificationStatus !== 'verified' || q.needsReview === true
+      const needsCheck = await Promise.all(questions.map(async q => !hasVerificationReference(q) || q.verificationStatus !== 'verified' || q.needsReview === true
         || (!!q.verificationFingerprint && q.verificationFingerprint !== await verificationFingerprint(q, asg.grade, asg.topic))));
       const questionsToVerify = questions.filter((_, idx) => needsCheck[idx]);
 
@@ -183,15 +184,16 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
               sanityCheckNote: found.sanityCheckNote,
               aiProposedAnswer: found.proposedAnswer,
               aiReason: found.reason,
+              verificationIssue: found.reviewIssue,
               verificationFingerprint: found.inputFingerprint,
               teacherVerified: false
             };
           }
 
           // Đối với các câu đã xác minh trước đó
-          if (q.verificationStatus === 'verified' && !q.needsReview) {
+          if (hasVerificationReference(q) && q.verificationStatus === 'verified' && !q.needsReview) {
             vCount++;
-          } else if (q.verificationStatus === 'needs_review' || q.needsReview) {
+          } else if (!hasVerificationReference(q) || q.verificationStatus === 'needs_review' || q.needsReview) {
             nrCount++;
           }
           return q;
@@ -200,8 +202,8 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
         // Kết quả thẩm định đề (Requirement G):
         // Nếu tất cả câu đạt => verified, eligibleForSampleBank = true
         // Nếu còn câu nghi ngờ => needs_review, eligibleForSampleBank = false
-        const allVerified = updatedQuestions.length > 0 && updatedQuestions.every(q => q.verificationStatus === 'verified' && !q.needsReview);
-        const hasSuspicious = updatedQuestions.some(q => q.verificationStatus === 'needs_review' || q.needsReview === true);
+        const allVerified = updatedQuestions.length > 0 && updatedQuestions.every(q => hasVerificationReference(q) && q.verificationStatus === 'verified' && !q.needsReview);
+        const hasSuspicious = updatedQuestions.some(q => !hasVerificationReference(q) || q.verificationStatus === 'needs_review' || q.needsReview === true);
 
         const updatedAssignment: Assignment = {
           ...asg,
@@ -211,12 +213,9 @@ export const AiBatchSolveModal: React.FC<AiBatchSolveModalProps> = ({
         };
 
         // Lưu kết quả ngay sau mỗi đề thi (Requirement F)
-        StorageService.saveAssignment(updatedAssignment);
-        try {
-          await FirestoreService.saveExam(updatedAssignment);
-        } catch (fErr) {
-          console.warn('Lỗi lưu Firestore đề:', fErr);
-        }
+        await FirestoreService.saveExam(updatedAssignment);
+        try { StorageService.saveAssignment(updatedAssignment); }
+        catch { /* Confirmed Cloud result is not invalidated by a full browser cache. */ }
 
         // Đánh dấu hoàn tất đề
         localItems[i] = {

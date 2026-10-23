@@ -92,6 +92,7 @@ export interface QuestionVerificationResult {
   sanityCheckNote?: string;
   inputFingerprint?: string;
   reusedResult?: boolean;
+  reviewIssue?: 'answer_mismatch' | 'missing_answer' | 'missing_data' | 'unverified';
 }
 
 export interface IAIService {
@@ -1279,7 +1280,7 @@ Trả về JSON duy nhất:
    *    Tuyệt đối KHÔNG retry liên tục khi 429, KHÔNG fallback sang Flash Lite!
    */
   async verifyExamQuestions(params: VerificationParams): Promise<QuestionVerificationResult[]> {
-    return verifyWithReuse(params, this.getApiKey());
+    return verifyWithReuse(params);
   }
 
   /**
