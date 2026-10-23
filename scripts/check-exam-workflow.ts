@@ -174,7 +174,7 @@ const originalCloudSave = FirestoreService.saveResult;
 let gradingCalls = 0;
 try {
   StorageService.saveSubmission = () => undefined;
-  FirestoreService.saveResult = async () => undefined;
+  FirestoreService.saveResult = async submission => ({ ...submission, saveRevision: 1, saveBaseFingerprint: 'offline-confirmed-fixture' });
   stepGradingService.analyzeStepByStep = async (request: StepGradingRequest) => {
     gradingCalls++;
     assert.equal(request.studentSolutionText, 'x = 3');

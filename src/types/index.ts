@@ -95,8 +95,9 @@ export interface Assignment {
 
 export interface ViolationEvent {
   timestamp: string;
-  type: 'tab_switch' | 'window_blur' | 'fullscreen_exit' | 'context_menu' | 'copy_attempt';
-  description: string;
+  type: 'tab_switch' | 'window_blur' | 'fullscreen_exit' | 'context_menu' | 'copy_attempt' | 'TAB_SWITCH';
+  description?: string;
+  durationSeconds?: number; // Legacy contest records already use this shape.
 }
 
 export interface StudentAnswer {
@@ -143,7 +144,15 @@ export interface EssayGradingResult {
   modelUsed?: string;
 }
 
-export interface Submission {
+export interface ResultSaveVersion {
+  saveRevision?: number;
+  saveOperationId?: string;
+  /** Client-only tokens; never persist these in the Cloud document. */
+  saveBaseFingerprint?: string;
+  saveAttemptId?: string;
+}
+export interface Submission extends ResultSaveVersion {
+  submissionWorkflow?: 'submit_first';
   id: string;
   assignmentId: string;
   assignmentTitle: string;
@@ -333,7 +342,7 @@ export interface Contest {
   totalPoints?: number; // Tổng điểm mục tiêu tùy chỉnh của cuộc thi (mặc định 10.0 hoặc linh hoạt)
 }
 
-export interface ContestSubmission {
+export interface ContestSubmission extends ResultSaveVersion {
   id: string;
   contestId: string;
   contestCode: string;
@@ -381,6 +390,8 @@ export type StepErrorType =
   | 'None';
 
 export interface SocraticContext {
+  firstErrorType?: StepErrorType;
+  firstErrorExplanation?: string;
   questionId?: string;
   questionText: string;
   questionType?: QuestionType;

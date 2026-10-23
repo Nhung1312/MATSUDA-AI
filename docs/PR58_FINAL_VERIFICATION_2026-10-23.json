@@ -1,0 +1,98 @@
+{
+  "date": "2026-10-23",
+  "status": "READY_FOR_REVIEW_AND_DEPLOYMENT_APPROVAL",
+  "applicationSourceUnchangedFrom": "cf9fc61e1c36a22810d4f179273c3fecb1588fcc",
+  "priorApplicationCi": "https://github.com/Nhung1312/MATSUDA-AI/actions/runs/39906261243",
+  "newFullCiRun": false,
+  "liveAIPhase": {
+    "realHttpRequestsThisTask": 1,
+    "httpStatus": 200,
+    "analysisSource": "ai",
+    "durationMs": 29541,
+    "actualTeacherResultsHandler": true,
+    "analysisSavedAndReadBackFromEmulator": true,
+    "captureFile": "tests/fixtures/live-ai-observed-response-20261023.json"
+  },
+  "teacherReviewPhase": {
+    "status": "PASS",
+    "projectId": "demo-matsuda-submit-first",
+    "productionFirestoreWrites": 0,
+    "data": "synthetic only",
+    "imageBytes": 23472,
+    "aiClientRequests": 1,
+    "liveAIRequests": 0,
+    "replayedAIResponses": 1,
+    "aiHttpStatus": 200,
+    "analysisSource": "ai",
+    "modelUsed": "gemini-3.8-flash",
+    "aiDurationMs": 106,
+    "analyzedSteps": 4,
+    "firstErrorStep": 2,
+    "cascadingSteps": 2,
+    "aiSuggestedPoints": 1,
+    "teacherApprovedPoints": 1.25,
+    "reloadedTotalScore": 1.75,
+    "reloadedMaxScore": 2.5,
+    "cacheFull": true,
+    "actualTeacherResultsHandlers": true,
+    "actualImageShown": true,
+    "reviewAndFinalizePersisted": true,
+    "stages": [
+      {
+        "name": "student-save-start",
+        "atMs": 1
+      },
+      {
+        "name": "student-save-confirmed",
+        "atMs": 372
+      },
+      {
+        "name": "teacher-server-read-complete",
+        "atMs": 434
+      },
+      {
+        "name": "results-ui-open-with-original-image",
+        "atMs": 467
+      },
+      {
+        "name": "ai-ui-handler-returned",
+        "atMs": 573
+      },
+      {
+        "name": "ai-analysis-saved-and-read-back",
+        "atMs": 592
+      },
+      {
+        "name": "teacher-score-saved",
+        "atMs": 660
+      },
+      {
+        "name": "final-score-read-back",
+        "atMs": 728
+      },
+      {
+        "name": "results-reopened-from-server",
+        "atMs": 763
+      }
+    ]
+  },
+  "testCorrections": [
+    "The prior 55-second abort was in the live HTTP test adapter, before teacher grade persistence. Use the existing proxy-compatible HTTP adapter and record each stage.",
+    "Validate the mathematical first-error expression and its linked stepIndex, rather than a fixed index that counts the copied equation.",
+    "Keep the saved exam scale: objective 0.5 + approved essay 1.25 = 1.75 out of 2.5; do not assume scale 10."
+  ],
+  "limitations": [
+    "Teacher review phase reuses the exact just-recorded real AI response; it makes zero additional live AI requests.",
+    "Actual TeacherResults handlers exercised with React test renderer; no claim of a deployed PR browser test or production Firestore write.",
+    "Document limit remains 1 MiB; larger work is rejected clearly and preserved pending.",
+    "No new pagination/image storage/database architecture."
+  ],
+  "protection": {
+    "productionFirestoreWrites": 0,
+    "productionRulesChanged": false,
+    "oldUserDataDeleted": false,
+    "cacheReset": false,
+    "merged": false,
+    "deployed": false
+  }
+}

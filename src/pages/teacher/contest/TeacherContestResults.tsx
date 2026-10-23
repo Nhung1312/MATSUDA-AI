@@ -1,3 +1,5 @@
+import { PendingResultSaves } from '../../../components/PendingResultSaves';
+import { saveContestSubmissionConfirmed } from '../../../services/submissionSaveService';
 import React, { useState, useEffect } from 'react';
 import { 
   Contest, 
@@ -364,16 +366,11 @@ export const TeacherContestResults: React.FC<TeacherContestResultsProps> = ({
           isEssayGraded: !submissionNeedsReview
         };
 
-        StorageService.saveContestSubmission(updatedSub);
-        await FirestoreService.updateContestSubmission(updatedSub.id, {
-          answers: updatedAnswers,
-          essayScore: newEssayScore,
-          mcqScore: newMcqScore,
-          totalScore: newTotalScore,
-          isEssayGraded: !submissionNeedsReview
-        });
+        const saved = await saveContestSubmissionConfirmed(updatedSub, { intent: 'teacher' });
+        if (!saved.cloudSaved) throw new Error(saved.error || 'Chưa xác nhận lưu điểm cuộc thi.');
+        const confirmed = saved.submission || updatedSub;
 
-        updatedSubmissionsList = updatedSubmissionsList.map(s => s.id === updatedSub.id ? updatedSub : s);
+        updatedSubmissionsList = updatedSubmissionsList.map(s => s.id === updatedSub.id ? confirmed : s);
         successCount++;
       }
 
@@ -462,17 +459,12 @@ export const TeacherContestResults: React.FC<TeacherContestResultsProps> = ({
       };
 
       // 3. Cập nhật Local & Firestore
-      StorageService.saveContestSubmission(updatedSub);
-      await FirestoreService.updateContestSubmission(updatedSub.id, {
-        answers: updatedAnswers,
-        essayScore: newEssayScore,
-        mcqScore: newMcqScore,
-        totalScore: newTotalScore,
-        isEssayGraded: allEssayDone
-      });
+      const saved = await saveContestSubmissionConfirmed(updatedSub, { intent: 'teacher' });
+      if (!saved.cloudSaved) throw new Error(saved.error || 'Chưa xác nhận lưu điểm cuộc thi.');
+      const confirmed = saved.submission || updatedSub;
 
-      setGradingSubmission(updatedSub);
-      setSubmissions(prev => rankContestSubmissions(prev.map(s => s.id === updatedSub.id ? updatedSub : s)));
+      setGradingSubmission(confirmed);
+      setSubmissions(prev => rankContestSubmissions(prev.map(s => s.id === updatedSub.id ? confirmed : s)));
       alert('Đã cập nhật điểm tự luận thành công!');
     } catch (e) {
       alert('Lỗi lưu điểm tự luận: ' + String(e));
@@ -513,6 +505,12 @@ export const TeacherContestResults: React.FC<TeacherContestResultsProps> = ({
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-16 animate-in fade-in duration-200">
+      <PendingResultSaves kind="contest" relationId={contestId}
+        onSaved={record => {
+          const confirmed = record as ContestSubmission;
+          setSubmissions(prev => rankContestSubmissions(prev.map(s => s.id === confirmed.id ? confirmed : s)));
+          setGradingSubmission(prev => prev?.id === confirmed.id ? confirmed : prev);
+        }} />
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <button

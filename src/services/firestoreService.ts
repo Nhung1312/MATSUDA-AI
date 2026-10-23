@@ -14,7 +14,10 @@ import {
   serverTimestamp 
 } from '../firebase';
 import { Assignment, Submission, ClassRoom, ExamTemplate, Contest, ContestSubmission } from '../types';
-import { getDocFromServer, getDocsFromServer } from 'firebase/firestore';
+import { getDocFromServer, getDocsFromServer, runTransaction } from 'firebase/firestore';
+
+import { prepareResultWrite, versionResult, newSaveOperationId, type ResultRecord, type ResultWriteOptions } from './resultPersistence';
+import { assertResultDocumentFits } from './resultDocumentSize';
 
 export const EXAMS_COLLECTION = 'exams';
 export const RESULTS_COLLECTION = 'results';
@@ -180,21 +183,89 @@ export class FirestoreService {
   /**
    * 3. Lưu kết quả nộp bài của học sinh vào Firestore collection "results"
    */
-  static async saveResult(submission: Submission): Promise<void> {
-    try {
-      const resultDocRef = doc(db, RESULTS_COLLECTION, submission.id);
-       
-      const payload = {
-        ...submission,
-        createdAt: new Date().toISOString()
-      };
+  static async saveResult(submission: Submission, options: ResultWriteOptions = {}): Promise<Submission> {
+    return this.saveVersionedResult(RESULTS_COLLECTION, submission, options);
+  }
 
-      await setDoc(resultDocRef, sanitizeForFirestore(payload), { merge: true });
-      console.log(`[Firestore] Đã lưu kết quả bài nộp của học sinh ${submission.studentName} (${submission.totalScore}đ) lên Cloud Firestore.`);
-    } catch (error) {
-      console.error('[Firestore Error] Không thể lưu kết quả nộp bài lên Firestore:', error);
-      throw error;
+  private static async saveVersionedResult<T extends ResultRecord>(collectionName: string, submission: T, options: ResultWriteOptions): Promise<T> {
+    const intent = options.intent || (auth.currentUser ? 'teacher' : 'student');
+    if (intent === 'teacher' && !auth.currentUser) throw new Error('Cần đăng nhập giáo viên để lưu điểm.');
+    const operationId = options.operationId || submission.saveAttemptId || newSaveOperationId();
+    const ref = doc(db, collectionName, submission.id);
+    if (intent === 'student') {
+      // Anonymous production Rules allow CREATE only. No transaction/get/readback.
+      // A replay of an existing ID is denied by Rules, never interpreted as success.
+      if (submission.saveRevision || submission.saveBaseFingerprint || submission.answers.some(a => a.teacherReviewed || a.teacherScore !== undefined)) {
+        throw new Error('Bài đã nộp hoặc đã được duyệt. Học sinh không được cập nhật kết quả; giữ nguyên bản đã lưu.');
+      }
+      const record = sanitizeForFirestore({ ...submission, saveRevision: 1, saveOperationId: operationId,
+        createdAt: (submission as any).createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() });
+      delete record.saveBaseFingerprint;
+      delete record.saveAttemptId;
+      assertResultDocumentFits(collectionName, submission.id, record, 16_384);
+      // setDoc resolves only on backend acknowledgement, never on the local cache write.
+      await setDoc(ref, record);
+      return versionResult(record);
     }
+    const committed = await runTransaction(db, async transaction => {
+      const snap = await transaction.get(ref);
+      const latest = snap.exists() ? { ...snap.data(), id: snap.id } as T : null;
+      const next = await prepareResultWrite(latest, submission, { intent, operationId });
+      if (!next.changed) return next.record;
+      const record = {
+        ...next.record,
+        createdAt: (latest as any)?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      delete record.saveBaseFingerprint;
+      delete record.saveAttemptId;
+      assertResultDocumentFits(collectionName, submission.id, record);
+      transaction.set(ref, sanitizeForFirestore(record), { merge: true });
+      return record;
+    });
+    // A cache snapshot or a queued offline write is not a server acknowledgement.
+    const readBack = await getDocFromServer(ref);
+    if (!readBack.exists()) throw new Error('Firebase chưa xác nhận bản kết quả đã lưu.');
+    const confirmed = { ...readBack.data(), id: readBack.id } as T;
+    if ((confirmed.saveRevision || 0) < (committed.saveRevision || 0)
+      || (confirmed.saveRevision === committed.saveRevision && confirmed.saveOperationId !== committed.saveOperationId)) {
+      throw new Error('Chưa xác nhận được phiên bản kết quả trên Firebase.');
+    }
+    return versionResult(confirmed);
+  }
+
+  /** Raw, server-only records for audit/export; permission failures propagate. */
+  static async readTeacherBackupSource(uid: string, email?: string | null): Promise<{
+    assignments: Assignment[]; submissions: Submission[]; classes: ClassRoom[];
+  }> {
+    if (auth.currentUser?.uid !== uid) throw new Error('Cần đăng nhập đúng tài khoản giáo viên để sao lưu.');
+    const examMap = new Map<string, Assignment>();
+    const ownerQueries = [query(collection(db, EXAMS_COLLECTION), where('teacherId', '==', uid))];
+    if (email) ownerQueries.push(query(collection(db, EXAMS_COLLECTION), where('teacherEmail', '==', email)));
+    for (const ownerQuery of ownerQueries) {
+      const snapshot = await getDocsFromServer(ownerQuery);
+      snapshot.forEach(snap => examMap.set(snap.id, { ...snap.data(), id: snap.id } as Assignment));
+    }
+    const assignments = [...examMap.values()];
+    const normalize = (key: string) => key.replace(/\s+/g, '').toUpperCase();
+    const keys = new Set(assignments.flatMap(a => [a.id, a.assignmentCode || '']).map(normalize));
+    const resultSnapshot = await getDocsFromServer(query(collection(db, RESULTS_COLLECTION)));
+    const submissions: Submission[] = [];
+    resultSnapshot.forEach(snap => {
+      const data = { ...snap.data(), id: snap.id } as Submission;
+      if (keys.has(normalize(data.assignmentId || ''))) submissions.push(data);
+    });
+    const profile = await getDocFromServer(doc(db, TEACHERS_COLLECTION, uid));
+    if (!profile.exists()) throw new Error('Chưa đọc được hồ sơ lớp học trên Firebase.');
+    const classes = profile.data().classes;
+    if (!Array.isArray(classes)) throw new Error('Firebase chưa có danh sách lớp để đối chiếu.');
+    if (auth.currentUser?.uid !== uid) throw new Error('Tài khoản đã thay đổi trong lúc sao lưu.');
+    return { assignments, submissions, classes };
+  }
+
+  static async getResultById(id: string, contest = false): Promise<Submission | ContestSubmission | null> {
+    const snap = await getDocFromServer(doc(db, contest ? CONTEST_SUBMISSIONS_COLLECTION : RESULTS_COLLECTION, id));
+    return snap.exists() ? versionResult({ ...snap.data(), id: snap.id } as Submission) : null;
   }
 
   /**
@@ -267,7 +338,7 @@ export class FirestoreService {
           id: docSnap.id
         });
       });
-      return results;
+      return Promise.all(results.map(result => versionResult(result)));
     } catch (error) {
       console.error('[Firestore Error] Lỗi tải danh sách kết quả bài thi:', error);
       return [];
@@ -288,7 +359,7 @@ export class FirestoreService {
           id: docSnap.id
         });
       });
-      return results;
+      return Promise.all(results.map(result => versionResult(result)));
     } catch (error) {
       console.error('[Firestore Error] Lỗi tải tất cả kết quả từ Firestore:', error);
       if (strict) throw error;
@@ -571,19 +642,8 @@ export class FirestoreService {
   /**
    * Lưu bài làm của thí sinh vào collection contest_submissions
    */
-  static async saveContestSubmission(submission: ContestSubmission): Promise<void> {
-    try {
-      const submissionDocRef = doc(db, CONTEST_SUBMISSIONS_COLLECTION, submission.id);
-      const payload = {
-        ...submission,
-        createdAt: new Date().toISOString()
-      };
-      await setDoc(submissionDocRef, sanitizeForFirestore(payload), { merge: true });
-      console.log(`[Firestore] Đã lưu bài nộp cuộc thi của học sinh ${submission.studentName} (${submission.totalScore}đ).`);
-    } catch (error) {
-      console.error('[Firestore Error] Không thể lưu bài nộp cuộc thi:', error);
-      throw error;
-    }
+  static async saveContestSubmission(submission: ContestSubmission, options: ResultWriteOptions = {}): Promise<ContestSubmission> {
+    return this.saveVersionedResult(CONTEST_SUBMISSIONS_COLLECTION, submission, options);
   }
 
   /**
@@ -603,7 +663,7 @@ export class FirestoreService {
           id: docSnap.id
         });
       });
-      return submissions;
+      return Promise.all(submissions.map(submission => versionResult(submission)));
     } catch (error) {
       console.error('[Firestore Error] Lỗi tải danh sách bài nộp cuộc thi:', error);
       return [];
@@ -613,18 +673,12 @@ export class FirestoreService {
   /**
    * Cập nhật điểm và nhận xét tự luận của bài nộp
    */
-  static async updateContestSubmission(submissionId: string, updates: Partial<ContestSubmission>): Promise<void> {
-    try {
-      const docRef = doc(db, CONTEST_SUBMISSIONS_COLLECTION, submissionId);
-      const payload = {
-        ...updates,
-        updatedAt: new Date().toISOString()
-      };
-      await setDoc(docRef, sanitizeForFirestore(payload), { merge: true });
-    } catch (error) {
-      console.error('[Firestore Error] Lỗi cập nhật bài nộp cuộc thi:', error);
-      throw error;
+  static async updateContestSubmission(submissionId: string, updates: Partial<ContestSubmission>): Promise<ContestSubmission> {
+    // Callers must pass the snapshot they actually edited, not rebase stale answers.
+    if (!updates.id || updates.id !== submissionId || !updates.saveBaseFingerprint) {
+      throw new Error('Cần tải bản bài thi mới từ Firebase trước khi lưu điểm.');
     }
+    return this.saveContestSubmission(updates as ContestSubmission, { intent: 'teacher' });
   }
 
   /**

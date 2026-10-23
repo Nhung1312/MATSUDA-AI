@@ -14,6 +14,7 @@ import {
 } from '../data';
 import { FirestoreService } from './firestoreService';
 import { auth } from '../firebase';
+import { CloudSessionCache } from './cloudSessionCache';
 
 const STORAGE_KEYS = {
   CLASSES: 'toan_thcs_classes_v4',
@@ -24,6 +25,12 @@ const STORAGE_KEYS = {
   DELETED_ASSIGNMENT_KEYS: 'toan_thcs_deleted_assignment_keys_v4',
   HAS_CLEARED_DEMO: 'toan_thcs_has_cleared_demo_v4'
 };
+
+let demoInitializationAttempted = false;
+// The current confirmed student result. Durable receipts live in IndexedDB, not a growing JSON array.
+let latestStudentResult: Submission | undefined;
+const withLatest = <T extends { id: string }>(records: T[], latest?: T): T[] =>
+  latest ? [latest, ...records.filter(record => record.id !== latest.id)] : records;
 
 export const INITIAL_CLASSES: ClassRoom[] = [
   {
@@ -143,7 +150,8 @@ export class StorageService {
    * Kiểm tra xem người dùng đã xóa dữ liệu mẫu hay chưa
    */
   static hasClearedDemoData(): boolean {
-    return localStorage.getItem(STORAGE_KEYS.HAS_CLEARED_DEMO) === 'true';
+    try { return localStorage.getItem(STORAGE_KEYS.HAS_CLEARED_DEMO) === 'true'; }
+    catch { return false; }
   }
 
   /**
@@ -161,26 +169,33 @@ export class StorageService {
    * Khởi tạo dữ liệu mẫu nếu chưa có và người dùng chưa từng yêu cầu xóa dữ liệu mẫu
    */
   static initDemoData(): void {
-    if (this.hasClearedDemoData()) {
-      localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
-      if (localStorage.getItem(STORAGE_KEYS.CLASSES) === null) {
-        localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify([]));
+    if (auth.currentUser?.uid || demoInitializationAttempted) return;
+    demoInitializationAttempted = true;
+    try {
+      if (this.hasClearedDemoData()) {
+        localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
+        if (localStorage.getItem(STORAGE_KEYS.CLASSES) === null) {
+          localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify([]));
+        }
+        if (localStorage.getItem(STORAGE_KEYS.ASSIGNMENTS) === null) {
+          localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify([]));
+        }
+        if (localStorage.getItem(STORAGE_KEYS.SUBMISSIONS) === null) {
+          localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify([]));
+        }
+        return;
       }
-      if (localStorage.getItem(STORAGE_KEYS.ASSIGNMENTS) === null) {
-        localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify([]));
-      }
-      if (localStorage.getItem(STORAGE_KEYS.SUBMISSIONS) === null) {
-        localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify([]));
-      }
-      return;
-    }
 
-    const initialized = localStorage.getItem(STORAGE_KEYS.INITIALIZED);
-    if (!initialized) {
-      localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(INITIAL_CLASSES));
-      localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(INITIAL_ASSIGNMENTS));
-      localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify(INITIAL_SUBMISSIONS));
-      localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
+      const initialized = localStorage.getItem(STORAGE_KEYS.INITIALIZED);
+      if (!initialized) {
+        if (localStorage.getItem(STORAGE_KEYS.CLASSES) === null) localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(INITIAL_CLASSES));
+        if (localStorage.getItem(STORAGE_KEYS.ASSIGNMENTS) === null) localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(INITIAL_ASSIGNMENTS));
+        if (localStorage.getItem(STORAGE_KEYS.SUBMISSIONS) === null) localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify(INITIAL_SUBMISSIONS));
+        localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
+      }
+    } catch (error) {
+      // Legacy records stay untouched. Getters can still read them or use the bundled demo in memory.
+      console.warn('[StorageService] Không ghi được dữ liệu mẫu; vẫn đọc dữ liệu hiện có:', error);
     }
   }
 
@@ -387,6 +402,7 @@ export class StorageService {
 
   // --- CLASSES ---
   static getClasses(): ClassRoom[] {
+    if (auth.currentUser?.uid) return [...CloudSessionCache.get(auth.currentUser.uid, 'classes')];
     this.initDemoData();
     const isCleared = this.hasClearedDemoData();
     try {
@@ -420,6 +436,7 @@ export class StorageService {
 
   static setClasses(classes: ClassRoom[]): void {
     const safe = Array.isArray(classes) ? classes : [];
+    if (auth.currentUser?.uid) { CloudSessionCache.set(auth.currentUser.uid, 'classes', safe); return; }
     localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(safe));
   }
 
@@ -431,7 +448,7 @@ export class StorageService {
     } else {
       classes.unshift(classRoom);
     }
-    localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(classes));
+    this.setClasses(classes);
 
     // Tự động đẩy danh sách lớp học lên Cloud nếu đã đăng nhập
     if (auth.currentUser?.uid) {
@@ -443,7 +460,7 @@ export class StorageService {
 
   static deleteClass(classId: string): void {
     const classes = this.getClasses().filter(c => c.id !== classId);
-    localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(classes));
+    this.setClasses(classes);
 
     // Tự động cập nhật danh sách lớp học lên Cloud nếu đã đăng nhập
     if (auth.currentUser?.uid) {
@@ -455,6 +472,7 @@ export class StorageService {
 
   // --- ASSIGNMENTS ---
   static getAssignments(): Assignment[] {
+    if (auth.currentUser?.uid) return [...CloudSessionCache.get(auth.currentUser.uid, 'assignments')];
     this.initDemoData();
     const deletedKeys = this.getDeletedAssignmentKeys();
     const isCleared = this.hasClearedDemoData();
@@ -510,6 +528,7 @@ export class StorageService {
 
   static setAssignments(assignments: Assignment[]): void {
     const safe = Array.isArray(assignments) ? assignments : [];
+    if (auth.currentUser?.uid) { CloudSessionCache.set(auth.currentUser.uid, 'assignments', safe); return; }
     localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(safe));
   }
 
@@ -522,7 +541,7 @@ export class StorageService {
     } else {
       assignments.unshift(assignment);
     }
-    localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(assignments));
+    this.setAssignments(assignments);
 
     // Tự động đẩy đề thi lên Cloud Firestore nếu người dùng đã đăng nhập
     if (auth.currentUser) {
@@ -559,7 +578,7 @@ export class StorageService {
       const c = (a.assignmentCode || '').replace(/\s+/g, '').toUpperCase();
       return a.id !== assignmentId && !deletedKeys.has(a.id) && !deletedKeys.has(c);
     });
-    localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(assignments));
+    this.setAssignments(assignments);
   }
 
   /**
@@ -588,16 +607,17 @@ export class StorageService {
 
   // --- SUBMISSIONS ---
   static getSubmissions(): Submission[] {
+    if (auth.currentUser?.uid) return [...CloudSessionCache.get(auth.currentUser.uid, 'submissions')];
     this.initDemoData();
     try {
       const data = localStorage.getItem(STORAGE_KEYS.SUBMISSIONS);
       if (data !== null) {
         const list = JSON.parse(data);
-        return Array.isArray(list) ? list.filter((s): s is Submission => Boolean(s && typeof s === 'object' && s.id)) : [];
+        return withLatest(Array.isArray(list) ? list.filter((s): s is Submission => Boolean(s && typeof s === 'object' && s.id)) : [], latestStudentResult);
       }
-      return INITIAL_SUBMISSIONS || [];
+      return withLatest(INITIAL_SUBMISSIONS || [], latestStudentResult);
     } catch {
-      return INITIAL_SUBMISSIONS || [];
+      return withLatest(INITIAL_SUBMISSIONS || [], latestStudentResult);
     }
   }
 
@@ -607,10 +627,15 @@ export class StorageService {
 
   static setSubmissions(submissions: Submission[]): void {
     const safe = Array.isArray(submissions) ? submissions : [];
+    if (auth.currentUser?.uid) { CloudSessionCache.set(auth.currentUser.uid, 'submissions', safe); return; }
     localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify(safe));
   }
 
-  static saveSubmission(submission: Submission, options: { syncCloud?: boolean } = {}): void {
+  static saveSubmission(submission: Submission, options: { syncCloud?: boolean; memoryOnly?: boolean } = {}): void {
+    if (!auth.currentUser?.uid && options.memoryOnly && options.syncCloud === false) {
+      latestStudentResult = submission;
+      return;
+    }
     const submissions = this.getSubmissions();
     const idx = submissions.findIndex(s => s.id === submission.id);
     if (idx >= 0) {
@@ -618,7 +643,8 @@ export class StorageService {
     } else {
       submissions.unshift(submission);
     }
-    localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify(submissions));
+    let cacheError: unknown;
+    try { this.setSubmissions(submissions); } catch (error) { cacheError = error; }
 
     // Luôn ghi trực tiếp lên Cloud Firestore để giáo viên trên máy khác xem được
     if (options.syncCloud !== false) {
@@ -626,21 +652,20 @@ export class StorageService {
         console.warn('[StorageService] Lỗi tự động lưu kết quả lên Firestore:', err);
       });
     }
+    if (cacheError && options.syncCloud === false) throw cacheError;
   }
 
   static async saveSubmissionAsync(submission: Submission): Promise<void> {
-    this.saveSubmission(submission);
-    try {
-      await FirestoreService.saveResult(submission);
-    } catch (err) {
-      console.error('[StorageService] Lỗi lưu kết quả bài làm lên Firestore:', err);
-    }
+    const { saveSubmissionConfirmed } = await import('./submissionSaveService');
+    const saved = await saveSubmissionConfirmed(submission);
+    if (!saved.cloudSaved) throw new Error(saved.error || 'Chưa xác nhận lưu Firebase.');
   }
 
   // ==========================================
   // QUẢN LÝ CUỘC THI TRỰC TUYẾN (CONTESTS)
   // ==========================================
   static getContests(): import('../types').Contest[] {
+    if (auth.currentUser?.uid) return [...CloudSessionCache.get(auth.currentUser.uid, 'contests')];
     try {
       const data = localStorage.getItem('toan_thcs_contests_v4');
       if (data) {
@@ -655,6 +680,7 @@ export class StorageService {
 
   static setContests(contests: import('../types').Contest[]): void {
     const safe = Array.isArray(contests) ? contests : [];
+    if (auth.currentUser?.uid) { CloudSessionCache.set(auth.currentUser.uid, 'contests', safe); return; }
     localStorage.setItem('toan_thcs_contests_v4', JSON.stringify(safe));
   }
 
@@ -720,6 +746,10 @@ export class StorageService {
   }
 
   static getContestSubmissions(contestId?: string): import('../types').ContestSubmission[] {
+    if (auth.currentUser?.uid) {
+      const records = CloudSessionCache.get(auth.currentUser.uid, 'contestSubmissions');
+      return records.filter(s => !contestId || s.contestId === contestId || s.contestCode?.toUpperCase() === contestId.toUpperCase());
+    }
     try {
       const data = localStorage.getItem('toan_thcs_contest_submissions_v4');
       const list: import('../types').ContestSubmission[] = data ? JSON.parse(data) : [];
@@ -735,10 +765,11 @@ export class StorageService {
 
   static setContestSubmissions(submissions: import('../types').ContestSubmission[]): void {
     const safe = Array.isArray(submissions) ? submissions : [];
+    if (auth.currentUser?.uid) { CloudSessionCache.set(auth.currentUser.uid, 'contestSubmissions', safe); return; }
     localStorage.setItem('toan_thcs_contest_submissions_v4', JSON.stringify(safe));
   }
 
-  static saveContestSubmission(submission: import('../types').ContestSubmission): void {
+  static saveContestSubmission(submission: import('../types').ContestSubmission, options: { syncCloud?: boolean } = {}): void {
     const list = this.getContestSubmissions();
     const idx = list.findIndex(s => s.id === submission.id);
     if (idx >= 0) {
@@ -746,7 +777,9 @@ export class StorageService {
     } else {
       list.unshift(submission);
     }
-    localStorage.setItem('toan_thcs_contest_submissions_v4', JSON.stringify(list));
+    let cacheError: unknown;
+    try { this.setContestSubmissions(list); } catch (error) { cacheError = error; }
+    if (options.syncCloud === false) { if (cacheError) throw cacheError; return; }
 
     // Đồng bộ lên Cloud Firestore
     FirestoreService.saveContestSubmission(submission).catch(err => {
@@ -755,12 +788,9 @@ export class StorageService {
   }
 
   static async saveContestSubmissionAsync(submission: import('../types').ContestSubmission): Promise<void> {
-    this.saveContestSubmission(submission);
-    try {
-      await FirestoreService.saveContestSubmission(submission);
-    } catch (err) {
-      console.error('[StorageService] Lỗi lưu bài nộp cuộc thi lên Firestore:', err);
-    }
+    const { saveContestSubmissionConfirmed } = await import('./submissionSaveService');
+    const saved = await saveContestSubmissionConfirmed(submission);
+    if (!saved.cloudSaved) throw new Error(saved.error || 'Chưa xác nhận lưu Firebase.');
   }
 
   /**

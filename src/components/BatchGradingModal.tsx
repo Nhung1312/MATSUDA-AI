@@ -1,3 +1,4 @@
+import { saveSubmissionConfirmed } from '../services/submissionSaveService';
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
@@ -78,6 +79,9 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
   // Add Paper Submission Form State
   const [showAddPaperForm, setShowAddPaperForm] = useState<boolean>(false);
   const [newPaperStudentName, setNewPaperStudentName] = useState<string>('');
+  const pendingPaper = useRef<Submission | null>(null);
+  const paperSaveLock = useRef(false);
+  const [savingPaper, setSavingPaper] = useState(false);
   const [newPaperImages, setNewPaperImages] = useState<string[]>([]);
   const [isProcessingPaperImages, setIsProcessingPaperImages] = useState<boolean>(false);
 
@@ -124,7 +128,12 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
       };
     });
 
-    setItems(mapped);
+    setItems(previous => mapped.map(item => {
+      const old = previous.find(row => row.id === item.id);
+      // Background root updates must not reset an active row or its unsent analysis.
+      if (old && (old.status === 'grading' || old.cloudSaveWarning)) return old;
+      return item;
+    }));
   }, [isOpen, submissions, assignment]);
 
   if (!isOpen) return null;
@@ -384,7 +393,8 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
   /**
    * Lưu bài nộp giấy mới vào hàng đợi chấm
    */
-  const handleSaveNewPaperSubmission = () => {
+  const handleSaveNewPaperSubmission = async () => {
+    if (paperSaveLock.current) return;
     const studentName = newPaperStudentName.trim();
     if (!studentName) {
       showToast('Hãy nhập hoặc chọn tên học sinh.', 'warning');
@@ -403,7 +413,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
       questionId: q.id,
       selectedAnswer: '',
       studentSolutionText: '',
-      essayImages: newPaperImages,
+      // New paper records keep original image bytes once, at submission level.
       isCorrect: false,
       pointsEarned: 0,
       maxPoints: q.points || 1.0
@@ -432,15 +442,23 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
       gradingStatus: 'pending_teacher_grading'
     };
 
-    // Thêm vào danh sách submissions
-    const nextSubs = [newSub, ...submissions];
-    onSubmissionsUpdated(nextSubs);
-
-    // Reset form
-    setNewPaperStudentName('');
-    setNewPaperImages([]);
-    setShowAddPaperForm(false);
-    showToast(`Đã thêm bài nộp giấy của học sinh ${studentName}. Sẵn sàng chấm AI!`, 'success');
+    paperSaveLock.current = true;
+    setSavingPaper(true);
+    try {
+      const saved = await saveSubmissionConfirmed(pendingPaper.current || newSub, { intent: 'teacher' });
+      if (!saved.cloudSaved) {
+        pendingPaper.current = saved.pendingSubmission || newSub;
+        showToast((saved.error || 'Chưa lưu được bài giấy.') + ' Bấm thêm bài lần nữa để gửi lại đúng ID cũ.', 'error');
+        return;
+      }
+      const confirmed = saved.submission || newSub;
+      pendingPaper.current = null;
+      onSubmissionsUpdated([confirmed, ...submissions.filter(s => s.id !== confirmed.id)], { cloudHandled: true });
+      setNewPaperStudentName('');
+      setNewPaperImages([]);
+      setShowAddPaperForm(false);
+      showToast('Đã xác nhận bài giấy trên Firebase. Sẵn sàng chấm AI!', 'success');
+    } finally { paperSaveLock.current = false; setSavingPaper(false); }
   };
 
   /**
@@ -769,7 +787,7 @@ export const BatchGradingModal: React.FC<BatchGradingModalProps> = ({
 
                   <button
                     onClick={handleSaveNewPaperSubmission}
-                    disabled={!newPaperStudentName.trim() || newPaperImages.length === 0 || isProcessingPaperImages}
+                    disabled={!newPaperStudentName.trim() || newPaperImages.length === 0 || isProcessingPaperImages || savingPaper}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl disabled:opacity-50 cursor-pointer shadow-xs"
                   >
                     Lưu vào hàng đợi chấm

@@ -1,3 +1,5 @@
+import { PendingResultSaves } from '../../../components/PendingResultSaves';
+import { saveContestSubmissionConfirmed } from '../../../services/submissionSaveService';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
@@ -71,6 +73,7 @@ export const ContestExamPage: React.FC = () => {
   const [showScratchpad, setShowScratchpad] = useState(false);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const pendingContestSubmission = useRef<import('../../../types').ContestSubmission | null>(null);
   const isSubmittingRef = useRef<boolean>(false);
   const effectiveEndMsRef = useRef<number>(0);
   const [lastSavedTime, setLastSavedTime] = useState<string>('');
@@ -371,7 +374,7 @@ export const ContestExamPage: React.FC = () => {
 
     try {
       const submittedAt = new Date().toISOString();
-      const submission = GradingService.gradeContestSubmission({
+      const submission = pendingContestSubmission.current || GradingService.gradeContestSubmission({
         contest: { ...c, questions: qList },
         studentAnswers: ans,
         studentSolutions: sol,
@@ -386,11 +389,15 @@ export const ContestExamPage: React.FC = () => {
       });
 
       // Lưu Local & Firestore
-      StorageService.saveContestSubmission(submission);
-      await FirestoreService.saveContestSubmission(submission);
+      const saved = await saveContestSubmissionConfirmed(submission, { intent: 'student' });
+      if (!saved.cloudSaved) {
+        pendingContestSubmission.current = saved.pendingSubmission || submission;
+        throw new Error(saved.error || 'Firebase chưa xác nhận bài thi. Nộp lại dùng đúng ID cũ.');
+      }
+      pendingContestSubmission.current = null;
 
       // Xóa draft
-      localStorage.removeItem(draftKey);
+      try { localStorage.removeItem(draftKey); } catch {}
 
       navigate(`/contest/${c.code}/result/${submission.id}`);
     } catch (e) {
@@ -409,7 +416,7 @@ export const ContestExamPage: React.FC = () => {
 
     try {
       const submittedAt = new Date().toISOString();
-      const submission = GradingService.gradeContestSubmission({
+      const submission = pendingContestSubmission.current || GradingService.gradeContestSubmission({
         contest: { ...contest, questions: examQuestions },
         studentAnswers: answers,
         studentSolutions: solutions,
@@ -423,10 +430,14 @@ export const ContestExamPage: React.FC = () => {
         isShuffled: contest.shuffleQuestions || contest.shuffleOptions
       });
 
-      StorageService.saveContestSubmission(submission);
-      await FirestoreService.saveContestSubmission(submission);
+      const saved = await saveContestSubmissionConfirmed(submission, { intent: 'student' });
+      if (!saved.cloudSaved) {
+        pendingContestSubmission.current = saved.pendingSubmission || submission;
+        throw new Error(saved.error || 'Firebase chưa xác nhận bài thi. Nộp lại dùng đúng ID cũ.');
+      }
+      pendingContestSubmission.current = null;
 
-      localStorage.removeItem(draftKey);
+      try { localStorage.removeItem(draftKey); } catch {}
       navigate(`/contest/${contest.code}/result/${submission.id}`);
     } catch (e) {
       isSubmittingRef.current = false;
@@ -473,6 +484,9 @@ export const ContestExamPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-white flex flex-col select-none">
+      <PendingResultSaves kind="contest" relationId={contest.id} studentName={studentName}
+        onBusyChange={busy => { isSubmittingRef.current = busy; setIsSubmitting(busy); }}
+        onSaved={record => navigate('/contest/' + contest.code + '/result/' + record.id)} />
       {/* 1. TOP BAR */}
       <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 py-2.5 flex items-center justify-between shadow-xs">
         {/* Info Left */}

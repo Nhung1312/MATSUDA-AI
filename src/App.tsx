@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { StorageService } from './services/storageService';
+import { CloudSessionCache } from './services/cloudSessionCache';
 import { auth } from './firebase';
 import { FirestoreService } from './services/firestoreService';
 import { Assignment, ClassRoom, Submission } from './types';
@@ -34,6 +35,9 @@ function AppContent() {
   currentSession.current = sessionKey;
   const refreshVersion = useRef(0);
   const [syncState, setSyncState] = useState<'idle' | 'loading' | 'ready' | 'partial' | 'error'>('idle');
+
+  const [loadedSession, setLoadedSession] = useState<string | null>(null);
+  const confirmedDuringRefresh = useRef(new Map<string, Submission>());
 
   // Persistent storage state
   const [classes, setClasses] = useState<ClassRoom[]>([]);
@@ -142,6 +146,9 @@ function AppContent() {
   // Read-only login sync: never migrate cached exams or classes into production.
   useEffect(() => {
     if (loading) return;
+    CloudSessionCache.begin(verifiedUid);
+    confirmedDuringRefresh.current.clear();
+    setLoadedSession(null);
     setClasses([]);
     setAssignments([]);
     setSubmissions([]);
@@ -204,8 +211,16 @@ function AppContent() {
         .map(k => k.replace(/\s+/g, '').toUpperCase()));
       const ownedResults = cloudResults.filter(s =>
         keys.has((s.assignmentId || '').replace(/\s+/g, '').toUpperCase()));
-      setSubmissions(ownedResults);
-      try { StorageService.setSubmissions(ownedResults); }
+      const mergedResults = ownedResults.map(s => {
+        const confirmed = confirmedDuringRefresh.current.get(s.id);
+        return confirmed && (confirmed.saveRevision || 0) > (s.saveRevision || 0) ? confirmed : s;
+      });
+      for (const confirmed of confirmedDuringRefresh.current.values()) {
+        if (!mergedResults.some(s => s.id === confirmed.id) && keys.has(confirmed.assignmentId.replace(/\s+/g, '').toUpperCase())) mergedResults.push(confirmed);
+      }
+      setSubmissions(mergedResults);
+      setLoadedSession(token);
+      try { StorageService.setSubmissions(mergedResults); }
       catch { console.warn('Cache bài nộp đầy, kết quả Cloud vẫn được hiển thị.'); }
       setSyncState(!profile || !profile.classes?.length ? 'partial' : 'ready');
     } catch (error) {
@@ -214,6 +229,24 @@ function AppContent() {
       console.warn('Đọc dữ liệu Cloud chưa hoàn tất, không ghi đè lên Cloud:', error);
     }
   };
+
+  useEffect(() => {
+    const handleConfirmed = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (!detail || detail.kind !== 'result' || detail.scope !== verifiedUid || auth.currentUser?.uid !== verifiedUid) return;
+      const confirmed = detail.submission as Submission;
+      confirmedDuringRefresh.current.set(confirmed.id, confirmed);
+      setSubmissions(previous => {
+        const old = previous.find(s => s.id === confirmed.id);
+        if ((old?.saveRevision || 0) > (confirmed.saveRevision || 0)) return previous;
+        const next = old ? previous.map(s => s.id === confirmed.id ? confirmed : s) : [confirmed, ...previous];
+        CloudSessionCache.set(verifiedUid!, 'submissions', next);
+        return next;
+      });
+    };
+    window.addEventListener('submissions-confirmed', handleConfirmed);
+    return () => window.removeEventListener('submissions-confirmed', handleConfirmed);
+  }, [verifiedUid]);
 
   const handleResetData = () => {
     if (window.confirm('Khôi phục toàn bộ dữ liệu về trạng thái mẫu ban đầu cho Lớp 6, 7, 8, 9?')) {
@@ -261,7 +294,8 @@ function AppContent() {
     refreshAllData();
     if (examSession.assignment) {
       // Record progress into Zustand persistent store
-      useLearningProgressStore.getState().recordSubmission(submission, examSession.assignment);
+      try { useLearningProgressStore.getState().recordSubmission(submission, examSession.assignment); }
+      catch (error) { console.warn('Cache tiến độ đầy; bài đã được Firebase xác nhận:', error); }
     }
     updateExamSession(prev => ({
       ...prev,
@@ -459,12 +493,12 @@ function AppContent() {
             path="/teacher/*"
             element={
               <PrivateRoute>
-                {verifiedUid && (syncState === 'loading' || syncState === 'idle') ? (
+                {verifiedUid && loadedSession !== sessionKey && syncState !== 'error' ? (
                   <div className="mx-auto max-w-xl p-8 text-center text-slate-700" role="status">
                     <div className="text-lg font-bold">Đang đồng bộ tài khoản giáo viên...</div>
                     <p className="mt-3 text-sm">Chỉ hiển thị số liệu sau khi Firebase xác nhận. Chưa có kết quả tải không có nghĩa dữ liệu đã mất.</p>
                   </div>
-                ) : verifiedUid && syncState === 'error' ? (
+                ) : verifiedUid && loadedSession !== sessionKey && syncState === 'error' ? (
                   <div className="mx-auto max-w-xl p-8 text-center text-slate-700" role="alert">
                     <div className="text-lg font-bold text-amber-800">Không tải được dữ liệu mới từ Firebase</div>
                     <p className="mt-3 text-sm">Không hiển thị số 0 giả khi mạng hoặc Firebase gặp lỗi. Dữ liệu trên Cloud chưa bị thay đổi.</p>
@@ -476,6 +510,7 @@ function AppContent() {
                   </div>
                 ) : (
                   <TeacherLayout
+                    key={sessionKey || 'local'}
                     classes={Array.isArray(classes) ? classes : []}
                     assignments={Array.isArray(assignments) ? assignments : []}
                     submissions={Array.isArray(submissions) ? submissions : []}

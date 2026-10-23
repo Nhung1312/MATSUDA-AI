@@ -1,3 +1,5 @@
+import { PendingResultSaves } from '../../components/PendingResultSaves';
+import { saveSubmissionConfirmed, resultSaveScope } from '../../services/submissionSaveService';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Assignment, Submission, ViolationEvent, Question } from '../../types';
 import { MathDisplay } from '../../components/MathDisplay';
@@ -5,10 +7,10 @@ import { GradingService } from '../../services/gradingService';
 import { StorageService } from '../../services/storageService';
 import { FirestoreService } from '../../services/firestoreService';
 import { aiService, HybridAIService } from '../../services/aiService';
-import { stepGradingService } from '../../services/stepGradingService';
+import { buildStudentSubmission } from '../../services/studentSubmission';
 import { useTheme } from '../../context/ThemeContext';
 import { shuffleAssignmentQuestionsAndOptions, formatViolationTime } from '../../utils/antiCheatUtils';
-import { placeEssayQuestionsLast, getEssayGradingReference } from '../../utils/questionUtils';
+import { placeEssayQuestionsLast } from '../../utils/questionUtils';
 import { isEssayQuestion, getQuestionTypeLabel } from '../../utils/questionUtils';
 import { ImageLightboxModal } from '../../components/ImageLightboxModal';
 import { soundEffects } from '../../utils/soundEffects';
@@ -271,6 +273,8 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
   // Keep exactly the same graded submission after a failed cloud write.
   // Retrying must not call Gemini twice or generate a new submission ID.
   const pendingCloudSubmissionRef = useRef<Submission | null>(null);
+  const finishedSubmissionIdRef = useRef<string | null>(null);
+  const [recoveredPendingCount, setRecoveredPendingCount] = useState<number | null>(null);
   const [isMuted, setIsMuted] = useState<boolean>(() => soundEffects.isMuted());
   const [matrixFilter, setMatrixFilter] = useState<'all' | 'unanswered' | 'flagged'>('all');
 
@@ -760,38 +764,50 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
     submitExam();
   };
 
-  const saveToCloudAndFinish = async (submission: Submission): Promise<boolean> => {
-    try {
-      await FirestoreService.saveResult(submission);
-    } catch (error) {
-      // Local backup is optional. A browser quota error must not mask Cloud failure.
-      try { StorageService.saveSubmission(submission, { syncCloud: false }); }
-      catch (cacheError) { console.warn('Không thể lưu bản dự phòng trên máy:', cacheError); }
-      console.warn('Lưu bài nộp lên Firebase chưa thành công:', error);
-      setIsSubmittingWithAI(false);
-      isSubmittingRef.current = false;
-      alert('CHƯA NỘP THÀNH CÔNG: Firebase chưa xác nhận đã nhận bài. Đáp án vẫn ở trang này. Kiểm tra mạng rồi bấm Nộp bài một lần nữa để gửi lại chính bài cũ, không chấm AI lần nữa. Đừng đóng trang.');
-      return false;
-    }
-
-    // Cloud confirmed; an optional local cache failure is not a failed submission.
-    try { StorageService.saveSubmission(submission, { syncCloud: false }); }
-    catch (cacheError) { console.warn('Bộ nhớ trình duyệt đầy; bài vẫn đã lưu trên Firebase:', cacheError); }
+  const finishConfirmedSubmission = (confirmed: Submission) => {
+    if (finishedSubmissionIdRef.current === confirmed.id) return;
+    finishedSubmissionIdRef.current = confirmed.id;
     try { localStorage.removeItem(draftStorageKey); } catch {}
     pendingCloudSubmissionRef.current = null;
-
-    try { useMistakeVaultStore.getState().addMistakesFromSubmission(submission, currentAssignment); }
+    try { useMistakeVaultStore.getState().addMistakesFromSubmission(confirmed, currentAssignment); }
     catch (error) { console.warn('Không lưu được sổ tay câu sai:', error); }
-
-    soundEffects.playSuccess();
+    try { soundEffects.playSuccess(); } catch { /* Sound must not block the receipt. */ }
     setIsSubmittingWithAI(false);
     isSubmittingRef.current = false;
-    onFinishExam(submission);
+    onFinishExam(confirmed);
+  };
+
+  useEffect(() => {
+    const confirmed = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail?.kind === 'result' && detail.scope === resultSaveScope()
+        && detail.submission?.id === pendingCloudSubmissionRef.current?.id) finishConfirmedSubmission(detail.submission);
+    };
+    window.addEventListener('submissions-confirmed', confirmed);
+    return () => window.removeEventListener('submissions-confirmed', confirmed);
+  }, [draftStorageKey, currentAssignment, onFinishExam]);
+
+  const saveToCloudAndFinish = async (submission: Submission): Promise<boolean> => {
+    const saved = await saveSubmissionConfirmed(submission, { intent: 'student' });
+    if (!saved.cloudSaved) {
+      pendingCloudSubmissionRef.current = saved.pendingSubmission || submission;
+      setIsSubmittingWithAI(false);
+      isSubmittingRef.current = false;
+      alert('CHƯA NỘP THÀNH CÔNG: ' + (saved.error || 'Firebase chưa xác nhận đã nhận bài.')
+        + ' Bấm Nộp bài lần nữa để gửi lại đúng bài cũ, không tạo lượt mới.'
+        + (saved.localSaved ? ' Bản gửi được giữ trên máy.' : ' Giữ trang này vì chưa lưu được bản dự phòng.'));
+      return false;
+    }
+    finishConfirmedSubmission(saved.submission || submission);
     return true;
   };
 
   const submitExam = async () => {
     if (isSubmittingRef.current || isSubmittingWithAI) return;
+    if (!pendingCloudSubmissionRef.current && recoveredPendingCount !== 0) {
+      alert(recoveredPendingCount === null ? 'Đang kiểm tra bản gửi chờ trên máy. Vui lòng thử lại sau giây lát.' : 'Có bản gửi chưa xác nhận. Chọn Gửi lại ở thông báo bản chờ để dùng đúng ID cũ, không tạo lượt mới.');
+      return;
+    }
     isSubmittingRef.current = true;
     setShowSubmitModal(false);
     setIsSubmittingWithAI(true);
@@ -807,52 +823,8 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
     }
 
     const submittedAt = new Date().toISOString();
-    const aiFeedbacks: Record<string, { score?: number; feedback?: string; graded?: boolean }> = {};
-
-    // 1. Tự động chấm điểm AI cho các câu tự luận nếu có (Unified Vision & Step-by-Step Core)
-    const essayQuestions = currentAssignment.questions.filter((q) => isEssayQuestion(q));
-    if (essayQuestions.length > 0) {
-      for (const eq of essayQuestions) {
-        const solutionText = studentSolutions[eq.id] || '';
-        const images = essayImagesByQuestion[eq.id] || [];
-
-        if (solutionText || images.length > 0) {
-          try {
-            const stepRes = await stepGradingService.analyzeStepByStep({
-              questionId: eq.id,
-              questionText: eq.question,
-              grade: String(currentAssignment.grade),
-              topic: currentAssignment.topic,
-              maxPoints: eq.points,
-              ...getEssayGradingReference(eq),
-              studentSolutionText: solutionText,
-              essayImages: images
-            });
-
-            aiFeedbacks[eq.id] = {
-              score: stepRes.score,
-              feedback: stepRes.feedback,
-              graded: true,
-              stepAnalysis: stepRes.analysis,
-              firstErrorStep: stepRes.firstErrorStep,
-              firstErrorType: stepRes.firstErrorType,
-              firstErrorExplanation: stepRes.firstErrorExplanation,
-              needsTeacherReview: stepRes.needsTeacherReview,
-              stepGradingResponse: stepRes
-            } as any;
-          } catch (e) {
-            console.warn('AI step evaluation on submit warning:', e);
-            aiFeedbacks[eq.id] = {
-              graded: false,
-              feedback: 'Bài tự luận đã được ghi nhận đầy đủ và đang chờ chấm điểm.'
-            };
-          }
-        }
-      }
-    }
-
-    // 2. Chấm điểm tổng hợp qua GradingService
-    const submission = GradingService.gradeSubmission({
+    // Save the complete work first; AI is requested later by the teacher.
+    const submission = buildStudentSubmission({
       assignment: currentAssignment,
       studentAnswers: answers,
       studentSolutions,
@@ -865,8 +837,7 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
       submittedAt,
       tabSwitchCount,
       violationEvents,
-      isShuffled: !isPdfMode,
-      aiFeedbacks
+      isShuffled: !isPdfMode
     });
 
     pendingCloudSubmissionRef.current = submission;
@@ -912,6 +883,10 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
   return (
     <div className={rootContainerClasses} style={{ WebkitUserSelect: 'none', userSelect: 'none' }}>
       
+      <PendingResultSaves kind="result" relationId={assignment.id} studentName={studentName}
+        onPendingCountChange={setRecoveredPendingCount}
+        onBusyChange={busy => { isSubmittingRef.current = busy; setIsSubmittingWithAI(busy); }}
+        onSaved={record => finishConfirmedSubmission(record as Submission)} />
       {/* FLOATING ANTI-CHEAT WARNING TOAST */}
       {antiCheatToast && (
         <div className="fixed top-16 sm:top-5 left-1/2 -translate-x-1/2 z-50 max-w-md w-full px-4 animate-in slide-in-from-top-4 duration-200">
@@ -932,17 +907,17 @@ export const StudentExamPage: React.FC<StudentExamPageProps> = ({
         </div>
       )}
 
-      {/* AI EVALUATION OVERLAY DURING SUBMIT */}
+      {/* Wait for Firebase acknowledgement; no AI is called during submission. */}
       {isSubmittingWithAI && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm text-white p-6">
           <div className="bg-slate-900 p-8 rounded-3xl border border-indigo-500/50 shadow-2xl max-w-md w-full text-center space-y-4 animate-in zoom-in-95">
             <div className="w-14 h-14 rounded-2xl bg-indigo-600/30 text-indigo-400 flex items-center justify-center mx-auto border border-indigo-500/40 animate-pulse">
               <Sparkles className="w-8 h-8" />
             </div>
-            <h3 className="text-lg font-black">Đang chấm bài...</h3>
+            <h3 className="text-lg font-black">Đang nộp bài...</h3>
             <div className="flex items-center justify-center space-x-2 text-indigo-400 text-xs font-bold pt-1">
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Vui lòng chờ</span>
+              <span>Đang chờ Firebase xác nhận nhận bài</span>
             </div>
           </div>
         </div>
