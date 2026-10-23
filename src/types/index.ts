@@ -522,7 +522,8 @@ export interface StepGradingResponse {
   message?: string;
   requestFingerprint?: string;
   reusedResult?: boolean;
-  errorCode?: 'quota';
+  errorCode?: 'quota' | 'network' | 'http' | 'timeout' | 'gemini' | 'configuration' | 'invalid_response';
+  requestId?: string;
   // Handwriting strikeout detection metadata (Matsuda Strikeout Guard)
   hasCrossedOutDetection?: boolean;
   uncertainCorrectionDetected?: boolean;

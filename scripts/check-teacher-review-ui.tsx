@@ -142,3 +142,47 @@ for (const mode of ['mcq', 'mixed']) {
   await act(async()=>{renderer!.unmount();});
   console.log('PASS actual TeacherResults opens new '+mode+' result; teacher-only explicit AI after save preserves work and requires approval');
 }
+
+// Failure and retry exercise both actual buttons, retaining saved analysis/approved marks.
+latest={...structuredClone(original),submissionWorkflow:undefined,
+  answers:original.answers.map((a:any,i:number)=>({...a,aiScore:.5,aiFeedback:'Existing AI feedback '+i,
+    ...(i===0?{teacherScore:.75,teacherReviewed:true,teacherFeedback:'Approved comment',pointsEarned:.75,needsTeacherReview:false}: {})}))};
+const retained=structuredClone(latest);
+let attempts=0;
+env.ai=async()=>{attempts++;return {success:false,analysisSource:'unavailable',analysis:[],score:0,feedback:'Synthetic network interruption',errorCode:'network'};};
+await act(async()=>{renderer=create(React.createElement(TeacherResults,{assignments:[exam],classes:[],submissions:[await versionResult(latest)],initialAssignmentId:exam.id,initialSubmissionId:latest.id,onOpenShare:()=>{}}));await new Promise<void>(resolve=>setImmediate(resolve));});
+const aiForSecond=()=>renderer.root.find(node=>node.props.id==='teacher-review-q2').findAll(node=>node.type==='button'&&label(node)==='✨ Chấm bằng AI (Từng bước)')[0];
+const saveBeforeFailure=env.saveCalls;
+await act(async()=>{await aiForSecond().props.onClick();});
+assert.equal(env.saveCalls,saveBeforeFailure,'Failed single-question AI must not write a grade');
+assert.ok(JSON.stringify(renderer.toJSON()).includes('Synthetic network interruption'));
+assert.deepEqual(latest,retained);
+await act(async()=>{await buttons('AI chấm toàn bài')[0].props.onClick();});
+assert.ok(JSON.stringify(renderer.toJSON()).includes('1 câu chưa phân tích được'));
+assert.ok(!JSON.stringify(renderer.toJSON()).includes('AI đã phân tích toàn bài.'));
+assert.equal(attempts,2,'Whole AI skips the teacher-approved question');
+for(const key of ['stepAnalysis','essayImages','studentSolutionText','aiScore','aiFeedback'])assert.deepEqual(latest.answers[1][key],retained.answers[1][key]);
+assert.equal(latest.answers[0].teacherScore,.75);assert.equal(latest.answers[0].teacherFeedback,'Approved comment');
+env.ai=async()=>({success:true,analysisSource:'ai',score:.5,maxScore:1,isAllCorrect:false,needsTeacherReview:false,
+  feedback:'Synthetic retry success',firstErrorStep:1,firstErrorType:'calculation',firstErrorExplanation:'Synthetic error',
+  analysis:[{stepIndex:1,studentLatex:'x=2',status:'first_error',confidence:.99,comment:'Retry analysis'}]});
+env.deferNext=true;
+await act(async()=>{await aiForSecond().props.onClick();});
+assert.ok(JSON.stringify(renderer.toJSON()).includes('AI đã phân tích nhưng Firebase chưa xác nhận lưu'));
+assert.ok(!JSON.stringify(renderer.toJSON()).includes('AI đã chấm câu này:'));
+assert.equal(env.pending.answers[0].teacherScore,.75);
+assert.equal(env.pending.answers[1].teacherScore,undefined);
+assert.equal(env.pending.answers[1].needsTeacherReview,true,'AI never finalizes a legacy unapproved answer');
+await act(async()=>{renderer.unmount();});
+console.log('PASS actual single/whole AI failure preserves work, images, analysis and approved grades; pending Firebase save is not reported as success');
+
+await act(async()=>{renderer=create(React.createElement(TeacherResults,{assignments:[exam],classes:[],submissions:[await versionResult(latest)],initialAssignmentId:exam.id,initialSubmissionId:latest.id,onOpenShare:()=>{}}));await new Promise<void>(resolve=>setImmediate(resolve));});
+env.deferNext=true;
+await act(async()=>{await buttons('AI chấm toàn bài')[0].props.onClick();});
+assert.ok(JSON.stringify(renderer.toJSON()).includes('Firebase chưa xác nhận lưu kết quả AI'));
+assert.ok(!JSON.stringify(renderer.toJSON()).includes('AI đã phân tích toàn bài.'));
+assert.equal(env.pending.answers[0].teacherScore,.75);
+assert.equal(env.pending.answers[1].teacherScore,undefined);
+assert.equal(env.pending.answers[1].needsTeacherReview,true);
+await act(async()=>{renderer.unmount();});
+console.log('PASS whole AI valid analysis stays provisional; an unconfirmed Cloud save requires safe save retry instead of another AI call');

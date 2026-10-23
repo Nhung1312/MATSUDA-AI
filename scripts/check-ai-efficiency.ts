@@ -38,7 +38,7 @@ async function invokeGrading(body: any): Promise<{ status: number; value: any }>
   }
   providerCalls++;
   const result = await sdkHandler(request);
-  return new Response(JSON.stringify(result.status ? { error: { code: result.status, message: 'fixture quota exhausted', status: 'RESOURCE_EXHAUSTED' } }
+  return new Response(JSON.stringify(result.status ? { error: { code: result.status, message: result.status === 429 ? 'fixture quota exhausted' : 'fixture provider failure', status: result.status === 429 ? 'RESOURCE_EXHAUSTED' : 'INTERNAL' } }
     : { candidates: [{ content: { role: 'model', parts: [{ text: JSON.stringify(result.value) }] } }] }), {
       status: result.status || 200, headers: { 'content-type': 'application/json' }
     });
@@ -284,6 +284,53 @@ try {
     StorageService.saveSubmission = oldSave;
     FirestoreService.saveResult = oldCloudSave;
   }
+
+  sdkHandler = async () => ({ status: 500 });
+  const failedProvider = await invokeGrading(request);
+  assert.equal(failedProvider.status, 502);
+  assert.equal(failedProvider.value.success, false);
+  assert.equal(failedProvider.value.errorCode, 'gemini');
+  assert.ok(failedProvider.value.requestId);
+  sdkHandler = async () => ({ status: 503 });
+  const overloaded = await invokeGrading(request);
+  assert.equal(overloaded.status, 503);
+  assert.equal(overloaded.value.errorCode, 'gemini');
+  const fixtureKey = process.env.GEMINI_API_KEY;
+  try {
+    process.env.GEMINI_API_KEY = '';
+    const missingConfiguration = await invokeGrading(request);
+    assert.equal(missingConfiguration.status, 503);
+    assert.equal(missingConfiguration.value.errorCode, 'configuration');
+  } finally { process.env.GEMINI_API_KEY = fixtureKey; }
+  console.log('PASS: Gemini 500/503 and missing server key return distinct errors with correlation ID, never a successful AI analysis');
+
+  const oldTransport = (globalThis as any).__examOfflineFetch;
+  try {
+    for (const status of [500, 504]) {
+      (globalThis as any).__examOfflineFetch = async () => new Response('platform error', { status });
+      const failed = await stepGradingService.analyzeStepByStep({ ...request, questionId: 'http-' + status }, { force: true });
+      assert.equal(failed.success, false);
+      assert.equal(failed.errorCode, status === 504 ? 'timeout' : 'http');
+      assert.ok(failed.feedback.includes('HTTP ' + status));
+    }
+    let networkAttempts = 0;
+    (globalThis as any).__examOfflineFetch = async () => { networkAttempts++; throw new TypeError('Failed to fetch'); };
+    const interrupted = await stepGradingService.analyzeStepByStep({ ...request, questionId: 'network-interrupted' }, { force: true });
+    assert.equal(interrupted.errorCode, 'network');
+    assert.equal(interrupted.needsTeacherReview, true);
+    assert.equal(networkAttempts, 1, 'No automatic repeated POST after unknown delivery');
+    let calls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    (globalThis as any).__examOfflineFetch = async () => { calls++; await gate; return new Response(JSON.stringify(graded)); };
+    const pending = [1, 2].map(() => stepGradingService.analyzeStepByStep({ ...request, questionId: 'duplicate-active' }, { force: true }));
+    // Let both asynchronous SHA-256 operations enter the shared in-flight request.
+    await new Promise<void>(resolve => setTimeout(resolve, 25));
+    release();
+    assert.ok((await Promise.all(pending)).every(r => r.analysisSource === 'ai'));
+    assert.equal(calls, 1);
+    console.log('PASS: HTTP 500/504 and browser transport interruption are distinct; duplicate clicks share one POST');
+  } finally { (globalThis as any).__examOfflineFetch = oldTransport; }
 
   sdkHandler = async () => ({ status: 429 });
   before = providerCalls;
