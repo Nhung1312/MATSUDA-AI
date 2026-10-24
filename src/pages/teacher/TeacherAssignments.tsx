@@ -1025,7 +1025,7 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
           grade={aiSolvingAssignment.grade}
           topic={aiSolvingAssignment.topic}
           questions={aiSolvingAssignment.questions || []}
-          onApplyAnswers={async (updatedQuestions) => {
+          onApplyAnswers={async (updatedQuestions, options) => {
             const allVerified = updatedQuestions.length > 0 && updatedQuestions.every(q => q.verificationStatus === 'verified' && !q.needsReview);
             const hasSuspicious = updatedQuestions.some(q => q.verificationStatus === 'needs_review' || q.needsReview === true);
             const updatedAsg: Assignment = {
@@ -1040,7 +1040,8 @@ export const TeacherAssignments: React.FC<TeacherAssignmentsProps> = ({
             try { StorageService.saveAssignment(updatedAsg); }
             catch { /* Cloud has acknowledged; a full browser cache must not block review. */ }
             alert(`Đã cập nhật trạng thái thẩm định cho đề "${updatedAsg.title}"!\nTrạng thái: ${allVerified ? 'ĐÃ THẨM ĐỊNH 100% (Đủ điều kiện đề mẫu)' : 'CẦN XEM LẠI CÁC CÂU NGHI VẤN'}.`);
-            setAiSolvingAssignment(null);
+            // Bulk approval leaves the remaining suspect questions open for review.
+            setAiSolvingAssignment(options?.keepOpen ? updatedAsg : null);
             await onRefresh();
           }}
         />

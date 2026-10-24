@@ -120,7 +120,7 @@ await act(async()=>{renderer=create(React.createElement(SelfSolveWrapper));});
 await act(async()=>{button('AI Thẩm định').props.onClick();});await settle();
 await act(async()=>{await button('Thẩm định trắc nghiệm').props.onClick();});
 assert.deepEqual(unansweredUI,unreviewedSource);assert.equal(env.order.length,0,'AI analysis never saves an answer');
-assert.ok(label(renderer.root).includes('Hai lượt AI thống nhất – chờ giáo viên xác nhận'));
+assert.ok(label(renderer.root).includes('AI đối soát đạt – chưa được giáo viên xác nhận'));
 assert.ok(button('[Chấp nhận đáp án AI: B]'));
 assert.ok(!label(renderer.root.find(n=>n.props.id==='q_item_unanswered_mc_ui')).includes('ĐÃ THẨM ĐỊNH ĐẠT CHUẨN'));
 await act(async()=>{await button('Lưu kết quả thẩm định').props.onClick();await tick();});
@@ -159,6 +159,89 @@ await act(async()=>{await button('Lưu & Chuyển').props.onClick();});
 assert.equal(customSaved[0].correctAnswer,'B');assert.equal(customSaved[0].teacherVerified,true);assert.equal(disagreeUI.correctAnswer,undefined);
 await act(async()=>{renderer.unmount();});
 console.log('PASS: conflicting passes show both answers without choosing one; the teacher can explicitly enter a custom answer');
+
+// One bulk-review scenario: 17 unanswered questions, 15 qualified proposals, 2 suspects.
+const bulk17: any[] = Array.from({length:17},(_,i)=>({
+  id:`bulk_${i+1}`,order:i+1,type:i<10||i===15?'multiple_choice':'essay',points:0.5,
+  question:i===16?'Theo hình bên, tính góc A.':i<10||i===15?'Tính 1+1.':'a) Tính 1+1. b) Tính 1+2.',
+  options:i<10||i===15?['A','B','C','D'].map((id,j)=>({id,text:String(j+1)})):[],
+  verificationStatus:'needs_review',needsReview:true,teacherVerified:false
+}));
+const bulkOriginal=structuredClone(bulk17);
+const bulkAssignment={...original,id:'bulk_exam_17',title:'17 câu giả duyệt theo nhóm',questions:bulk17};
+env.saved=undefined;env.saves=[];env.order=[];env.failSave=true;
+let bulkAiCalls=0;
+env.verify=async(p:any)=>{bulkAiCalls++;return Promise.all(p.questions.map(async(q:any)=>{
+  const answer=q.type==='essay'?'a) 2; b) 3':'B';
+  const passed=q.order<=15;
+  return {questionId:q.id,order:q.order,proposedAnswer:passed?answer:'',pass1Answer:q.order===17?'':answer,
+    pass2Answer:q.order===17?'':'C',confidence:passed?'medium':'needs_review',needsReview:true,matchesCurrentAnswer:false,
+    reason:passed?'Hai lượt AI thống nhất – chờ giáo viên xác nhận.':q.order===16?'Hai lượt khác nhau: B và C.':'Thiếu hình nguồn, chưa đủ dữ kiện để giải.',
+    reviewIssue:q.order===17?'missing_data':'unverified',inputFingerprint:await verificationFingerprint(q,'7','Toán THCS'),
+    ...(passed?{pass2Answer:answer}:{})};
+}));};
+function BulkReviewWrapper(){
+  const [data,setData]=React.useState(bulkAssignment);
+  return React.createElement(TeacherAssignments,{assignments:[data],classes:[],submissions:[],onNavigate(){},onOpenShare(){},onTestAssignment(){},
+    onRefresh(){if(env.saved)setData(env.saved);}});
+}
+async function waitForBulk(predicate:()=>boolean){
+  for(let i=0;i<100&&!predicate();i++) await act(async()=>{await new Promise(r=>setTimeout(r,2));});
+  assert.ok(predicate(),'Bulk UI settles after asynchronous fingerprint checks');
+}
+await act(async()=>{renderer=create(React.createElement(BulkReviewWrapper));});
+await act(async()=>{button('AI Thẩm định').props.onClick();});await settle();
+await waitForBulk(()=>button('Thẩm định trắc nghiệm')?.props.disabled===false);
+await act(async()=>{await button('Thẩm định trắc nghiệm').props.onClick();});await settle();
+await waitForBulk(()=>bulkAiCalls===1&&button('Thẩm định tự luận')?.props.disabled===false);
+await act(async()=>{await button('Thẩm định tự luận').props.onClick();});await settle();
+await waitForBulk(()=>!!button('AI đối soát đạt (15)'));
+assert.equal(bulkAiCalls,2,'Mock each question family once; bulk approval must not call AI again');
+assert.ok(button('AI đối soát đạt (15)'));
+assert.ok(button('Chỉ hiện câu cần xem lại (2)'));
+const questionRows=()=>renderer.root.findAll(n=>typeof n.props.id==='string'&&n.props.id.startsWith('q_item_')).map(n=>n.props.id);
+assert.deepEqual(questionRows(),['q_item_bulk_16','q_item_bulk_17'],'Qualified proposals are excluded from individual suspect review');
+assert.ok(label(renderer.root).includes('Hai lượt khác nhau: B và C.')&&label(renderer.root).includes('Thiếu hình nguồn'));
+assert.deepEqual(bulk17,bulkOriginal);assert.equal(env.saves.length,0);
+await act(async()=>{button('Xác nhận lưu các đáp án AI đã đối soát đạt (15)').props.onClick();});
+const preview=renderer.root.find(n=>n.props['aria-label']==='Xem trước đáp án AI để xác nhận lưu');
+assert.equal(preview.findAllByType('li').length,15);
+assert.equal(preview.findAllByType('li').filter(n=>label(n).includes('Đáp án đề xuất: B')).length,10);
+assert.equal(preview.findAllByType('li').filter(n=>label(n).includes('a) 2; b) 3')).length,5);
+assert.equal(env.order.length,0,'Opening the preview is not confirmation and never writes');
+await act(async()=>{await button('Xác nhận và lưu 15 đáp án').props.onClick();});
+assert.equal(env.saves.length,0);assert.deepEqual(bulk17,bulkOriginal);
+assert.ok(button('Xác nhận và lưu 15 đáp án'),'Failed Cloud acknowledgement keeps the preview available for safe retry');
+assert.ok(label(renderer.root).includes('Đã được giáo viên xác nhận: 0'));
+env.failSave=false;
+const saveBeforeBulk=env.save;
+let acknowledgeBulk!:()=>void;
+let bulkWrites=0;
+env.save=async(a:any)=>{bulkWrites++;await new Promise<void>(r=>{acknowledgeBulk=r;});await saveBeforeBulk(a);};
+let bulkPending!:Promise<void>;
+await act(async()=>{const confirm=button('Xác nhận và lưu 15 đáp án');bulkPending=confirm.props.onClick();confirm.props.onClick();await tick();});
+assert.equal(bulkWrites,1,'Double confirmation shares the operation lock');
+assert.equal(env.saved,undefined);assert.equal(env.saves.length,0);assert.deepEqual(bulk17,bulkOriginal);
+assert.ok(label(renderer.root).includes('Đang chờ Cloud xác nhận...'));
+await act(async()=>{acknowledgeBulk();await bulkPending;});await settle();
+env.save=saveBeforeBulk;
+assert.equal(env.saves.length,1,'Only one successful Cloud save confirms the group');
+assert.equal(env.saved.questions.filter((q:any)=>q.teacherVerified===true).length,15);
+for(let i=0;i<15;i++){
+  assert.equal(env.saved.questions[i].correctAnswer,i<10?'B':'a) 2; b) 3');
+  assert.equal(env.saved.questions[i].verificationStatus,'verified');assert.equal(env.saved.questions[i].points,0.5);
+}
+assert.deepEqual(env.saved.questions.slice(15),bulkOriginal.slice(15),'Both suspect questions remain completely untouched by bulk save');
+assert.notEqual(env.saved.verificationStatus,'verified','Partial approval never verifies the whole exam');
+assert.ok(renderer.root.findAllByType(AiSolveExamModal).length,'Stay open to review the remaining suspects');
+assert.deepEqual(questionRows(),['q_item_bulk_16','q_item_bulk_17']);
+assert.ok(label(renderer.root).includes('Hai lượt khác nhau: B và C.')&&label(renderer.root).includes('Thiếu hình nguồn'),'Keep both suspect analyses visible after partial Cloud save');
+assert.ok(label(renderer.root).includes('Đã được giáo viên xác nhận: 15'));
+assert.equal(bulkAiCalls,2);assert.deepEqual(bulk17,bulkOriginal);
+await act(async()=>{button('Tất cả (17)').props.onClick();});
+assert.ok(label(renderer.root.find(n=>n.props.id==='q_item_bulk_1')).includes('Đã được giáo viên xác nhận'));
+await act(async()=>{renderer.unmount();});
+console.log('PASS: 17 unanswered questions -> 15 AI-qualified proposals previewed and Cloud-confirmed in one group; 2 suspects untouched and still open; no teacherVerified before acknowledgement, duplicate writes or extra AI calls');
 
 // The old list can contain 17 needs_review flags; display causes without asserting 17 math errors.
 const legacy17 = Array.from({ length: 17 }, (_, i) => ({ ...questions[1], id: 'legacy_'+i, order: i+1,
