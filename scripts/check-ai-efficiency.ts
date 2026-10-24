@@ -155,12 +155,18 @@ try {
   assert.equal(providerCalls - before, 1);
   assert.equal(short[0].needsReview, false);
   console.log('PASS: short numeric answers retain their question type and equivalent decimal formatting does not waste pass 2');
+  sdkHandler = async request => {
+    const prompt = request.contents[0].parts[0].text;
+    const id = [...prompt.matchAll(/\[Mã:\s*([^\]]+)\]/g)][0][1];
+    return {value:[prompt.includes('chuyên gia độc lập') ? {questionId:id,pass2Answer:'3',confidence:'high',reason:'Thay x=3 vào x+2=5 cho kết quả đúng.'}
+      : {questionId:id,proposedAnswer:'3',matchesCurrentAnswer:false,confidence:'high',needsReview:true,reason:'Giải x+2=5 được x=3.'}]};
+  };
   before = providerCalls;
   const recoveredEssay = await aiService.verifyExamQuestions({ questions: [{ ...questions[0], id: 'legacy_eff_essay', type: 'multiple_choice',
     options: ['A', 'B', 'C', 'D'].map(id => ({ id, text: `Phương án ${id}` })),
     question: 'Giải phương trình x + 2 = 5.', correctAnswer: 'Xem lời giải chi tiết', explanation: 'x = 5 - 2 = 3 (0,5đ).' }] });
-  assert.equal(providerCalls - before, 1);
-  assert.equal(recoveredEssay[0].needsReview, false);
+  assert.equal(providerCalls - before, 2);
+  assert.equal(recoveredEssay[0].needsReview, true);
   assert.equal(recoveredEssay[0].proposedAnswer, '3');
   console.log('PASS: recovered legacy essays use essay verification instead of rejecting placeholder MC choices');
   assert.equal(getEssayGradingReference({ correctAnswer: '', rubric: 'Ta có 3 điểm A, B, C thẳng hàng.', explanation: '' }).hasExplicitRubric, false);

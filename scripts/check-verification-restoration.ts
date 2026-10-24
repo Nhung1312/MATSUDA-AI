@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { aiService } from '../src/services/aiService';
-import { hasTrustedEssaySecondPassAgreement } from '../src/services/verificationOptimizer';
+import { hasTrustedEssaySecondPassAgreement, verificationFingerprint } from '../src/services/verificationOptimizer';
 import { buildVerificationParts } from '../server/verificationPrompts';
 import { invokeVerification } from './verification-offline-route';
 import type { Question } from '../src/types';
+import { fingerprintAIInput, writeAIResult, readAIResult } from '../src/utils/aiResultCache';
+import { isEssayQuestion } from '../src/utils/questionUtils';
 
 assert.ok(String(globalThis.fetch).includes('__examOfflineFetch'));
 const originalKey = process.env.GEMINI_API_KEY;
@@ -65,10 +67,10 @@ try {
   console.log('PASS: independent prompt has no source answers; symbol case, superscripts, signs and missing subparts remain guarded');
 
   let before = calls;
-  const noKey = await aiService.verifyExamQuestions({ questions: [essay('no_reference', { correctAnswer: '', explanation: '', rubric: '' })] });
-  const noFigure = await aiService.verifyExamQuestions({ questions: [essay('no_figure', { question: 'Quan sát hình bên, tính góc A.' })] });
-  assert.equal(noKey[0].reviewIssue, 'missing_answer'); assert.equal(noFigure[0].reviewIssue, 'missing_data');
-  assert.equal(calls, before); assert.equal(noKey[0].proposedAnswer, '');
+  const noFigure = await aiService.verifyExamQuestions({ questions: [essay('no_figure', { question: 'Quan sát hình bên, tính góc A.', correctAnswer: '', explanation: '', rubric: '' })] });
+  assert.equal(noFigure[0].reviewIssue, 'missing_data'); assert.equal(calls, before);
+  const blank = await aiService.verifyExamQuestions({ questions: [essay('blank_question', { question: '', correctAnswer: '', explanation: '' })] });
+  assert.equal(blank[0].reviewIssue, 'missing_data'); assert.equal(calls, before);
   provider = async body => {
     const independent = body.contents[0].parts[0].text.includes('chuyên gia độc lập');
     return [independent ? second('mismatch', 'x = 4') : { ...first('mismatch', 'x = 4'), matchesCurrentAnswer: false }];
@@ -78,7 +80,100 @@ try {
   provider = async () => [{ questionId: 'different-id', proposedAnswer: 'x = 3' }];
   const unknown = await aiService.verifyExamQuestions({ questions: [essay('unknown')] });
   assert.equal(unknown[0].reviewIssue, 'unverified');
-  console.log('PASS: answer mismatch, missing answer, missing data and unverified AI are distinct; no source answer changed');
+  console.log('PASS: source mismatch, missing data and unverified AI remain distinct; no source answer changed');
+
+  // Unanswered questions have their own cache revision, not a global invalidation.
+  const mc = (id: string, extra: Partial<Question> = {}): Question => ({ id, order: 1, type: 'multiple_choice',
+    question: `Tính 1 + 1. Mã câu giả: ${id}`, options: ['A','B','C','D'].map((id, i) => ({ id, text: String(i+1) })), points: 0.5, ...extra });
+  const legacyFingerprint = (q: Question) => fingerprintAIInput({ engine: 'verification-v5-server-restored-20261024', model: 'gemini-3.8-flash', grade: '7', topic: 'Toán THCS',
+    question: q.question, type: isEssayQuestion(q) ? 'essay' : q.type, options: isEssayQuestion(q) ? [] : q.options, correctAnswer: q.correctAnswer,
+    explanation: q.explanation || '', rubric: q.rubric || '', points: q.points, imageUrl: q.imageUrl || '' });
+  const noAnswer = mc('no_answer_B');
+  const oldFingerprint = await legacyFingerprint(noAnswer);
+  writeAIResult('verification', oldFingerprint, { questionId: noAnswer.id, proposedAnswer: '', needsReview: true, reviewIssue: 'missing_answer' });
+  assert.notEqual(await verificationFingerprint(noAnswer), oldFingerprint);
+  const answered = mc('existing_answer_cache', { correctAnswer: 'B' });
+  const oldAnsweredFingerprint = await legacyFingerprint(answered);
+  assert.equal(await verificationFingerprint(answered), oldAnsweredFingerprint, 'Answered questions keep exactly their PR62 cache keys');
+  writeAIResult('verification', oldAnsweredFingerprint, { questionId: answered.id, order: 1, currentAnswer: 'B', proposedAnswer: 'B', matchesCurrentAnswer: true, confidence: 'high', needsReview: false, reason: 'Existing cached source agreement' });
+  const selfSolveProvider = (p1: string, p2 = p1, firstOverrides: any = {}, secondOverrides: any = {}) => async (body: any) => {
+    const prompt = body.contents[0].parts[0].text, independent = prompt.includes('chuyên gia độc lập');
+    if (independent) assert.ok(!prompt.includes('SOURCE_CANARY') && !prompt.includes('FIRST_REASON_CANARY') && !prompt.includes('[Đáp án hiện tại]'));
+    const ids = [...new Set(Array.from(prompt.matchAll(/\[Mã:\s*([^\]]+)\]/g), (m: any) => m[1]))] as string[];
+    return ids.map(id => independent ? { questionId: id, pass2Answer: p2, confidence: 'high', reason: 'Giải lại độc lập và thử ngược thỏa điều kiện.', ...secondOverrides }
+      : { questionId: id, proposedAnswer: p1, matchesCurrentAnswer: false, confidence: 'high', needsReview: true, reason: 'FIRST_REASON_CANARY: Biến đổi và thay lại vào giả thiết.', ...firstOverrides });
+  };
+  provider = selfSolveProvider('B'); before = calls;
+  const untouched = structuredClone(noAnswer);
+  const noKey = await aiService.verifyExamQuestions({ questions: [noAnswer] });
+  assert.equal(calls-before, 2, 'No answer requires both passes even with a confident first pass');
+  assert.equal(noKey[0].proposedAnswer, 'B'); assert.equal(noKey[0].needsReview, true); assert.equal(noKey[0].matchesCurrentAnswer, false);
+  assert.equal(noKey[0].confidence, 'medium'); assert.match(noKey[0].reason, /Hai lượt AI thống nhất – chờ giáo viên xác nhận/);
+  assert.deepEqual(noAnswer, untouched); assert.equal(noAnswer.correctAnswer, undefined);
+  assert.equal((readAIResult<any>('verification', oldFingerprint)).reviewIssue, 'missing_answer', 'Old cache is left intact');
+  before = calls;
+  await aiService.verifyExamQuestions({ questions: [answered] });
+  await aiService.verifyExamQuestions({ questions: [noAnswer] });
+  assert.equal(calls, before, 'Existing answered cache and the completed self-solve are both reused');
+  console.log('PASS: unanswered MC proposes B after two passes; never A/verified; only unanswered cache is refreshed');
+
+  const multipartAnswer = 'a) x=3; b) m=2, M=5; c) x>0';
+  const unansweredEssay = essay('unanswered_parts', { question: 'a) Tìm x. b) Tìm m và M. c) Nêu điều kiện của x.', correctAnswer: '', explanation: 'SOURCE_CANARY: nguồn chỉ có barem', rubric: 'a) 0,1 điểm; b) 0,1 điểm; c) 0,1 điểm.' });
+  provider = selfSolveProvider(multipartAnswer); before = calls;
+  const solvedEssay = await aiService.verifyExamQuestions({ questions: [unansweredEssay] });
+  assert.equal(calls-before, 2, 'A source solution/rubric without an explicit answer still needs two passes');
+  assert.equal(solvedEssay[0].proposedAnswer, multipartAnswer); assert.equal(solvedEssay[0].needsReview, true);
+  assert.equal(unansweredEssay.correctAnswer, '');
+  const sourcePrompt = buildVerificationParts([unansweredEssay], '7', 'Math', 'source')[0].text;
+  assert.ok(sourcePrompt.includes('TỰ GIẢI') && sourcePrompt.includes('matchesCurrentAnswer=false'));
+  const independentParts = buildVerificationParts([{...unansweredEssay, correctAnswer:'ORIGINAL_ANSWER_CANARY', explanation:'SOURCE_CANARY', rubric:'SOURCE_CANARY'}], '7', 'Math', 'independent');
+  assert.ok(!JSON.stringify(independentParts).includes('CANARY'), 'Independent model receives neither original source nor first-pass solution');
+  console.log('PASS: unanswered multipart essay keeps a/b/c, variable case and conditions; independent model receives no source/first result');
+
+  for (const [id, p1, p2, firstFlags, secondFlags] of [
+    ['different', 'B', 'C', {}, {}],
+    ['invalid_option', 'Z', 'Z', {}, {}],
+    ['no_basis', 'B', 'B', { reason: '' }, {}],
+    ['missing_basis', 'B', 'B', {}, { reason: 'Thiếu dữ kiện để kết luận.' }],
+    ['uncertain_second', 'B', 'B', {}, { confidence: 'needs_review' }]
+  ] as const) {
+    provider = selfSolveProvider(p1, p2, firstFlags, secondFlags);
+    const result = (await aiService.verifyExamQuestions({ questions: [mc('self_'+id)] }))[0];
+    assert.equal(result.proposedAnswer, '', 'No single answer is chosen without a grounded agreement: '+id);
+    assert.equal(result.needsReview, true); assert.equal(result.pass1Answer, p1); assert.equal(result.pass2Answer, p2);
+  }
+  for (const [id, p1, p2] of [
+    ['missing_part', 'a) x=3; b) m=2', 'a) x=3; b) m=2'],
+    ['variable_case', 'a) m=2; b) M=3', 'a) M=2; b) m=3'],
+    ['conditions', 'a) x=3; b) x>0', 'a) x=3; b) x>=0'],
+    ['superscript', 'a) x²=3; b) m=2', 'a) x2=3; b) m=2']
+  ]) {
+    provider = selfSolveProvider(p1,p2);
+    const q = essay('strict_self_'+id, { question: id==='missing_part' ? 'a) Tìm x. b) Tìm m. c) Kiểm tra điều kiện.' : 'a) Giải. b) Kiểm tra điều kiện.', correctAnswer:'',explanation:'' });
+    const result = (await aiService.verifyExamQuestions({questions:[q]}))[0];
+    assert.equal(result.proposedAnswer,''); assert.equal(result.needsReview,true);
+  }
+  provider = selfSolveProvider('a. x=3; b. m=2');
+  const dottedQuestion=essay('dotted_self',{question:'a. Tìm x. b. Tìm m. c. Nêu điều kiện.',correctAnswer:'',explanation:''});
+  assert.equal((await aiService.verifyExamQuestions({questions:[dottedQuestion]}))[0].proposedAnswer,'','Dotted multipart labels also require every subpart');
+  provider = selfSolveProvider('60°');
+  const namedLine=essay('named_line_self',{question:'Tính góc tạo bởi đường thẳng a. Đề cho góc bằng 60°.',correctAnswer:'',explanation:''});
+  assert.equal((await aiService.verifyExamQuestions({questions:[namedLine]}))[0].proposedAnswer,'60°','A named line followed by a full stop must not be invented as a missing subpart');
+  console.log('PASS: disagreement/missing basis/partial solution/condition or symbol differences never auto-select an answer');
+
+  provider = selfSolveProvider('B'); before = calls;
+  await Promise.all([aiService.verifyExamQuestions({questions:[mc('duplicate_self_click')]}),aiService.verifyExamQuestions({questions:[mc('duplicate_self_click')]})]);
+  assert.equal(calls-before,2);
+  const invalid = mc('invalid_self_options', { options:[{id:'A',text:''},{id:'B',text:''}] });
+  before=calls;const invalidResult=await aiService.verifyExamQuestions({questions:[invalid]});
+  assert.equal(invalidResult[0].reviewIssue,'missing_data');assert.equal(calls,before);
+  provider = async body => { if (body.contents[0].parts[0].text.includes('chuyên gia độc lập')) throw Object.assign(Error('Synthetic second-pass outage'),{status:500});return selfSolveProvider('B')(body); };
+  const retryQuestion=mc('retry_self');
+  await assert.rejects(()=>aiService.verifyExamQuestions({questions:[retryQuestion]}),(e:any)=>e.status===502);
+  provider=selfSolveProvider('B');before=calls;
+  const retriedSelf=await aiService.verifyExamQuestions({questions:[retryQuestion]});
+  assert.equal(calls-before,1);assert.equal(retriedSelf[0].proposedAnswer,'B');assert.equal(retriedSelf[0].needsReview,true);
+  console.log('PASS: duplicate self-solve clicks share two calls; missing data stays blocked; failed second pass is not success and retry reuses pass one');
 
   provider = fixture;
   const seventeen = Array.from({ length: 17 }, (_, i) => essay('synthetic17_'+i, { order: i+1 }));
@@ -122,7 +217,7 @@ try {
   await assert.rejects(() => aiService.verifyExamQuestions({ questions: [essay('duplicate'), essay('duplicate')] }), /ID câu hỏi bị trùng/);
   provider = async () => { throw Object.assign(new Error('Synthetic quota'), { status: 429 }); };
   before = calls;
-  await assert.rejects(() => aiService.verifyExamQuestions({ questions: [essay('quota')] }), (e: any) => e.status === 429);
+  await assert.rejects(() => aiService.verifyExamQuestions({ questions: [mc('quota_self_solve')] }), (e: any) => e.status === 429);
   await assert.rejects(() => aiService.verifyExamQuestions({ questions: [essay('quota_again')] }), (e: any) => e.status === 429);
   assert.equal(calls-before, 1, 'Quota stops without SDK retries or another click starting a call');
   console.log('PASS: configuration/invalid requests/duplicates/500/429 remain failures; safe retry skips first pass');

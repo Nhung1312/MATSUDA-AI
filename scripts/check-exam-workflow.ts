@@ -126,14 +126,19 @@ try {
   generateFixture = async (request: any) => {
     calls++;
     const prompt = request.contents[0].text;
-    assert.ok(prompt.includes('m = 2; M = 5.'), 'Full essay solution must reach verifier, including last subpart');
-    return { text: JSON.stringify([{ questionId: essay.id, proposedAnswer: 'a) x = 3; b) m = 2; M = 5', matchesCurrentAnswer: true, confidence: 'high', needsReview: false, reason: 'Đủ các ý.' }]) };
+    if (calls === 1) {
+      assert.ok(prompt.includes('m = 2; M = 5.'), 'Full source solution reaches pass one, including last subpart');
+      return { text: JSON.stringify([{ questionId: essay.id, proposedAnswer: 'a) x = 3; b) m = 2; M = 5', matchesCurrentAnswer: false, confidence: 'high', needsReview: true, reason: 'Giải đủ các ý và kiểm tra điều kiện.' }]) };
+    }
+    assert.ok(!prompt.includes('[Lời giải hiện tại]'), 'Pass two must not receive source solution');
+    return { text: JSON.stringify([{ questionId: essay.id, pass2Answer: 'a) x = 3; b) m = 2; M = 5', confidence: 'high', reason: 'Giải lại độc lập và thử ngược đủ các ý.' }]) };
   };
   const verified = await aiService.verifyExamQuestions({ questions: [essay], force: true });
-  assert.equal(calls, 1);
-  assert.equal(verified[0].needsReview, false);
+  assert.equal(calls, 2);
+  assert.equal(verified[0].needsReview, true);
+  assert.equal(essay.correctAnswer, '');
   assert.ok(verified[0].proposedAnswer.includes('m = 2; M = 5'));
-  console.log('PASS: essay verification uses full source solution, preserves symbol case, calls once when consistent');
+  console.log('PASS: essay with only a source solution gets two independent passes, preserves symbol case and waits for teacher approval');
 
   calls = 0;
   generateFixture = async (request: any) => {
