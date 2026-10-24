@@ -25,6 +25,8 @@ jobs:
       - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run build
       - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: node scripts/check-verification-esm.mjs
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run check:result-safety
       - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run check:review-save

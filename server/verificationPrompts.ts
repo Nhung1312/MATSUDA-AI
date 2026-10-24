@@ -1,5 +1,5 @@
 import type { Question } from '../src/types';
-import { isEssayQuestion, getEssayGradingReference } from '../src/utils/questionUtils';
+import { isEssayQuestion, getEssayGradingReference } from '../src/utils/questionUtils.js';
 
 export const VERIFICATION_MODEL = 'gemini-3.8-flash';
 
