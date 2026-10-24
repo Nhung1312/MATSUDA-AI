@@ -103,6 +103,63 @@ assert.equal(env.saved.questions[1].points, 1.7);
 await act(async () => { renderer.unmount(); });
 console.log('PASS: only explicit teacher acceptance changes an answer; save and reopen retain it and all point values');
 
+// A blank source answer stays blank through AI analysis, teacher choice and failed Cloud acknowledgement.
+const unansweredUI: any = { id:'unanswered_mc_ui', order:1, type:'multiple_choice', question:'Tính 1+1.', points:0.5,
+  options:['A','B','C','D'].map((id,i)=>({id,text:String(i+1)})) };
+const unreviewedSource=structuredClone(unansweredUI);
+const unansweredAssignment={...original,id:'unanswered_exam_ui',title:'Đề giả chưa có đáp án',questions:[unansweredUI]};
+env.saved=undefined;env.failSave=false;env.order=[];
+env.verify=async (p:any)=>[{questionId:p.questions[0].id, order:1, proposedAnswer:'B',pass1Answer:'B',pass2Answer:'B',confidence:'medium',
+  needsReview:true,matchesCurrentAnswer:false,reason:'Hai lượt AI thống nhất – chờ giáo viên xác nhận.',reviewIssue:'unverified',inputFingerprint:await verificationFingerprint(p.questions[0],'7','Toán THCS')}];
+function SelfSolveWrapper() {
+  const [data,setData]=React.useState(unansweredAssignment);
+  return React.createElement(TeacherAssignments,{assignments:[data],classes:[],submissions:[],onNavigate(){},onOpenShare(){},onTestAssignment(){},
+    onRefresh(){if(env.saved)setData(env.saved);}});
+}
+await act(async()=>{renderer=create(React.createElement(SelfSolveWrapper));});
+await act(async()=>{button('AI Thẩm định').props.onClick();});await settle();
+await act(async()=>{await button('Thẩm định trắc nghiệm').props.onClick();});
+assert.deepEqual(unansweredUI,unreviewedSource);assert.equal(env.order.length,0,'AI analysis never saves an answer');
+assert.ok(label(renderer.root).includes('Hai lượt AI thống nhất – chờ giáo viên xác nhận'));
+assert.ok(button('[Chấp nhận đáp án AI: B]'));
+assert.ok(!label(renderer.root.find(n=>n.props.id==='q_item_unanswered_mc_ui')).includes('ĐÃ THẨM ĐỊNH ĐẠT CHUẨN'));
+await act(async()=>{await button('Lưu kết quả thẩm định').props.onClick();await tick();});
+assert.equal(env.saved.questions[0].correctAnswer,undefined,'Saving verification without approval keeps a blank source answer');
+assert.equal(env.saved.questions[0].teacherVerified,false);assert.equal(env.saved.questions[0].verificationStatus,'needs_review');
+await act(async()=>{button('Duyệt câu nghi vấn').props.onClick();});await settle();
+await act(async()=>{button('[Chấp nhận đáp án AI: B]').props.onClick();});
+assert.ok(label(renderer.root).includes('Giáo viên đã chọn – chờ lưu thành công'));
+assert.equal(env.saved.questions[0].correctAnswer,undefined,'Choosing a proposal alone does not save it');
+env.failSave=true;
+await act(async()=>{await button('Lưu & Chuyển').props.onClick();});
+assert.equal(env.saved.questions[0].correctAnswer,undefined);
+assert.ok(renderer.root.findAllByType(AiSolveExamModal).length,'Cloud failure keeps the pending teacher decision visible');
+env.failSave=false;
+await act(async()=>{await button('Lưu & Chuyển').props.onClick();await tick();});
+assert.equal(env.saved.questions[0].correctAnswer,'B');assert.equal(env.saved.questions[0].teacherVerified,true);
+assert.equal(env.saved.questions[0].verificationStatus,'verified');assert.equal(env.saved.questions[0].points,0.5);
+await act(async()=>{renderer.root.find(n=>n.type==='button'&&n.props.title==='Đề đã thẩm định - Bấm để xem lại chi tiết').props.onClick();});await settle();
+assert.ok(label(renderer.root).includes('Đang chọn: B'));
+assert.deepEqual(unansweredUI,unreviewedSource);
+await act(async()=>{renderer.unmount();});
+console.log('PASS: unanswered B proposal remains pending; no default A or auto-save; only teacher approval plus Cloud acknowledgement changes the key; reopen retains B');
+
+const disagreeUI={...unansweredUI,id:'unanswered_disagreement_ui'};
+let customSaved:any;
+env.verify=async()=>[{questionId:disagreeUI.id,order:1,proposedAnswer:'',pass1Answer:'B',pass2Answer:'C',needsReview:true,matchesCurrentAnswer:false,
+  confidence:'needs_review',reason:'Hai lượt AI chưa thống nhất – cần giáo viên xem lại.',reviewIssue:'unverified'}];
+await act(async()=>{renderer=create(React.createElement(AiSolveExamModal,{isOpen:true,onClose(){},questions:[disagreeUI],examTitle:'Đề giả hai lượt khác nhau',onApplyAnswers(q:any){customSaved=q;}}));});await settle();
+await act(async()=>{await button('Thẩm định trắc nghiệm').props.onClick();});
+assert.ok(label(renderer.root).includes('Hai lượt chưa thống nhất'));
+assert.equal(renderer.root.findAll(n=>n.type==='button'&&label(n).startsWith('[Chấp nhận đáp án AI:')).length,0);
+assert.ok(label(renderer.root).includes('AI Lượt 1')&&label(renderer.root).includes('AI Lượt 2'));
+assert.equal(disagreeUI.correctAnswer,undefined);
+await act(async()=>{renderer.root.findAll(n=>n.type==='button'&&label(n)==='B')[0].props.onClick();});
+await act(async()=>{await button('Lưu & Chuyển').props.onClick();});
+assert.equal(customSaved[0].correctAnswer,'B');assert.equal(customSaved[0].teacherVerified,true);assert.equal(disagreeUI.correctAnswer,undefined);
+await act(async()=>{renderer.unmount();});
+console.log('PASS: conflicting passes show both answers without choosing one; the teacher can explicitly enter a custom answer');
+
 // The old list can contain 17 needs_review flags; display causes without asserting 17 math errors.
 const legacy17 = Array.from({ length: 17 }, (_, i) => ({ ...questions[1], id: 'legacy_'+i, order: i+1,
   correctAnswer: i<6 ? '' : questions[1].correctAnswer, explanation: i<6 ? '' : questions[1].explanation, rubric: i<6 ? '' : questions[1].rubric,

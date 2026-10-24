@@ -1,11 +1,13 @@
 import type { Question } from '../src/types';
-import { isEssayQuestion } from '../src/utils/questionUtils';
+import { isEssayQuestion, getEssayGradingReference } from '../src/utils/questionUtils';
 
 export const VERIFICATION_MODEL = 'gemini-3.8-flash';
 
 /** Same two prompts; independent pass contains no source answers or first-pass result. */
 export function buildVerificationParts(questions: Question[], grade: string, topic: string, phase: 'source' | 'independent'): any[] {
   const toRead = questions, suspects = questions;
+  const unanswered = questions.filter(q => isEssayQuestion(q) ? !getEssayGradingReference(q).correctAnswer.trim() : !q.correctAnswer?.trim());
+  const selfSolve = unanswered.length && phase === 'source' ? `\nCác câu chưa có đáp án riêng [${unanswered.map(q => q.id).join(', ')}]: phải TỰ GIẢI từ đề và hình nguồn, không dừng chỉ vì thiếu đáp án. Trả proposedAnswer là kết luận đầy đủ theo từng ý a), b), c), giữ điều kiện và ký hiệu; đặt lập luận/thử ngược trong reason, không chỉ ghi chưa có đáp án. matchesCurrentAnswer=false và needsReview=true vì còn chờ giáo viên; confidence chỉ phản ánh căn cứ lời giải (high khi đủ, needs_review nếu thiếu dữ kiện/ảnh hoặc chưa giải được). Không mặc định A, không tự công bố đã thẩm định.` : '';
   const describe = (q: Question, includeSource: boolean) => `[Mã: ${q.id}] (Câu ${q.order})\nLoại: ${isEssayQuestion(q) ? 'TỰ LUẬN' : q.type === 'short_answer' ? 'TRẢ LỜI NGẮN' : q.type === 'true_false' ? 'ĐÚNG/SAI' : 'TRẮC NGHIỆM'}\nĐề bài: ${q.question}\n${isEssayQuestion(q) ? '(Tự luận)' : (q.options || []).map(o => `${o.id}. ${o.text}`).join(' | ')}${includeSource ? `\n[Đáp án hiện tại]: ${q.correctAnswer || 'Chưa có'}\n[Điểm của câu]: ${q.points}\n[Lời giải hiện tại]: ${q.explanation || ''}\n[Biểu điểm nguồn]: ${q.rubric && q.rubric !== q.explanation ? q.rubric : ''}` : ''}`;
   const prompt = phase === 'source' ? `Bạn là chuyên gia thẩm định Toán THCS. Khối ${grade}, chủ đề ${topic}.
 Giải độc lập từng câu trước rồi so với đáp án/lời giải/biểu điểm nguồn. Kiểm tra đủ mọi ý, điều kiện, phương án và điểm; không tự sửa dữ liệu nguồn.
@@ -13,7 +15,7 @@ Tự luận: kết luận/đáp số theo từng ý, giữ nguyên chữ hoa/th�
 Trắc nghiệm: kiểm tra phương án đúng tồn tại và duy nhất, không mặc định A. Trả lời ngắn: trả kết quả số/biểu thức, giữ ký hiệu toán. Đúng/sai: kiểm tra đủ các mệnh đề, giữ định dạng đáp án nguồn. Thiếu dữ kiện, ảnh chưa rõ, lời giải mâu thuẫn hoặc bất kỳ nghi vấn nào thì needsReview=true.
 Geometry Vision Guard: chỉ dùng dữ kiện đề, ký hiệu rõ hoặc chứng minh hợp lệ; không đoán vuông góc/song song/bằng nhau từ hình trông giống.
 Mỗi kết quả phải có đúng questionId. Chỉ matchesCurrentAnswer=true, confidence="high", needsReview=false khi toàn bộ câu và nguồn đúng. Nhận xét ngắn; giữ đủ kết luận các ý.
-${toRead.map(q => describe(q, true)).join('\n\n')}
+${toRead.map(q => describe(q, true)).join('\n\n')}${selfSolve}
 Trả DUY NHẤT JSON Array: [{"questionId":"mã","proposedAnswer":"đáp án/kết luận","matchesCurrentAnswer":true,"confidence":"high","needsReview":false,"reason":"căn cứ ngắn"}].` : `Bạn là chuyên gia độc lập thẩm định Toán THCS, khối ${grade}. Giải từng câu dưới đây từ đề và hình nguồn, không biết kết quả lượt trước.
 Giải độc lập đầy đủ các ý của câu tự luận; kết luận theo từng ý, giữ nguyên chữ hoa/thường, không trả A/B/C/D cho tự luận. Trắc nghiệm: thử ngược hoặc giải bằng cách khác, kiểm tra đáp án tồn tại và duy nhất. Trả lời ngắn: kết quả số/biểu thức. Đúng/sai: kiểm tra từng mệnh đề.
 Geometry Vision Guard: chỉ dùng giả thiết, ký hiệu rõ và chứng minh; không suy ra quan hệ chỉ vì hình trông giống. Thiếu điều kiện/ảnh mờ thì confidence="needs_review".

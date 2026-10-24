@@ -1,5 +1,4 @@
 import { requestExamVerification } from './examVerificationTransport';
-import { hasVerificationReference } from '../utils/verificationUtils';
 import type { Question } from '../types';
 import type { QuestionVerificationResult } from './aiService';
 import { isEssayQuestion, getEssayGradingReference } from '../utils/questionUtils';
@@ -17,8 +16,33 @@ const MODEL = 'gemini-3.8-flash';
 const ENGINE = 'verification-v5-server-restored-20261024';
 const inFlight = new Map<string, Promise<QuestionVerificationResult[]>>();
 
+/** A source solution/rubric may exist without an explicit answer to approve. */
+export function requiresAnswerProposal(q: Question): boolean {
+  return isEssayQuestion(q) ? !getEssayGradingReference(q).correctAnswer.trim() : !q.correctAnswer?.trim();
+}
+
+/** Agreement is a proposal, never a proof or teacher approval. */
+function hasIndependentProposalAgreement(q: Question, first: any, second: any): boolean {
+  const p1 = normalizeProposed(q, first?.proposedAnswer), p2 = normalizeProposed(q, second?.pass2Answer);
+  const key = (value: string) => value.normalize('NFC').replace(/[−–]/g, '-').replace(/[\s\u00a0]+/g, '').replace(/[.;]+$/g, '');
+  if (!p1 || !p2 || key(p1) !== key(p2) || first?.confidence !== 'high' || second?.confidence !== 'high') return false;
+  const reasons = [first?.reason, second?.reason];
+  if (reasons.some(r => typeof r !== 'string' || !r.trim()
+    || /thiếu\s+(?:dữ kiện|điều kiện|giả thiết|hình)|không đủ\s+(?:dữ kiện|điều kiện|căn cứ)|chưa\s+(?:đủ|rõ|xác minh)|ảnh\s+(?:mờ|không rõ)|mâu thuẫn|không\s+(?:xác định|đọc được|thể (?:giải|xác minh))|missing|insufficient|ambiguous|uncertain|cannot (?:solve|verify)/i.test(r))) return false;
+  if (q.type === 'multiple_choice' && !isEssayQuestion(q) && !q.options?.some(o => o.id === p1 && o.text?.trim())) return false;
+  const parts = (text: string) => {
+    const labels = new Set(Array.from(text.matchAll(/(?:^|[\s;])([a-h])\)\s*/gi), m => m[1].toLowerCase()));
+    const dotted = new Set(Array.from(text.matchAll(/(?:^|[\s;])([a-h])\.\s+/gi), m => m[1].toLowerCase()));
+    // A sentence ending with a variable such as "đường thẳng a." is not a subpart.
+    if (dotted.size > 1) for (const label of dotted) labels.add(label);
+    return labels;
+  };
+  const expected = parts(q.question || '');
+  return [p1, p2].every(answer => [...expected].every(part => parts(answer).has(part)));
+}
+
 export async function verificationFingerprint(q: Question, grade = '7', topic = 'Toán THCS'): Promise<string | null> {
-  return fingerprintAIInput({ engine: ENGINE, model: MODEL, grade, topic, question: q.question,
+  return fingerprintAIInput({ engine: requiresAnswerProposal(q) ? `${ENGINE}-self-solve-v1` : ENGINE, model: MODEL, grade, topic, question: q.question,
     type: isEssayQuestion(q) ? 'essay' : q.type, options: isEssayQuestion(q) ? [] : q.options, correctAnswer: q.correctAnswer,
     explanation: q.explanation || '', rubric: q.rubric || '', points: q.points, imageUrl: q.imageUrl || '' });
 }
@@ -132,7 +156,6 @@ export async function verifyWithReuse(params: VerificationParams, _legacyApiKey?
       const images = new Map<string, { mimeType: string; data: string }>();
       const valid: Question[] = [];
       for (const q of batch) {
-        if (!hasVerificationReference(q)) { finish(q, resultFor(q, 'Chưa có đáp án/lời giải/barem để đối chiếu. Không kết luận câu hỏi sai và không tự điền đáp án.', 'missing_answer')); continue; }
         const text = [q.question, ...(q.options || []).map(o => o.text)].join(' ');
         if (!q.question?.trim()) { finish(q, resultFor(q, 'Câu hỏi chưa có nội dung đề.', 'missing_data')); continue; }
         if (!isEssayQuestion(q) && q.type === 'multiple_choice' && (!q.options || q.options.length < 2 || q.options.some(o => !o.text?.trim() || /^(phương án|đáp án|lựa chọn|option)\s*[a-d]$/i.test(o.text.trim())) || new Set(q.options.map(o => o.id)).size !== q.options.length)) {
@@ -172,7 +195,7 @@ export async function verifyWithReuse(params: VerificationParams, _legacyApiKey?
         const reference = getEssayGradingReference(q);
         const hasSource = essay ? !!(reference.correctAnswer || reference.rubric) : !!q.correctAnswer?.trim();
         const validMC = essay || q.type !== 'multiple_choice' || (q.options?.length >= 2 && q.options.every(o => o.text?.trim()) && q.options.some(o => o.id === proposed));
-        const passes = hasSource && validMC && !!proposed && item?.matchesCurrentAnswer === true && item?.confidence === 'high'
+        const passes = !requiresAnswerProposal(q) && hasSource && validMC && !!proposed && item?.matchesCurrentAnswer === true && item?.confidence === 'high'
           && item?.needsReview === false && (essay || proposed === normalizeProposed(q, q.correctAnswer));
         if (passes) finish(q, { questionId: q.id, order: q.order, currentAnswer: q.correctAnswer, proposedAnswer: proposed,
           matchesCurrentAnswer: true, confidence: 'high', needsReview: false, reason: item.reason || 'Khớp nguồn, đủ các ý.', pass1Answer: proposed, sanityCheckNote: item.reason || 'Khớp nguồn.' });
@@ -190,6 +213,19 @@ export async function verifyWithReuse(params: VerificationParams, _legacyApiKey?
           const p1 = normalize(first?.proposedAnswer);
           const p2 = normalize(second?.pass2Answer);
           const current = normalize(q.correctAnswer);
+          if (requiresAnswerProposal(q)) {
+            const agreed = hasIndependentProposalAgreement(q, first, second);
+            const status = agreed ? 'Hai lượt AI thống nhất – chờ giáo viên xác nhận.'
+              : p1 && p2 ? 'Hai lượt AI chưa thống nhất hoặc chưa đủ căn cứ – cần giáo viên xem lại.'
+              : 'Chưa đủ hai kết quả AI hợp lệ – chưa có kết luận.';
+            const note = `${status} Đây là đề xuất, không phải xác nhận chắc chắn đúng Toán. `
+              + [first?.reason ? `Lượt 1: ${first.reason}` : 'Lượt 1 chưa đủ căn cứ.', second?.reason ? `Lượt 2: ${second.reason}` : 'Lượt 2 chưa có kết quả hợp lệ.'].join(' | ');
+            finish(q, { questionId: q.id, order: q.order, currentAnswer: q.correctAnswer,
+              proposedAnswer: agreed ? p1 : '', matchesCurrentAnswer: false,
+              confidence: agreed ? 'medium' : 'needs_review', needsReview: true, reviewIssue: 'unverified',
+              pass1Answer: p1 || undefined, pass2Answer: p2 || undefined, reason: note, sanityCheckNote: note });
+            continue;
+          }
           const uncertain = essay
             ? !hasTrustedEssaySecondPassAgreement(q, first, second)
             : (!first || !second || !p1 || !p2 || !current || first.matchesCurrentAnswer !== true
