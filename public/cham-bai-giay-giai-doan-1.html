@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chấm bài giấy THCS · Giai đoạn 1</title>
+  <style>
+    :root { font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; color: #17243c; background: #f3f6fc; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    .wrap { max-width: 1120px; margin: auto; padding: 20px 14px 65px; }
+    header { background: linear-gradient(120deg,#153d98,#087a9c); color:white; border-radius: 20px; padding: 25px; box-shadow: 0 12px 30px #153d9830; }
+    header h1 { margin: 2px 0 8px; font-size: clamp(23px,4vw,34px); }
+    header p { margin: 0; line-height: 1.5; color: #e5f4ff; }
+    .eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: 12px; font-weight: 800; opacity: .8; }
+    .grid { display:grid; grid-template-columns: 360px minmax(0,1fr); gap:16px; align-items:start; margin-top:18px; }
+    .card { background:white; border-radius:17px; padding:19px; box-shadow:0 2px 18px #17243c0c; border:1px solid #e1e7f2; margin-bottom:16px; }
+    .card h2 { font-size:18px; margin:0 0 14px; }
+    .card h3 { font-size:15px; margin: 12px 0 9px; }
+    label { display:block; font-size:14px; font-weight:700; margin:11px 0 6px; }
+    input, select, textarea, button { font:inherit; }
+    input[type='number'], input[type='text'], textarea { width:100%; border:1px solid #bdc9dc; border-radius:9px; padding:11px; background:white; color:#17243c; }
+    input:focus, textarea:focus, button:focus-visible { outline:3px solid #7db8ff; outline-offset:2px; }
+    textarea { min-height:103px; resize:vertical; line-height:1.6; }
+    .pair { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    button, .file-button { display:inline-flex; justify-content:center; align-items:center; gap:7px; border:0; background:#245be2; color:white; border-radius:10px; padding:11px 15px; cursor:pointer; font-weight:800; text-align:center; }
+    button.secondary, .file-button { color:#174078; background:#e5f0ff; }
+    button.outline { background:white; border:1px solid #b6c7df; color:#174078; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:13px; }
+    .hint { border-radius:10px; padding:11px 12px; background:#eff6ff; border:1px solid #d6e8ff; color:#23517e; line-height:1.5; font-size:13px; }
+    .warn { background:#fff7e7; border-color:#f3d9a3; color:#774b09; }
+    .photo { display:none; position:relative; background:#e6edf8; border-radius:14px; margin-top:13px; overflow:hidden; touch-action:none; }
+    .photo.show { display:block; }
+    canvas { width:100%; height:auto; display:block; touch-action:none; cursor:crosshair; }
+    video { display:none; width:100%; max-height:480px; object-fit:contain; background:#14243e; border-radius:13px; }
+    video.show { display:block; }
+    .crop-select { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+    .crop-select label { margin:0; font-weight:600; border:1px solid #b9cbe4; border-radius:9px; padding:8px 11px; cursor:pointer; }
+    .crop-select label:has(input:checked) { background:#dcecff; border-color:#2866eb; }
+    .crop-select input { margin-right:5px; }
+    .status { color:#436080; min-height:1.5em; font-size:14px; font-weight:600; margin-top:10px; }
+    .answers { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; margin:15px 0; }
+    .ans { background:#f5f8ff; border:1px solid #dae5f4; padding:8px; border-radius:9px; }
+    .ans.uncertain { background:#fff5e8; border-color:#f2ce91; }
+    .ans div { font-size:12px; margin-bottom:5px; font-weight:800; }
+    .ans select { width:100%; padding:8px 3px; border:1px solid #b6c7df; background:white; border-radius:7px; font-size:16px; font-weight:700; }
+    .summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:12px 0; }
+    .tile { background:#ecf3ff; border-radius:12px; padding:12px; }
+    .tile strong { display:block; font-size:24px; margin:7px 0 2px; }
+    .tile span { font-size:13px; color:#526581; }
+    .tile.total { background:#e1f9ef; }
+    .tile.total strong { color:#096a49; }
+    .check-line { display:flex; gap:9px; align-items:start; font-size:14px; line-height:1.5; font-weight:650; }
+    .check-line input { margin-top:4px; width:18px; height:18px; }
+    .final { display:none; background:#d5f8e7; border:2px solid #55be91; border-radius:14px; padding:16px; text-align:center; margin-top:14px; }
+    .final.show { display:block; }
+    .final strong { display:block; font-size:32px; color:#096a49; }
+    small { color:#61708a; line-height:1.5; }
+    details { margin-top:12px; }
+    details pre { white-space:pre-wrap; overflow-wrap:anywhere; background:#f1f5fa; border-radius:10px; padding:10px; font-size:12px; }
+    @media(max-width:850px){.grid { grid-template-columns:1fr; }.answers{grid-template-columns:repeat(3,minmax(0,1fr));}}
+    @media(max-width:430px){.answers{grid-template-columns:repeat(3,minmax(0,1fr));}.summary{grid-template-columns:1fr;}.pair{grid-template-columns:1fr;}}
+    @media print { .noprint, header, .grid > div:first-child, .photo,video, .actions{ display:none !important; }.grid{display:block} }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Matsuda AI · Thử nghiệm độc lập, không gửi ảnh lên máy chủ</div>
+    <h1>Chấm nhanh bài kiểm tra giấy</h1>
+    <p>Đọc chữ cái A/B/C/D học sinh viết tay, đọc <b>điểm tự luận giáo viên ghi sẵn</b>, cộng thành tổng điểm. Dùng chung cho các môn THCS; không nhận diện tên học sinh.</p>
+  </header>
+  <div class="grid">
+    <div>
+      <section class="card">
+        <h2>1 · Thiết lập đáp án chuẩn</h2>
+        <div class="pair">
+          <div><label for="qcount">Số câu trắc nghiệm</label><input id="qcount" type="number" min="1" max="60" value="12" /></div>
+          <div><label for="quizmax">Điểm tối đa TN</label><input id="quizmax" type="number" min="0.25" max="10" step="0.25" value="3" /></div>
+        </div>
+        <label for="key">Đáp án đúng của giáo viên</label>
+        <textarea id="key" spellcheck="false" placeholder="Ví dụ: A C D B A C D B A C D B"></textarea>
+        <small>Nhập lần lượt A B C D, ngăn bằng dấu cách hoặc dấu phẩy. Có thể nhập 1A 2C 3D…; phải đủ số câu.</small>
+        <div class="actions"><button id="applyKey">Áp dụng đáp án</button></div>
+        <p id="keyStatus" class="status" role="status"></p>
+        <div class="pair">
+          <div><label for="essaymax">Điểm tối đa TL</label><input id="essaymax" type="number" min="0" max="10" step="0.25" value="7" /></div>
+          <div><label for="precision">Làm tròn tổng điểm</label><select id="precision"><option value="2">0,01</option><option value="1">0,1</option><option value="0">1 điểm</option></select></div>
+        </div>
+      </section>
+      <section class="card">
+        <h2>2 · Chụp vùng trả lời</h2>
+        <div class="hint">Chụp rõ <b>bảng số câu và chữ A/B/C/D</b>, có <b>ô điểm tự luận đặt cạnh</b>. Có thể dùng đề giấy hiện tại nếu hai vùng đủ rõ và tách biệt. Camera không tự dò mọi bố cục: hãy khoanh hai vùng trên ảnh.</div>
+        <div class="actions">
+          <button id="openCam">Mở camera</button>
+          <button id="capture" disabled>Chụp ảnh</button>
+          <label class="file-button" for="upload">Chọn / chụp ảnh</label>
+          <input id="upload" type="file" accept="image/*" capture="environment" hidden />
+        </div>
+        <video id="video" playsinline autoplay muted></video>
+        <div id="photo" class="photo"><canvas id="canvas" aria-label="Ảnh để khoanh vùng đọc đáp án và điểm tự luận"></canvas></div>
+        <div class="crop-select" role="group" aria-label="Chọn vùng để khoanh">
+          <label><input type="radio" name="region" value="answers" checked /> Vùng đáp án A/B/C/D</label>
+          <label><input type="radio" name="region" value="essay" /> Vùng điểm tự luận</label>
+        </div>
+        <small>Kéo từ góc trên trái tới góc dưới phải để khoanh mỗi vùng. Giữ vùng đáp án đủ cả số câu, vùng điểm chỉ có chữ số giáo viên ghi.</small>
+        <div class="actions"><button id="ocr" disabled>Đọc 2 vùng bằng OCR</button><button id="clearRegions" class="outline" disabled>Khoanh lại</button></div>
+        <p id="ocrStatus" class="status" role="status"></p>
+        <details><summary>Xem nội dung OCR thô khi cần sửa</summary><pre id="rawOcr">Chưa nhận diện.</pre></details>
+      </section>
+    </div>
+    <div>
+      <section class="card">
+        <h2>3 · Kiểm tra các đáp án được đọc</h2>
+        <div class="hint warn">Chữ viết tay dễ nhầm, đặc biệt khi sửa/xóa. <b>Mọi đáp án OCR đều là dự đoán</b>. Giáo viên phải đối chiếu ảnh bài làm và xác nhận trước khi chốt tổng điểm.</div>
+        <div id="answers" class="answers" aria-label="Danh sách đáp án của học sinh"></div>
+        <div class="pair">
+          <div><label for="essay">Điểm tự luận (giáo viên đã chấm)</label><input id="essay" type="text" inputmode="decimal" placeholder="Ví dụ 5,5" /></div>
+          <div><label for="scoreNote">Tình trạng đọc OCR</label><input id="scoreNote" type="text" readonly value="Chưa quét" /></div>
+        </div>
+        <div class="summary" aria-live="polite">
+          <div class="tile"><span>Số câu đúng</span><strong id="correctCount">—</strong></div>
+          <div class="tile"><span>Điểm trắc nghiệm</span><strong id="quizScore">—</strong></div>
+          <div class="tile total"><span>Tổng tạm tính / 10</span><strong id="totalScore">—</strong></div>
+        </div>
+        <p id="scoreStatus" class="status"></p>
+        <label class="check-line"><input type="checkbox" id="confirm" /> Tôi đã đối chiếu đáp án học sinh và điểm tự luận với bài giấy. Tôi xác nhận kết quả.</label>
+        <div id="final" class="final" aria-live="polite"><div>ĐÃ XÁC NHẬN TỔNG ĐIỂM</div><strong id="confirmedTotal">—</strong><small id="confirmedDetail"></small></div>
+        <div class="actions"><button id="next" class="secondary">Bài tiếp theo</button><button id="print" class="outline" disabled>In kết quả</button></div>
+        <p class="hint" style="margin-top:15px">Không lưu tên, ảnh hoặc điểm lên Firebase; không gọi Gemini/API AI có phí. Chỉ dùng để giáo viên kiểm tra kết quả từng bài tại thiết bị này.</p>
+      </section>
+    </div>
+  </div>
+</div>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const state = { key: [], responses: [], regions: {answers:null,essay:null}, image:null, videoStream:null, busy:false, ocrAttempted:false };
+const count = () => Number($('qcount').value);
+const parseKey = (source, n) => {
+  const raw = source.toUpperCase().replace(/CÂU\s*/g,' ');
+  // Accept numbered sequences (1A, 2.C, 3: D) or plain A C D B.
+  const numbered = [...raw.matchAll(/(?:^|[^0-9])(\d{1,2})\s*[).:\-]?\s*([ABCD])\b/gm)];
+  if (numbered.length===n && numbered.every((m,i)=>Number(m[1])===i+1)) return numbered.map(m=>m[2]);
+  const plain = raw.split(/[\s,;|/]+/).filter(Boolean);
+  if (plain.length===n && plain.every(x=>/^[ABCD]$/.test(x))) return plain;
+  return null;
+};
+function parseGrade(input,max) {
+  const clean = String(input).trim().replace(/\s/g,'').replace(',','.');
+  if (!/^\d+(?:\.\d{1,2})?$/.test(clean)) return null;
+  const value = Number(clean);
+  return Number.isFinite(value) && value>=0 && value<=max ? value : null;
+}
+function numberText(value,digits=2) { return Number(value).toLocaleString('vi-VN',{maximumFractionDigits:digits,minimumFractionDigits:digits}); }
+function resetConfirmation() { $('confirm').checked=false; $('final').classList.remove('show'); $('print').disabled=true; }
+function rebuildAnswers() {
+  const root=$('answers');root.textContent='';
+  state.responses=Array.from({length:count()},(_,i)=>state.responses[i]||'');
+  for (let i=0;i<count();i++) {
+    const wrap=document.createElement('div');wrap.className='ans'+(!state.responses[i]?' uncertain':'');
+    const title=document.createElement('div');title.textContent='Câu '+(i+1);wrap.append(title);
+    const sel=document.createElement('select');sel.setAttribute('aria-label','Đáp án học sinh câu '+(i+1));
+    for(const [value,text] of [['','?'],['A','A'],['B','B'],['C','C'],['D','D']]) {const o=document.createElement('option');o.value=value;o.textContent=text;sel.append(o);}
+    sel.value=state.responses[i];sel.addEventListener('change',()=>{state.responses[i]=sel.value;wrap.classList.toggle('uncertain',!sel.value);resetConfirmation();calculate();});
+    wrap.append(sel);root.append(wrap);
+  }
+  calculate();
+}
+function validSettings(){const n=count(), q=Number($('quizmax').value),e=Number($('essaymax').value);return Number.isInteger(n)&&n>=1&&n<=60&&Number.isFinite(q)&&q>0&&q<=10&&Number.isFinite(e)&&e>=0&&e<=10&&Math.abs(q+e-10)<0.00001;}
+function calculate() {
+  const valid=validSettings(), n=count(),complete=state.responses.length===n&&state.responses.every(v=>/^[ABCD]$/.test(v));
+  const essay=parseGrade($('essay').value,Number($('essaymax').value));
+  if(!valid||state.key.length!==n||!complete||essay===null){
+    $('correctCount').textContent='—';$('quizScore').textContent='—';$('totalScore').textContent='—';
+    $('scoreStatus').textContent=!valid?'Cần đặt tổng điểm trắc nghiệm và tự luận bằng 10.':state.key.length!==n?'Chưa nhập đủ đáp án chuẩn.':!complete?'Hãy kiểm tra, bổ sung tất cả đáp án chữ cái.':'Hãy nhập/kiểm tra điểm tự luận hợp lệ.';
+    resetConfirmation();return null;
+  }
+  const correct=state.responses.reduce((s,a,i)=>s+(a===state.key[i]?1:0),0);
+  const quiz=Math.round((correct*Number($('quizmax').value)/n+Number.EPSILON)*10000)/10000;
+  const rawTotal=quiz+essay;
+  const digit=Number($('precision').value);
+  const total=Number(rawTotal.toFixed(digit));
+  $('correctCount').textContent=correct+' / '+n;$('quizScore').textContent=numberText(quiz,4);$('totalScore').textContent=numberText(total,digit);
+  $('scoreStatus').textContent='Kết quả tạm tính. Chỉ có giá trị sau khi giáo viên đối chiếu và xác nhận.';
+  if($('confirm').checked){$('final').classList.add('show');$('print').disabled=false;$('confirmedTotal').textContent=numberText(total,digit)+'/10';$('confirmedDetail').textContent='TN: '+numberText(quiz,4)+' • TL: '+numberText(essay,2)+' • đúng '+correct+'/'+n+' câu';}
+  return {correct,quiz,essay,total};
+}
+$('applyKey').addEventListener('click',()=>{const k=parseKey($('key').value,count());if(!validSettings()){$('keyStatus').textContent='Số câu phải từ 1–60, tổng điểm TN + TL phải bằng 10.';return;}
+  if(!k){$('keyStatus').textContent='Đáp án chuẩn chưa hợp lệ: nhập đúng '+count()+' chữ A/B/C/D.';return;}
+  state.key=k;resetConfirmation();calculate();$('keyStatus').textContent='Đã nhận '+k.length+' đáp án chuẩn, chỉ dùng trên thiết bị này.';});
+$('qcount').addEventListener('change',()=>{state.key=[];state.responses=[];resetConfirmation();rebuildAnswers();$('keyStatus').textContent='Đã đổi số câu, hãy áp dụng lại đáp án chuẩn.';});
+for(const id of ['quizmax','essaymax','precision','essay']) $(id).addEventListener('input',()=>{resetConfirmation();calculate();});
+$('confirm').addEventListener('change',()=>{if($('confirm').checked && !calculate()){$('confirm').checked=false;alert('Chưa đủ thông tin để chốt điểm.');}else calculate();});
+$('next').addEventListener('click',()=>{state.responses=[];state.regions={answers:null,essay:null};state.image=null;state.ocrAttempted=false;$('essay').value='';$('rawOcr').textContent='Chưa nhận diện.';$('scoreNote').value='Chưa quét';$('ocrStatus').textContent='';$('photo').classList.remove('show');$('ocr').disabled=true;$('clearRegions').disabled=true;resetConfirmation();rebuildAnswers();window.scrollTo({top:0,behavior:'smooth'});});
+$('print').addEventListener('click',()=>{if($('confirm').checked && calculate())window.print();});
+function stopCam(){if(state.videoStream){state.videoStream.getTracks().forEach(t=>t.stop());state.videoStream=null;} const v=$('video');v.srcObject=null;v.classList.remove('show');$('capture').disabled=true;}
+$('openCam').addEventListener('click',async()=>{try{stopCam();if(!navigator.mediaDevices?.getUserMedia)throw Error('Trình duyệt cần trang HTTPS/localhost để mở camera. Hãy dùng nút Chọn / chụp ảnh.');
+  const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});state.videoStream=stream;$('video').srcObject=stream;$('video').classList.add('show');$('capture').disabled=false;$('ocrStatus').textContent='Camera đã mở. Căn rõ vùng đáp án và điểm tự luận rồi chụp.';
+}catch(e){$('ocrStatus').textContent='Không mở được camera: '+(e.message||e);}});
+$('capture').addEventListener('click',()=>{const v=$('video');if(!v.videoWidth)return;const c=document.createElement('canvas');const scale=Math.min(1,1800/v.videoWidth);c.width=Math.round(v.videoWidth*scale);c.height=Math.round(v.videoHeight*scale);c.getContext('2d').drawImage(v,0,0,c.width,c.height);loadFromCanvas(c);stopCam();});
+$('upload').addEventListener('change',async(e)=>{const file=e.target.files?.[0];if(!file)return;if(!file.type.startsWith('image/')){$('ocrStatus').textContent='Chỉ hỗ trợ ảnh (JPG/PNG/HEIC nếu trình duyệt đọc được).';return;}
+  try{const bmp=await createImageBitmap(file);const c=document.createElement('canvas');const s=Math.min(1,1800/bmp.width);c.width=Math.max(1,Math.round(bmp.width*s));c.height=Math.max(1,Math.round(bmp.height*s));c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);bmp.close();loadFromCanvas(c);stopCam();}catch(err){$('ocrStatus').textContent='Không mở được ảnh trên thiết bị: '+(err.message||err);}finally{e.target.value='';}});
+function loadFromCanvas(source){state.image=document.createElement('canvas');state.image.width=source.width;state.image.height=source.height;state.image.getContext('2d').drawImage(source,0,0);state.regions={answers:null,essay:null};$('photo').classList.add('show');$('clearRegions').disabled=false;resetConfirmation();drawPreview();$('ocrStatus').textContent='Đã có ảnh. Khoanh vùng đáp án rồi chuyển sang khoanh vùng điểm tự luận.';}
+const canvas=$('canvas');let drag=null;
+function currentRegion(){return document.querySelector('input[name="region"]:checked').value;}
+function pos(ev){const r=canvas.getBoundingClientRect();return {x:Math.max(0,Math.min(canvas.width,(ev.clientX-r.left)*canvas.width/r.width)),y:Math.max(0,Math.min(canvas.height,(ev.clientY-r.top)*canvas.height/r.height))};}
+function norm(a,b){return {x:Math.round(Math.min(a.x,b.x)),y:Math.round(Math.min(a.y,b.y)),w:Math.round(Math.abs(a.x-b.x)),h:Math.round(Math.abs(a.y-b.y))};}
+canvas.addEventListener('pointerdown',ev=>{if(!state.image||state.busy)return;drag={a:pos(ev),b:pos(ev),region:currentRegion()};canvas.setPointerCapture(ev.pointerId);drawPreview();});
+canvas.addEventListener('pointermove',ev=>{if(!drag)return;drag.b=pos(ev);drawPreview();});
+canvas.addEventListener('pointerup',ev=>{if(!drag)return;drag.b=pos(ev);const box=norm(drag.a,drag.b);if(box.w>=18 && box.h>=18)state.regions[drag.region]=box;drag=null;drawPreview();updateOcrButton();resetConfirmation();});
+canvas.addEventListener('pointercancel',()=>{drag=null;drawPreview();});
+function drawPreview(){if(!state.image)return;canvas.width=state.image.width;canvas.height=state.image.height;const ctx=canvas.getContext('2d');ctx.drawImage(state.image,0,0);
+  for(const [key,b] of [...Object.entries(state.regions),...(drag?[[drag.region,norm(drag.a,drag.b)]]:[])]){if(!b)continue;ctx.lineWidth=Math.max(3,canvas.width/380);ctx.strokeStyle=key==='answers'?'#2563eb':'#dc2626';ctx.fillStyle=key==='answers'?'#2563eb20':'#dc262620';ctx.fillRect(b.x,b.y,b.w,b.h);ctx.strokeRect(b.x,b.y,b.w,b.h);const font=Math.max(16,canvas.width/55);ctx.font='bold '+font+'px sans-serif';ctx.fillStyle=key==='answers'?'#1d4ed8':'#b91c1c';ctx.fillText(key==='answers'?'ĐÁP ÁN':'ĐIỂM TL',b.x+6,Math.max(font+4,b.y-5));}}
+function updateOcrButton(){const r=state.regions;$('ocr').disabled=!(state.image && r.answers&&r.essay&&!state.busy);}
+$('clearRegions').addEventListener('click',()=>{state.regions={answers:null,essay:null};drawPreview();updateOcrButton();resetConfirmation();});
+function cropped(box){const c=document.createElement('canvas');const margin=Math.max(3,Math.round(state.image.width*.003));const x=Math.max(0,box.x-margin),y=Math.max(0,box.y-margin);const w=Math.min(state.image.width-x,box.w+margin*2),h=Math.min(state.image.height-y,box.h+margin*2);const factor=Math.min(3,Math.max(1,1500/w));c.width=Math.round(w*factor);c.height=Math.round(h*factor);const ctx=c.getContext('2d',{willReadFrequently:true});ctx.fillStyle='white';ctx.fillRect(0,0,c.width,c.height);ctx.drawImage(state.image,x,y,w,h,0,0,c.width,c.height);return c;}
+function parseRecognizedAnswers(text,n){const cleaned=text.toUpperCase().replace(/C[AÂ]U\s*/g,' ');const result=Array(n).fill('');
+  const pair=/\b(\d{1,2})\s*[).:\-]?\s*([ABCD])\b/g;let m;while((m=pair.exec(cleaned))){const index=Number(m[1])-1;if(index>=0&&index<n&&result[index]==='')result[index]=m[2];}
+  // Unnumbered row: only accept when the OCR text consists of exactly n standalone A/B/C/D tokens.
+  if(!result.some(Boolean)){const tokens=cleaned.split(/[^A-Z]+/).filter(Boolean);if(tokens.length===n && tokens.every(x=>/^[ABCD]$/.test(x)))return tokens;}
+  return result;
+}
+function parseRecognizedGrade(text,max){const n=text.replace(/\s/g,'').replace(/[Oo]/g,'0').replace(/[,;]/g,'.');const candidates=n.match(/\d+(?:\.\d{1,2})?/g)||[];if(candidates.length!==1)return null;return parseGrade(candidates[0],max);}
+let worker=null;
+async function getWorker(){if(worker)return worker;if(!window.Tesseract){$('ocrStatus').textContent='Đang tải thư viện OCR lần đầu (cần Internet)…';await new Promise((resolve,reject)=>{const sc=document.createElement('script');sc.src='https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js';sc.onload=resolve;sc.onerror=()=>reject(new Error('Không tải được thư viện OCR. Kiểm tra kết nối mạng.'));document.head.append(sc);});}worker=await window.Tesseract.createWorker('eng');return worker;}
+$('ocr').addEventListener('click',async()=>{if(state.busy||!state.regions.answers||!state.regions.essay)return;if(!validSettings()||state.key.length!==count()){$('ocrStatus').textContent='Hãy nhập đáp án đúng và điểm tối đa trước khi quét.';return;}
+  state.busy=true;updateOcrButton();$('ocrStatus').textContent='Đang đọc chữ viết tay trên thiết bị. Có thể mất vài giây…';resetConfirmation();try{
+    const w=await getWorker();await w.setParameters({tessedit_pageseg_mode:'6'});
+    const a=await w.recognize(cropped(state.regions.answers));$('ocrStatus').textContent='Đã đọc vùng trắc nghiệm, đang đọc điểm tự luận…';
+    await w.setParameters({tessedit_pageseg_mode:'7',tessedit_char_whitelist:'0123456789.,'});
+    const e=await w.recognize(cropped(state.regions.essay));
+    await w.setParameters({tessedit_char_whitelist:''});
+    const found=parseRecognizedAnswers(a.data.text,count());state.responses=found;$('essay').value=parseRecognizedGrade(e.data.text,Number($('essaymax').value))?.toString().replace('.',',')||'';
+    state.ocrAttempted=true;$('scoreNote').value=found.filter(Boolean).length+'/'+count()+' đáp án OCR';$('rawOcr').textContent='Đáp án:\n'+(a.data.text||'(trống)')+'\n\nĐiểm tự luận:\n'+(e.data.text||'(trống)');
+    rebuildAnswers();$('ocrStatus').textContent='Đã đọc '+found.filter(Boolean).length+'/'+count()+' đáp án. Kiểm tra từng chữ và điểm tự luận ở bảng bên phải, sau đó xác nhận.';
+  }catch(err){$('ocrStatus').textContent='Chưa thể OCR: '+(err.message||err)+'; vẫn có thể chọn đáp án và nhập điểm bằng tay.';}finally{state.busy=false;updateOcrButton();}});
+window.addEventListener('pagehide',stopCam);
+rebuildAnswers();
+</script>
+</body>
+</html>
